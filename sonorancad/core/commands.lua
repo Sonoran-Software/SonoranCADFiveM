@@ -142,6 +142,7 @@ SonoranCAD Help
     viewcaches - View the current unit and call cache, for troubleshooting
     getclientlog <playerId> - Get a log buffer from a given client
     dumpconsole - Dumps current console buffer to file
+    forceconfigupdate - Clears config and forces a re-read of the config file
 ]])
     elseif args[1] == "debugmode" then
         Config.debugMode = not Config.debugMode
@@ -201,6 +202,10 @@ SonoranCAD Help
             print(buf[i])
         end
         print("----ERROR/WARNING BUFFER END----")
+
+    elseif args[1] == "forceconfigupdate" then
+        infoLog("Forcing configuration update... Please restart script")
+        TriggerEvent("SonoranCAD::core:ForceConfigUpdate")
     else
         print("Missing command. Try \"sonoran help\" for help.")
     end
