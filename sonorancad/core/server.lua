@@ -528,3 +528,88 @@ exports('performLookup', performLookup)
 exports('checkCADSubscriptionType', checkCADSubscriptionType)
 exports('getDispatchStatus', getDispatchStatus)
 -- Jordan - CAD Utils
+
+-- Jordan - Time Utils
+
+local currentTimeClient = nil -- Stores the Player ID of the current time reporter
+local timeoutTimer = nil -- Reference to the timeout timer
+
+-- Function to select a new client
+local function selectNewClient()
+    local players = GetPlayers()
+    if #players == 0 then
+        if currentTimeClient then
+            TriggerClientEvent("SonoranCad:time:stopSendingTime", currentTimeClient)
+        end
+        currentTimeClient = nil
+        debugLog("No players available to send time.")
+        return
+    end
+    local newClient = players[math.random(1, #players)]
+    -- Inform the previous client to stop sending time
+    if currentTimeClient and currentTimeClient ~= newClient then
+        TriggerClientEvent("SonoranCad:time:stopSendingTime", currentTimeClient)
+    end
+    currentTimeClient = newClient
+    debugLog("Selected client " .. currentTimeClient .. " to send time.")
+    TriggerClientEvent("SonoranCad:time:requestSendTime", currentTimeClient)
+    -- Start timeout monitoring
+    if timeoutTimer then
+        timeoutTimer = nil
+    end
+    timeoutTimer = Citizen.SetTimeout(65000, function()
+        debugLog("Client " .. currentTimeClient .. " failed to report time in 60 seconds.")
+        selectNewClient()
+    end)
+end
+
+-- Event to handle received time from the client
+RegisterNetEvent("SonoranCad:time:sendTime", function(timeData)
+    if tonumber(source) == tonumber(currentTimeClient) then
+        debugLog("Received time from client " .. source .. ": " .. json.encode(timeData))
+        -- Reset the timeout timer
+        if timeoutTimer then
+            Citizen.SetTimeout(0, function() end) -- Clear the existing timeout
+            timeoutTimer = nil
+        end
+        -- Restart the timer
+        timeoutTimer = Citizen.SetTimeout(70000, function()
+            debugLog("Client " .. source .. " failed to report time in 60 seconds.")
+            selectNewClient()
+        end)
+		-- Send the time to the API
+		exports['sonorancad']:performApiRequest({
+			{
+				['serverId'] = GetConvar('sonoran_serverId', 1),
+				['currentUtc'] = os.date("!%Y-%m-%d %H:%M:%S"),
+				['currentGame'] = timeData.currentGame,
+				['secondsPerHour'] = timeData.secondsPerHour
+			}
+		}, 'SET_CLOCK', function(_)
+		end)
+		print("Time sent to API", json.encode({
+			['serverId'] = GetConvar('sonoran_serverId', 1),
+			['currentUtc'] = os.date("!%Y-%m-%d %H:%M:%S"),
+			['currentGame'] = timeData.currentGame,
+			['secondsPerHour'] = timeData.secondsPerHour
+		}))
+    else
+        debugLog("Unexpected client sent time. Ignored.")
+    end
+end)
+
+-- Event when a player disconnects
+AddEventHandler("playerDropped", function(reason)
+    local playerId = source
+    if tonumber(playerId) == tonumber(currentTimeClient) then
+        debugLog("Client " .. playerId .. " disconnected. Selecting a new client.")
+        selectNewClient()
+    end
+end)
+
+-- Initial selection when server starts
+AddEventHandler("onResourceStart", function(resourceName)
+    if resourceName == GetCurrentResourceName() then
+        selectNewClient()
+    end
+end)
