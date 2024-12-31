@@ -1,5 +1,5 @@
 {
-  "resource": "3.0.9",
+  "resource": "3.1.0",
   "testedFxServerVersion": "5932",
   "submoduleConfigs": {
     "callcommands": {
