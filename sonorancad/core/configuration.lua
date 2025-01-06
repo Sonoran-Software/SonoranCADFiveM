@@ -557,3 +557,12 @@ function file_exists(name)
         return false
     end
 end
+
+RegisterEvent('SonoranCAD::core:ForceConfigUpdate', function()
+    for k, _ in pairs(json.decode(conf)) do
+        local cvar_setter = GetConvar('sonoran_' .. k .. '_setter', 'none')
+        if cvar_setter == 'framework' then
+            SetConvar('sonran_' .. k .. '_setter', 'NONE')
+        end
+    end
+end)
