@@ -15,7 +15,12 @@ local config = {
     -- put your configuration options below
 
     -- Should radio panics generate CAD calls?
-    addPanicCall = true
+    addPanicCall = true,
+    syncRadioName = {
+        enabled = true, -- should the radio name be synced with the CAD?
+        nameFormat = "{UNIT_NUMBER} | {UNIT_NAME}" -- format of the radio name | available variables: {UNIT_NUMBER}, {UNIT_NAME}
+    }
+
 }
 
 if config.enabled then
