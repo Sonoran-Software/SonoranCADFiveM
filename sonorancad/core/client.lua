@@ -437,3 +437,61 @@ CreateThread(function()
         end
     end
 end)
+
+RegisterCommand('time', function()
+    local hours = GetClockHours()
+    local minutes = GetClockMinutes()
+    TriggerEvent('chat:addMessage', {
+        args = {
+            'SonoranCAD',
+            ('Current time: %s:%s'):format(hours, minutes)
+        }
+    })
+end)
+
+-- Jordan - Time Utils
+local isSendingTime = false
+
+local function getFormattedGameTime()
+    -- Get in-game date and time
+    local year, month, day = GetClockYear(), GetClockMonth(), GetClockDayOfMonth()
+    local hour, minute, second = GetClockHours(), GetClockMinutes(), GetClockSeconds()
+
+    -- Format the in-game time as "YYYY-MM-DD HH:MM:SS"
+    return string.format("%04d-%02d-%02d %02d:%02d:%02d", year, month, day, hour, minute, second)
+end
+
+local function getSecondsPerInGameHour()
+    -- Get milliseconds per in-game minute
+    local msPerMinute = GetMillisecondsPerGameMinute()
+
+    -- Convert to seconds per in-game hour
+    local secondsPerHour = (msPerMinute / 1000) * 60
+    return secondsPerHour
+end
+
+-- Event to start sending time to the server
+RegisterNetEvent("SonoranCad:time:requestSendTime", function()
+    debugLog("You have been selected to send the time.")
+    isSendingTime = true
+
+    Citizen.CreateThread(function()
+        while isSendingTime do
+            local inGameTime = getFormattedGameTime()
+            local secondsPerHour = getSecondsPerInGameHour()
+            local timeData = {
+                currentGame = inGameTime,
+                secondsPerHour = secondsPerHour
+            }
+            TriggerServerEvent("SonoranCad:time:sendTime", timeData)
+            debugLog("Time sent to server: " .. json.encode(timeData))
+            Citizen.Wait(60000) -- Wait 60 seconds before sending again
+        end
+    end)
+end)
+
+-- Event to stop sending time (optional cleanup)
+RegisterNetEvent("SonoranCad:time:stopSendingTime", function()
+    debugLog("You are no longer required to send the time.")
+    isSendingTime = false
+end)
