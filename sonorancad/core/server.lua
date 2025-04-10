@@ -87,6 +87,7 @@ ApiEndpoints = {
 	["REMOVE_RECORD"] = "general",
 	["GET_TEMPLATES"] = "general",
 	["LOOKUP_INT"] = "general",
+	["SET_STATIONS"] = "emergency"
 }
 
 EndpointsRequireId = {

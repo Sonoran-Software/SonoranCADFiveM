@@ -50,7 +50,7 @@ local function sendConsole(level, color, message)
         source = info.source:gsub("@@sonorancad/","")..":"..info.linedefined
     end
     local msg = ("[%s][%s:%s%s^7]%s %s^0"):format(time, debugging and source or "SonoranCAD", color, level, color, message)
-    if (debugging and level == "DEBUG") or (not debugging and level ~= "DEBUG") then
+    if (debugging and level == "DEBUG") or level ~= "DEBUG" then
         print(msg)
     end
     if (level == "ERROR" or level == "WARNING") and IsDuplicityVersion() then
