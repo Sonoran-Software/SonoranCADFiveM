@@ -529,3 +529,80 @@ exports('performLookup', performLookup)
 exports('checkCADSubscriptionType', checkCADSubscriptionType)
 exports('getDispatchStatus', getDispatchStatus)
 -- Jordan - CAD Utils
+
+-- Jordan - Time Utils
+
+local currentTimeClient = nil -- Stores the Player ID of the current time reporter
+local lastSendTime = nil -- Stores the last time the time was sent
+
+-- Function to select a new client
+local function selectNewClient()
+    local players = GetPlayers()
+    if #players == 0 then
+        if currentTimeClient then
+            TriggerClientEvent("SonoranCad:time:stopSendingTime", currentTimeClient)
+        end
+        currentTimeClient = nil
+        debugLog("No players available to send time.")
+        return
+    end
+    local newClient = players[math.random(1, #players)]
+    -- Inform the previous client to stop sending time
+    if currentTimeClient and currentTimeClient ~= newClient then
+        TriggerClientEvent("SonoranCad:time:stopSendingTime", currentTimeClient)
+    end
+    currentTimeClient = newClient
+    debugLog("Selected client " .. currentTimeClient .. " to send time.")
+    TriggerClientEvent("SonoranCad:time:requestSendTime", currentTimeClient)
+end
+
+-- Event to handle received time from the client
+RegisterNetEvent("SonoranCad:time:sendTime", function(timeData)
+	local source = source
+    if tonumber(source) == tonumber(currentTimeClient) then
+        debugLog("Received time from client " .. source .. ": " .. json.encode(timeData))
+		lastSendTime = os.time()
+		-- Send the time to the API
+		exports['sonorancad']:performApiRequest({
+			{
+				['serverId'] = GetConvar('sonoran_serverId', 1),
+				['currentUtc'] = os.date("!%Y-%m-%d %H:%M:%S"),
+				['currentGame'] = timeData.currentGame,
+				['secondsPerHour'] = timeData.secondsPerHour
+			}
+		}, 'SET_CLOCK', function(_)
+		end)
+    else
+        debugLog("Unexpected client sent time. Ignored.")
+    end
+end)
+
+-- Event when a player disconnects
+AddEventHandler("playerDropped", function(reason)
+    local playerId = source
+    if tonumber(playerId) == tonumber(currentTimeClient) then
+        debugLog("Client " .. playerId .. " disconnected. Selecting a new client.")
+        selectNewClient()
+    end
+end)
+
+-- Initial selection when server starts
+AddEventHandler("onResourceStart", function(resourceName)
+    if resourceName == GetCurrentResourceName() then
+        selectNewClient()
+    end
+end)
+
+Citizen.CreateThread(function()
+	while true do
+		Citizen.Wait(65000)
+		if currentTimeClient then
+			if lastSendTime and os.time() - lastSendTime > 70 then
+				debugLog("Client " .. currentTimeClient .. " failed to report time in 60 seconds.")
+				selectNewClient()
+			end
+		elseif not currentTimeClient and #GetPlayers() > 0 then
+			selectNewClient()
+		end
+	end
+end)
