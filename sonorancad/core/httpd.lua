@@ -251,14 +251,30 @@ local PushEventHandler = {
 		TriggerEvent('SonoranCAD::pushevents:UnitGroupRemove', body.data)
 		return true
 	end,
+	EVENT_UNIT_GROUP_CHANGE_NAME = function(body)
+		TriggerEvent('SonoranCAD::pushevents:UnitGroupRename', body.data)
+		return true
+	end,
 	EVENT_TONE = function(body)
 		TriggerEvent('SonoranCAD::pushevents:Tone', body.data)
+		return true
+	end,
+	EVENT_CHAR_SELECTED = function(body)
+		TriggerEvent('SonoranCAD::pushevents:CharacterSelected', body.data)
 		return true
 	end
 }
 
-RegisterNetEvent('SonoranCAD::RegisterPushEvent', function(type, event)
-	PushEventHandler[type] = event
+---@type { [string]: function[] }
+local CustomPushEventHandlers = {}
+
+RegisterNetEvent('SonoranCAD::RegisterPushEvent', function(eventName, eventHandler)
+	if not eventName or not eventHandler then return end
+	if CustomPushEventHandlers[eventName] == nil then
+		CustomPushEventHandlers[eventName] = {}
+	end
+	debugLog(('Registered custom push event %s'):format(eventName))
+	table.insert(CustomPushEventHandlers[eventName], eventHandler)
 end)
 
 SetHttpHandler(function(req, res)
@@ -392,6 +408,22 @@ SetHttpHandler(function(req, res)
 				else
 					TriggerEvent('SonoranCAD::pushevents:OtherEvent', body.type:upper(), body.data)
 					res.send('ok - custom')
+				end
+
+				if CustomPushEventHandlers[body.type:upper()] then
+					for index, customEvent in ipairs(CustomPushEventHandlers[body.type:upper()]) do
+						local success, result = pcall(customEvent, body)
+						if success then
+							debugLog(('Custom event handler %s (%s) succeeded!'):format(body.type:upper(), index))
+						else
+							if not result then
+								result = 'error'
+							end
+							debugLog(('Custom event handler %s (%s) failed with result: %s'):format(body.type:upper(), index, result))
+						end
+					end
+				else
+					debugLog('No custom push event handlers for push event: ' .. body.type:upper())
 				end
 			end
 		end)

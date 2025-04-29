@@ -6,6 +6,7 @@
     Description: Integrates Knight ERS callouts to SonoranCAD
 ]]
 local pluginConfig = Config.GetPluginConfig("ersintegration")
+local postalConfig = Config.GetPluginConfig("postals")
 
 if pluginConfig.enabled then
     function startErs()
@@ -183,7 +184,11 @@ if pluginConfig.enabled then
                     local description = calloutData.Description
                     local postal = ''
                     if calloutData.Postal == 'Unknown postal' then
-                        postal = exports['nearest-postal']:getPostalServer({calloutData.Coordinates.x, calloutData.Coordinates.y}).code
+                        if postalConfig.enabled then
+                            postal = exports[postalConfig.nearestPostalResourceName]:getPostalServer({calloutData.Coordinates.x, calloutData.Coordinates.y}).code
+                        else
+                            postal = "Unknown postal"
+                        end
                     else
                         postal = calloutData.Postal
                     end
@@ -253,7 +258,11 @@ if pluginConfig.enabled then
                     end
                     local postal = ''
                     if calloutData.Postal == 'Unknown postal' then
-                        postal = exports['nearest-postal']:getPostalServer({calloutData.Coordinates.x, calloutData.Coordinates.y}).code
+                        if postalConfig.enabled then
+                            postal = exports[postalConfig.nearestPostalResourceName]:getPostalServer({calloutData.Coordinates.x, calloutData.Coordinates.y}).code
+                        else
+                            postal = "Unknown postal"
+                        end
                     else
                         postal = calloutData.Postal
                     end
@@ -312,14 +321,18 @@ if pluginConfig.enabled then
             }
             data.replaceValues = generateReplaceValues(pedData, pluginConfig.customRecords.civilianValues)
             performApiRequest({data}, 'NEW_CHARACTER', function(response)
-                response = json.decode(response)
-                local recordId = response.id
-                if recordId then
-                    -- Save the recordId in the processedPedData table using the unique key
-                    processedPedData[uniqueKey] = recordId
-                    debugPrint("Record ID " .. recordId .. " saved for unique key: " .. uniqueKey)
+                local success, response = pcall(json.decode, response)
+                if success and type(response) == "table" and response.id ~= nil then
+                    local recordId = response.id
+                    if recordId then
+                        -- Save the recordId in the processedPedData table using the unique key
+                        processedPedData[uniqueKey] = recordId
+                        debugPrint("Record ID " .. recordId .. " saved for unique key: " .. uniqueKey)
+                    else
+                        debugPrint("Failed to extract recordId from response: " .. json.encode(response))
+                    end
                 else
-                    debugPrint("Failed to extract recordId from response: " .. json.encode(response))
+                    warnLog("Invalid or missing 'id' in response")
                 end
             end)
             -- LICENSE RECORD
@@ -375,14 +388,18 @@ if pluginConfig.enabled then
             }
             data.replaceValues = generateReplaceValues(vehData, pluginConfig.customRecords.vehicleRegistrationValues)
             performApiRequest({data}, 'NEW_RECORD', function(response)
-                response = json.decode(response)
-                local recordId = response.id
-                if recordId then
-                    -- Save the recordId in the processedPedData table using the unique key
-                    processedVehData[uniqueKey] = recordId
-                    debugPrint("Record ID " .. recordId .. " saved for unique key: " .. uniqueKey)
+                local success, response = pcall(json.decode, response)
+                if success and type(response) == "table" and response.id ~= nil then
+                    local recordId = response.id
+                    if recordId then
+                        -- Save the recordId in the processedPedData table using the unique key
+                        processedVehData[uniqueKey] = recordId
+                        debugPrint("Record ID " .. recordId .. " saved for unique key: " .. uniqueKey)
+                    else
+                        debugPrint("Failed to extract recordId from response: " .. json.encode(response))
+                    end
                 else
-                    debugPrint("Failed to extract recordId from response: " .. json.encode(response))
+                    warnLog("Invalid or missing 'id' in response")
                 end
             end)
             if vehData.bolo then
