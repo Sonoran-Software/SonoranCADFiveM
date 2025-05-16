@@ -21,6 +21,8 @@ function dumpInfo()
     local version = GetResourceMetadata(GetCurrentResourceName(), "version", 0)
     local pluginList, loadedPlugins, disabledPlugins = GetPluginLists()
     local pluginVersions = {}
+    local versionFile = LoadVersionFile()
+    local versions = json.decode(versionFile)
     local cadVariables = { ["netPort"] = GetConvar("netPort", "Unknown")}
     local variableList = ""
     for k, v in pairs(cadVariables) do
@@ -28,7 +30,7 @@ function dumpInfo()
     end
     for k, v in pairs(pluginList) do
         if Config.plugins[v] then
-            table.insert(pluginVersions, ("%s [%s/%s]"):format(v, Config.plugins[v].version, Config.plugins[v].latestVersion))
+            table.insert(pluginVersions, ("%s [%s/%s]"):format(v, Config.plugins[v].configVersion, versions.submoduleConfigs[v].version))
         end
     end
     local coreConfig = {}

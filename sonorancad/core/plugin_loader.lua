@@ -6,7 +6,7 @@
     Provides logic for checking loaded plugins after startup
 ]]
 
-local function LoadVersionFile()
+function LoadVersionFile()
     local f = LoadResourceFile(GetCurrentResourceName(), ("version.json"))
     if f then
         return f
