@@ -312,15 +312,24 @@ SetHttpHandler(function(req, res)
 				}))
 			else
 				local pluginsFormatted = {}
-				for name, plugin in pairs(Config.plugins) do
-					local pl = plugin
-					for k, v in pairs(pl) do
-						if type(v) == 'function' then
-							debugLog('replacing a function')
-							pl[k] = 'function'
+				-- Helper function to recursively replace functions
+				local function sanitizeTable(t)
+					local sanitized = {}
+					for k, v in pairs(t) do
+						if type(v) == "function" then
+							debugLog("Replacing a function at key: " .. tostring(k))
+							sanitized[k] = "function"
+						elseif type(v) == "table" then
+							sanitized[k] = sanitizeTable(v) -- recursive call
+						else
+							sanitized[k] = v
 						end
 					end
-					table.insert(pluginsFormatted, name .. ': ' .. json.encode(pl))
+					return sanitized
+				end
+				for name, plugin in pairs(Config.plugins) do
+					local sanitizedPlugin = sanitizeTable(plugin)
+					table.insert(pluginsFormatted, name .. ": " .. json.encode(sanitizedPlugin))
 				end
 				res.send(json.encode({
 					['status'] = 'ok',
@@ -495,9 +504,10 @@ SetHttpHandler(function(req, res)
 			end
 			-- Respond to the request with the bodycam image or relevant information
 		else
-			-- Handle the case where the required parameters are missing
-			print('Missing \'ident\' or \'image\' parameter')
-			-- Respond with an error or a message indicating the missing parameters
+			res.send(json.encode({
+				error = 'Missing ident or image parameter'
+			}))
+			return
 		end
 	elseif path == '/' then
 		local html = LoadResourceFile(GetCurrentResourceName(), '/core/html/index.html')

@@ -1,16 +1,50 @@
 var unzipper = require("unzipper");
 var fs = require("fs");
+let updaterIgnore = { ignore: [] };
+
+try {
+	const raw = fs.readFileSync(GetResourcePath(GetCurrentResourceName()) + "/configuration/updateIgnore.json", "utf8");
+	updaterIgnore = JSON.parse(raw);
+} catch (err) {
+	console.warn("Failed to load updateIgnore.json, defaulting to empty ignore list.");
+}
 
 exports('UnzipFile', (file, dest) => {
-    try {
-		fs.createReadStream(file).pipe(unzipper.Extract({ path: dest}).on('close', () => {
-			emit("unzipCoreCompleted", true);
-		}).on('error', (error) => {
-			emit("unzipCoreCompleted", false, error);
-		}));
-	} catch(ex) {
+	try {
+		if (!fs.existsSync(file)) {
+			console.error("File does not exist: " + file);
+			emit("unzipCoreCompleted", false, "File not found");
+			return;
+		}
+
+		fs.createReadStream(file)
+			.pipe(unzipper.Parse())
+			.on('entry', function(entry) {
+				const type = entry.type;
+				let fileName = entry.path;
+				const finalPath = `${dest}/${fileName}`;
+				const ignoreEntry = updaterIgnore.ignore.find(ignore => finalPath.includes(ignore.path));
+				if (ignoreEntry) {
+					emit("SonoranCAD::core:writeLog", "info", `IGNORED: ${finalPath} — ${ignoreEntry.reason}`);
+					entry.autodrain();
+				} else {
+					// Ensure parent directories exist
+					const dir = require("path").dirname(finalPath);
+					if (!fs.existsSync(dir)) {
+						fs.mkdirSync(dir, { recursive: true });
+					}
+					entry.pipe(fs.createWriteStream(finalPath));
+				}
+			})
+			.on('close', () => {
+				emit("unzipCoreCompleted", true);
+			})
+			.on('error', (error) => {
+				emit("unzipCoreCompleted", false, error);
+			});
+	} catch (ex) {
 		console.error("Failed to unzip a file: " + ex);
-		return false;
+		emit("unzipCoreCompleted", false, ex.toString());
 	}
 });
 
@@ -63,7 +97,13 @@ exports('UnzipFolder', (file, name, dest) => {
 					}
 				}
 				emit("SonoranCAD::core:writeLog", "debug", "write: " + finalPath);
-				entry.pipe(fs.createWriteStream(finalPath));
+				let ignoreEntry = updaterIgnore.ignore.find(ignore => finalPath.includes(ignore.path));
+				if (ignoreEntry) {
+					emit("SonoranCAD::core:writeLog", "info", `IGNORED: ${finalPath} — ${ignoreEntry.reason}`);
+					entry.autodrain(); // Skip writing this file
+				} else {
+					entry.pipe(fs.createWriteStream(finalPath));
+				}
 			} else {
 				entry.autodrain();
 

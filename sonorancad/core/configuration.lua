@@ -15,6 +15,8 @@ Config = {
     proxyUrl = ''
 }
 
+updaterIgnore = {}
+
 Config.RegisterPluginConfig = function(pluginName, configs)
     Config.plugins[pluginName] = {}
     for k, v in pairs(configs) do
@@ -298,6 +300,34 @@ Config.LoadPlugin = function(pluginName, cb)
         return cb({enabled = false, disableReason = 'disabled'})
     end
 end
+
+local updateIgnorePath = GetResourcePath(GetCurrentResourceName()) .. '/configuration/updateIgnore.json'
+local defaultIgnorePath = GetResourcePath(GetCurrentResourceName()) .. '/updateIgnore.DEFAULT.json'
+
+local updateIgnoreContent = LoadResourceFile(GetCurrentResourceName(), '/configuration/updateIgnore.json')
+
+if not updateIgnoreContent then
+    infoLog('No updateIgnore.json found... attempting to copy default template (updateIgnore.DEFAULT.json)')
+
+    if not CopyFile(defaultIgnorePath, updateIgnorePath) then
+        warnLog('Failed to copy updateIgnore.DEFAULT.json to updateIgnore.json')
+        warnLog('Using default ignore list. Please manually copy updateIgnore.DEFAULT.json to updateIgnore.json to suppress this warning.')
+        updateIgnoreContent = LoadResourceFile(GetCurrentResourceName(), '/configuration/updateIgnore.DEFAULT.json')
+    else
+        updateIgnoreContent = LoadResourceFile(GetCurrentResourceName(), '/configuration/updateIgnore.json')
+    end
+end
+if updateIgnoreContent then
+    local parsed = json.decode(updateIgnoreContent)
+    if parsed and type(parsed) == "table" then
+        updaterIgnore = parsed
+    else
+        warnLog('updateIgnore file exists but is not valid JSON. Defaulting to empty list.')
+    end
+else
+    warnLog('Unable to load any updateIgnore content.')
+end
+
 
 local conf = LoadResourceFile(GetCurrentResourceName(),
                               '/configuration/config.json')

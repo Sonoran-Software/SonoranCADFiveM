@@ -1,31 +1,149 @@
 <!DOCTYPE html>
 <html>
 <head>
-	<title>SonoranCAD Info Page</title>
+    <title>SonoranCAD Info Page</title>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta http-equiv="Content-Type" content="text/html;charset=utf-8">
+    <style>
+        body {
+            background-color: #111;
+            color: #fff;
+            font-family: 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            margin: 0;
+            padding: 30px;
+        }
 
-	<meta http-equiv="X-UA-Compatible" content="IE=edge">
-	<meta http-equiv="Content-Type" content="text/html;charset=utf-8">
+        h1 {
+            color: #ff3333;
+            text-align: center;
+        }
+
+        .container {
+            width: 95vw;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        #passwordDiv {
+        background-color: #1a1a1a;
+        border: 1px solid #ff3333;
+        padding: 20px;
+        margin-bottom: 20px;
+        border-radius: 8px;
+        width: 60vw;
+        max-width: 60vw;
+        box-sizing: border-box;
+        }
+
+        #infoDiv, #consoleDiv, #debugDiv {
+        background-color: #1a1a1a;
+        border: 1px solid #ff3333;
+        padding: 20px;
+        margin-bottom: 20px;
+        border-radius: 8px;
+        width: 90vw;
+        max-width: 90vw;
+        box-sizing: border-box;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        white-space: pre-wrap;
+        }
+
+        pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: #00ffcc;
+        background-color: #0f0f0f;
+        padding: 10px;
+        border-radius: 6px;
+        overflow-x: auto;
+        }
+
+
+        #infoDiv, #consoleDiv, #debugDiv {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .form-group {
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        input[type="text"] {
+            padding: 6px;
+            border-radius: 4px;
+            border: none;
+            width: 250px;
+            background-color: #333;
+            color: white;
+        }
+
+        input[type="button"] {
+            background-color: #ff3333;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin-left: 5px;
+            cursor: pointer;
+        }
+
+        input[type="button"]:hover {
+            background-color: #e60000;
+        }
+
+        #debugHeader, #infoHeader, #consoleHeader {
+            color: #ffcc00;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        #errorDiv {
+            color: #ff6666;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+    </style>
 </head>
 <body>
-    <div id="passwordDiv">
-        <form>
-            <p>API Key: <input type="text" id="password" name="password"/></p>
-                <input type="button" id="apisubmit" value="Get Configuration"/> <br/><br/>
-                Console Input: <input type="text" id="consoleinput" name="consoleinput" width="150"/> <input type="button" id="consolesubmit" value="Send Command"/>
-            </p>
-        </form>
+    <h1>SonoranCAD Admin Tool</h1>
+    <div class="container">
+        <div id="passwordDiv">
+            <div class="form-group">
+                <label>API Key:</label><br />
+                <input type="text" id="password" name="password" />
+            </div>
+            <div class="form-group">
+                <input type="button" id="apisubmit" value="Get Configuration" />
+            </div>
+            <div class="form-group">
+                <label>Console Input:</label><br />
+                <input type="text" id="consoleinput" name="consoleinput" />
+            </div>
+            <div
+                class="form-group">
+                <input type="button" id="consolesubmit" value="Execute Command" />
+            </div>
+        </div>
+        <div id="errorDiv"></div>
+        <div id="infoHeader"><p>SonoranCAD Configuration</p></div>
+        <div id="infoDiv"></div>
+        <div id="infoHeader"><p>Server Console Output</p></div>
+        <div id="consoleDiv"></div>
+        <div id="debugHeader"><p>Last 50 Debug Messages</p></div>
+        <div id="debugDiv"></div>
     </div>
-    <div id="errorDiv"></div>
-    <div id="infoDiv"></div>
-    <div id="consoleDiv"></div>
-    <div id="debugHeader" style="display:none"><p>LAST 50 DEBUG MESSAGES</p></div>
-    <div id="debugDiv"></div>
 
     <script type="text/javascript">
-        const api = document.getElementById("apisubmit")
-        const console = document.getElementById("consolesubmit")
-        
-        console.addEventListener('click', e => {
+        const api = document.getElementById("apisubmit");
+        const consoleBtn = document.getElementById("consolesubmit");
+
+        consoleBtn.addEventListener('click', e => {
             fetch('/sonorancad/console', {
                 method: 'post',
                 body: JSON.stringify({
@@ -40,9 +158,10 @@
                     consoleDiv.innerHTML = res.output;
                     document.getElementById("errorDiv").innerHTML = "";
                 }
-                document.getElementById("#consoleinput").innerHTML = "";
-            })
+                document.querySelector("#consoleinput").value = "";
+            });
         });
+
         api.addEventListener('click', e => {
             fetch('/sonorancad/info', {
                 method: 'post',
@@ -50,27 +169,29 @@
                     password: document.querySelector("#password").value
                 })
             }).then(res => res.json()).then(res => {
-                let passDiv = document.getElementById("passwordDiv");
                 let infoDiv = document.getElementById("infoDiv");
                 let consoleDiv = document.getElementById("consoleDiv");
                 let debugDiv = document.getElementById("debugDiv");
                 let debugHeader = document.getElementById("debugHeader");
+
                 if (res.error) {
-                    infoDiv.style.color = '#aa0000';
+                    infoDiv.style.color = '#ff6666';
                     infoDiv.innerHTML = "An error occurred: " + res.error;
-                    infoDiv.style.display == "none";
                 } else {
-                    infoDiv.style.color = '#000000';
-                    infoDiv.style.display == "block";
-               //     passDiv.style.display == "none";
-                    infoDiv.innerHTML = res.cadInfo
-                    infoDiv.innerHTML += res.config
-                    consoleDiv.innerHTML = res.console
-                    debugDiv.innerHTML = res.debug
-                    debugHeader.style = "display:block;"
+                    infoDiv.style.color = '#ffffff';
+                    let configPretty;
+                    try {
+                        configPretty = JSON.stringify(JSON.parse(res.config), null, 2);
+                    } catch {
+                        configPretty = res.config; // fallback if it's not valid JSON
+                    }
+                    infoDiv.innerHTML = `<pre>${res.cadInfo}</pre><br/><br/><pre>${configPretty}</pre>`;
+                    consoleDiv.innerHTML = res.console;
+                    debugDiv.innerHTML = res.debug;
+                    debugHeader.style.display = "block";
                 }
-            })
-        })
+            });
+        });
     </script>
 </body>
 </html>

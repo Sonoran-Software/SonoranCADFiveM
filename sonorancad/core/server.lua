@@ -382,21 +382,65 @@ removeWithSubtype = function(subType, cb)
 		end
 	end)
 end
-call911 = function(caller, location, description, postal, plate, cb)
-	exports['sonorancad']:performApiRequest({
-		{
-			['serverId'] = GetConvar('sonoran_serverId', 1),
-			['isEmergency'] = true,
-			['caller'] = caller,
-			['location'] = location,
-			['description'] = description,
-			['metaData'] = {
-				['plate'] = plate,
-				['postal'] = postal
-			}
-		}
-	}, 'CALL_911', cb)
+call911 = function(caller, location, description, postal, plate, cb, coords, customMeta)
+    -- Base payload
+    local payload = {
+        ['serverId'] = GetConvar('sonoran_serverId', 1),
+        ['isEmergency'] = true,
+        ['caller'] = caller,
+        ['location'] = location,
+        ['description'] = description,
+        ['metaData'] = {
+            ['plate'] = plate,
+            ['postal'] = postal
+        }
+    }
+
+    -- If coords is a table with x/y/z, add it to the payload
+    if coords and type(coords) == "table" and coords.x and coords.y then
+        payload['coords'] = coords
+    end
+
+    -- If customMeta is a table, merge it into the metaData
+    if customMeta and type(customMeta) == "table" then
+        for k, v in pairs(customMeta) do
+            payload.metaData[k] = v
+        end
+    end
+
+    -- Send the API request
+    exports['sonorancad']:performApiRequest({ payload }, 'CALL_911', cb)
 end
+
+createDispatchCall = function(origin, status, priority, block, address, postal, title, code, primary, trackPrimary, description, notes, metaData, units, cb)
+    local dispatchData = {
+        serverId = GetConvar('sonoran_serverId', 1),
+        origin = origin or 0,
+        status = status or 0,
+        priority = priority or 1,
+        block = block or "",
+        address = address or "",
+        postal = postal or "",
+        title = title or "New Call",
+        code = code or "",
+        primary = primary or 0,
+        trackPrimary = trackPrimary == nil and false or trackPrimary,
+        description = description or "",
+        notes = notes or {},         -- expects array of note objects if any
+        metaData = metaData or {},   -- optional extra metadata
+        units = units or {}          -- expects array of unit Steam IDs or similar
+    }
+
+    exports['sonorancad']:performApiRequest({
+        {
+            id = GetConvar("sonoran_community_id", "YOUR_COMMUNITY_ID"),
+            key = GetConvar("sonoran_api_key", "YOUR_API_KEY"),
+            type = "NEW_DISPATCH",
+            data = { dispatchData }
+        }
+    }, "NEW_DISPATCH", cb)
+end
+
 addTempBlipData = function(blipId, blipData, waitSeconds, returnToData)
 	exports['sonorancad']:performApiRequest({
 		{
@@ -528,4 +572,5 @@ exports('setCallPostal', setCallPostal)
 exports('performLookup', performLookup)
 exports('checkCADSubscriptionType', checkCADSubscriptionType)
 exports('getDispatchStatus', getDispatchStatus)
+exports('createDispatchCall', createDispatchCall)
 -- Jordan - CAD Utils

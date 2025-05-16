@@ -188,7 +188,7 @@ if pluginConfig.enabled then
             SendMessage("error", source, "Due to system limitations, you must be logged into the CAD to self attach.")
             return
         end
-        
+
         -- Fetch if call hasn't been responded to yet
         local call = GetEmergencyCache()[callId]
         if call == nil then
@@ -220,10 +220,15 @@ if pluginConfig.enabled then
             debugLog(("Creating new call request...(no mapped call for %s)"):format(callId))
             local postal = ""
             if isPluginLoaded("postals") and callerPlayerId ~= nil then
-                if PostalsCache[tonumber(callerPlayerId)] ~= nil then
-                    postal = PostalsCache[tonumber(callerPlayerId)]
+                if PostalsCache ~= nil then
+                    if PostalsCache[tonumber(callerPlayerId)] ~= nil then
+                        postal = PostalsCache[tonumber(callerPlayerId)]
+                    else
+                        debugLog("Failed to obtain postal. "..json.encode(PostalsCache))
+                        return
+                    end
                 else
-                    debugLog("Failed to obtain postal. "..json.encode(PostalsCache))
+                    debugLog("PostalsCache is nil")
                     return
                 end
             end
@@ -246,15 +251,15 @@ if pluginConfig.enabled then
                 metaData['z'] = LocationCache[source].coordinates.z
             end
             local payload = {   serverId = Config.serverId,
-                                origin = 0, 
-                                status = 1, 
+                                origin = 0,
+                                status = 1,
                                 priority = 2,
                                 block = "",
                                 code = "",
                                 postal = (postal ~= nil and postal or ""),
-                                address = (call.location ~= nil and call.location or "Unknown"), 
+                                address = (call.location ~= nil and call.location or "Unknown"),
                                 title = title,
-                                description = (call.description ~= nil and call.description or ""), 
+                                description = (call.description ~= nil and call.description or ""),
                                 isEmergency = call.isEmergency,
                                 notes = {
                                     {time = '00:00:00', label = 'Dispatch', type = 'text', content = 'Officer Responding'}
@@ -369,7 +374,7 @@ if pluginConfig.enabled then
                     end
                 end
             end,
-            ["CALL_CLOSE"] = function() 
+            ["CALL_CLOSE"] = function()
                 debugLog("CALL_CLOSE fired "..json.encode(dispatchData))
                 if dispatchData == nil or dispatchData.dispatch == nil then
                     debugLog("nil value detected, ignore it")
@@ -386,10 +391,10 @@ if pluginConfig.enabled then
                 end
                 clearNotes(dispatchData.dispatch.callId)
             end,
-            ["CALL_NOTE"] = function() 
+            ["CALL_NOTE"] = function()
                 TriggerEvent("SonoranCAD::dispatchnotify:CallNote", dispatchData.callId, dispatchData.notes)
             end,
-            ["CALL_SELF_CLEAR"] = function() 
+            ["CALL_SELF_CLEAR"] = function()
                 TriggerEvent("SonoranCAD::dispatchnotify:CallSelfClear", dispatchData.units)
             end
         }
@@ -402,7 +407,7 @@ if pluginConfig.enabled then
         if before.dispatch.primary ~= after.dispatch.primary then
             -- Primary Unit Updated, remove tracking from old unit.
             local unit = GetUnitCache()[GetUnitById(before.dispatch.primary)]
-            if unit ~= nil then 
+            if unit ~= nil then
                 local officerId = GetSourceByApiId(unit.data.apiIds)
                 TriggerClientEvent("SonoranCAD::dispatchnotify:StopTracking", officerId)
             end
@@ -428,7 +433,7 @@ if pluginConfig.enabled then
         else
             TriggerClientEvent("SonoranCAD::dispatchnotify:StopTracking", officerId)
         end
-    end)       
+    end)
 
 
     AddEventHandler("SonoranCAD::pushevents:UnitDetach", function(call, unit)
@@ -552,7 +557,7 @@ if pluginConfig.enabled then
             end
         end
     end)
-    
+
 end
 
 end) end)
