@@ -237,7 +237,7 @@ if pluginConfig.enabled then
                 debugLog("Postals plugin not loaded, skipping postal code.")
                 failedToGetPostal = true
             end
-            if call.metaData ~= nil and (call.metaData.useCallLocation == "true" or failedToGetPostal) and call.metaData.postal ~= nil then
+            if call.metaData ~= nil and (call.metaData.useCallLocation == "true" or not failedToGetPostal) and call.metaData.postal ~= nil then
                 postal = call.metaData.postal
             end
             local title = "OFFICER RESPONSE - "..call.callId
