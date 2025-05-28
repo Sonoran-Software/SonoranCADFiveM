@@ -3,7 +3,7 @@
   "testedFxServerVersion": "5932",
   "submoduleConfigs": {
     "callcommands": {
-      "version": "2.1",
+      "version": "2.2",
       "requiresPlugins": [
         {
           "name": "locations",

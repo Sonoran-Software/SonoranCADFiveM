@@ -9,7 +9,7 @@ local config = {
     enabled = true,
     pluginName = "callcommands", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author
-    configVersion = "2.1",
+    configVersion = "2.2",
     -- put your configuration options below
     callTypes = {
         {
@@ -33,7 +33,8 @@ local config = {
     -- adds an emergency call when panic button is pressed
     addPanicCall = true,
 
-    usePositionForMetadata = false
+    usePositionForMetadata = false,
+    useCallLocation = false, -- If true, the postal of the call with be used as the call location. If false, the player's current postal will be used.
 }
 
 if config.enabled then Config.RegisterPluginConfig(config.pluginName, config) end
