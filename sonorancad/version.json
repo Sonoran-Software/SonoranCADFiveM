@@ -110,6 +110,15 @@
     "ersintegration": {
       "version": "1.1",
       "requiresPlugins": []
+    },
+    "aicrimereport": {
+      "version": "1.0",
+      "requiresPlugins": [
+        {
+          "name": "callcommands",
+          "critical": true
+        }
+      ]
     }
   }
 }
