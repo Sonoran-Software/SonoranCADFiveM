@@ -293,6 +293,7 @@ if pluginConfig.enabled then
                             ['y'] = calloutData.Coordinates.y
                         }
                     }
+                    registerApiType("NEW_DISPATCH", "emergency")
                     performApiRequest({data}, 'NEW_DISPATCH', function(response)
                         local callId = response:match("ID: {?(%w+)}?")
                         if callId then
