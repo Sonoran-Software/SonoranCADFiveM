@@ -443,6 +443,10 @@ if pluginConfig.enabled then
                 -- Set CalloutLocations to an empty array
                 callout.CalloutLocations = {}
 
+                if #callout.PedWeaponData == 0 or callout.PedWeaponData == nil then
+                    callout.PedWeaponData = {}
+                end
+
                 local data = {}
                 data.id = uid
                 data.data = callout
