@@ -45,9 +45,12 @@
                     else
                         caller = GetPlayerName(source)
                     end
+                    if not pluginConfig.useCallLocation or pluginConfig.useCallLocation == nil then
+                        pluginConfig.useCallLocation = false
+                    end
                     -- Sending the API event
                     TriggerEvent('SonoranCAD::callcommands:SendCallApi', isEmergency, caller, callLocation,
-                        description, source, nil, nil, type)
+                        description, source, nil, pluginConfig.useCallLocation, type)
                     -- Sending the user a message stating the call has been sent
                     TriggerClientEvent("chat:addMessage", source, {
                         args = {"^0^5^*[SonoranCAD]^r ",
