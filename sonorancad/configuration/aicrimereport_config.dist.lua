@@ -9,7 +9,26 @@
     pluginName = "aicrimereport", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author
     configVersion = "1.0",
+    callCoolDown = 60, -- Time in between calls in seconds
     clothingConfig = {
+        -- Array of clothing items that will be whitelisted from triggering 911 calls
+        whiteList = {
+            {
+                component = 8, -- Component ID for tops
+                drawable = 0, -- Drawable ID for the item
+                textures = {0} -- Texture ID for the item
+            },
+            {
+                component = 3, -- Component ID for torsos
+                drawable = 0, -- Drawable ID for the item
+                textures = {0} -- Texture ID for the item
+            },
+            {
+                component = 4, -- Component ID for pants
+                drawable = 0, -- Drawable ID for the item
+                textures = {0} -- Texture ID for the item
+            }
+        },
         -- ======================
         -- TOPS (component 8)
         -- ======================

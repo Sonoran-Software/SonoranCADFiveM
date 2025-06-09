@@ -7,6 +7,7 @@
 CreateThread(function()
     Config.LoadPlugin("aicrimereport", function(pluginConfig)
         if pluginConfig.enabled then
+            local lastCallEndTime  = 0    -- tracks when the most recent call finished
             local callTemplates = {
                 pistol = {
                     "Someone is waving a handgun around near %s! I think it's a %s!",
@@ -361,6 +362,24 @@ CreateThread(function()
                 return string.format(chosen, street, description)
             end
 
+            -- Helper function: returns true if `ped` is wearing ANY of the whitelisted items
+            local function isPedWhitelisted(ped)
+                for _, entry in ipairs(pluginConfig.clothingConfig.whiteList) do
+                    local comp = entry.component
+                    local draw = GetPedDrawableVariation(ped, comp)
+                    local tex = GetPedTextureVariation(ped, comp)
+
+                    if draw == entry.drawable then
+                        for _, allowedTex in ipairs(entry.textures) do
+                            if tex == allowedTex then
+                                return true
+                            end
+                        end
+                    end
+                end
+                return false
+            end
+
             -- Main function to have AI call 911
             function aiCall911(aiPed, suspectPed)
                 if activeCalls[aiPed] then
@@ -402,6 +421,7 @@ CreateThread(function()
                     local cutoff = math.floor(#fullMessage * percent)
                     local partialMessage = string.sub(fullMessage, 1, cutoff)
                     TriggerServerEvent('SonoranCAD::callcommands:SendCallApi', true, 'Bystander', street, partialMessage, PlayerPedId(), false, true)
+                    lastCallEndTime = GetGameTimer()
                     activeCalls[aiPed] = nil
                 end)
             end
@@ -422,18 +442,30 @@ CreateThread(function()
                             end
                         end
                     end
-
-                    -- If the player is armed, shooting, or in melee, have each nearby ped call 911
-                    local isArmed = IsPedArmed(playerPed, 7)
-                    local isShooting = IsPedShooting(playerPed)
-                    local isMelee = IsPedInMeleeCombat(playerPed)
-
-                    if (isArmed or isShooting or isMelee) and #nearbyPeds > 0 then
-                        for _, ai in ipairs(nearbyPeds) do
-                            aiCall911(ai, playerPed)
-                        end
+                    -- If any ped is already calling 911, skip everything this tick
+                    local someoneCalling = false
+                    -- check if activeCalls has any key:
+                    if next(activeCalls) ~= nil then
+                        someoneCalling = true
                     end
 
+                    local now = GetGameTimer()
+                    local cooldownOK = (now - lastCallEndTime >= pluginConfig.callCoolDown * 1000)
+                    local ignoreSuspect = isPedWhitelisted(playerPed)
+
+                    -- If nobody is mid-call, and the player is actively “criminal,” have each nearby ped call 911
+                    if (not someoneCalling) and cooldownOK and (not ignoreSuspect) then
+                        -- If the player is armed, shooting, or in melee, have each nearby ped call 911
+                        local isArmed = IsPedArmed(playerPed, 7)
+                        local isShooting = IsPedShooting(playerPed)
+                        local isMelee = IsPedInMeleeCombat(playerPed)
+
+                        if (isArmed or isShooting or isMelee) and #nearbyPeds > 0 then
+                            for _, ai in ipairs(nearbyPeds) do
+                                aiCall911(ai, playerPed)
+                            end
+                        end
+                    end
                     Wait(3000)
                 end
             end)
