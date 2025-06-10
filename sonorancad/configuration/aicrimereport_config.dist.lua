@@ -27,6 +27,9 @@
                 component = 4, -- Component ID for pants
                 drawable = 0, -- Drawable ID for the item
                 textures = {0} -- Texture ID for the item
+            },
+            {
+                ped = 's_m_y_cop_01', -- Ped model for police
             }
         },
         -- ======================

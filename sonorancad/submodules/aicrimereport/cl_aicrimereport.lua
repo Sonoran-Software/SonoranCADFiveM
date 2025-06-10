@@ -361,37 +361,44 @@ CreateThread(function()
                 local chosen = templates[math.random(1, #templates)]
                 return string.format(chosen, street, description)
             end
-
             -- Helper function: returns true if `ped` is wearing ANY of the whitelisted items
             local function isPedWhitelisted(ped)
-                for _, entry in ipairs(pluginConfig.clothingConfig.whiteList) do
-                    local comp = entry.component
-                    local draw = GetPedDrawableVariation(ped, comp)
-                    local tex = GetPedTextureVariation(ped, comp)
+                local pedModel = GetEntityModel(ped)
 
-                    if draw == entry.drawable then
-                        for _, allowedTex in ipairs(entry.textures) do
-                            if tex == allowedTex then
-                                return true
+                for _, entry in ipairs(pluginConfig.clothingConfig.whiteList) do
+                    -- Allow based on exact ped model
+                    if entry.ped and pedModel == GetHashKey(entry.ped) then
+                        return true
+                    end
+
+                    -- Allow based on clothing configuration
+                    if entry.component and entry.drawable and entry.textures then
+                        local comp = entry.component
+                        local draw = GetPedDrawableVariation(ped, comp)
+                        local tex = GetPedTextureVariation(ped, comp)
+
+                        if draw == entry.drawable then
+                            for _, allowedTex in ipairs(entry.textures) do
+                                if tex == allowedTex then
+                                    return true
+                                end
                             end
                         end
                     end
                 end
+
                 return false
             end
-
             -- Main function to have AI call 911
             function aiCall911(aiPed, suspectPed)
                 if activeCalls[aiPed] then
                     return
                 end
                 activeCalls[aiPed] = true
-
                 local playerDesc = getPlayerDescription(suspectPed)
                 local street = getStreetName(GetEntityCoords(suspectPed))
                 local actionType = detectActionType(suspectPed)
                 local fullMessage = getRandomCallMessage(actionType, street, playerDesc)
-
                 -- Move the AI close to the suspect, then play the call emote
                 TaskGoToEntity(aiPed, suspectPed, -1, 10.0, 2.0, 0, 0)
                 Wait(2000)
@@ -420,6 +427,7 @@ CreateThread(function()
                     local percent = math.min(elapsed / duration, 1.0)
                     local cutoff = math.floor(#fullMessage * percent)
                     local partialMessage = string.sub(fullMessage, 1, cutoff)
+                    debugLog("AI Call Message: " .. partialMessage)
                     TriggerServerEvent('SonoranCAD::callcommands:SendCallApi', true, 'Bystander', street, partialMessage, PlayerPedId(), false, true)
                     lastCallEndTime = GetGameTimer()
                     activeCalls[aiPed] = nil
@@ -445,7 +453,7 @@ CreateThread(function()
                     -- If any ped is already calling 911, skip everything this tick
                     local someoneCalling = false
                     -- check if activeCalls has any key:
-                    if next(activeCalls) ~= nil then
+                    if #activeCalls > 0 then
                         someoneCalling = true
                     end
 
@@ -453,17 +461,24 @@ CreateThread(function()
                     local cooldownOK = (now - lastCallEndTime >= pluginConfig.callCoolDown * 1000)
                     local ignoreSuspect = isPedWhitelisted(playerPed)
 
+                    debugLog("Nearby Peds: " .. #nearbyPeds)
+                    debugLog("Cooldown OK: " .. tostring(cooldownOK))
+                    debugLog("Ignore Suspect: " .. tostring(ignoreSuspect))
+                    debugLog("Someone Calling: " .. tostring(someoneCalling))
+                    debugLog("Active Calls: " .. tostring(activeCalls))
                     -- If nobody is mid-call, and the player is actively “criminal,” have each nearby ped call 911
                     if (not someoneCalling) and cooldownOK and (not ignoreSuspect) then
                         -- If the player is armed, shooting, or in melee, have each nearby ped call 911
                         local isArmed = IsPedArmed(playerPed, 7)
                         local isShooting = IsPedShooting(playerPed)
                         local isMelee = IsPedInMeleeCombat(playerPed)
-
+                        debugLog("Is Armed: " .. tostring(isArmed))
+                        debugLog("Is Shooting: " .. tostring(isShooting))
+                        debugLog("Is Melee: " .. tostring(isMelee))
+                        -- If any of these conditions are true, have the first nearby ped call 911
                         if (isArmed or isShooting or isMelee) and #nearbyPeds > 0 then
-                            for _, ai in ipairs(nearbyPeds) do
-                                aiCall911(ai, playerPed)
-                            end
+                            debugLog("AI Ped calling 911 for player crime")
+                            aiCall911(nearbyPeds[1], playerPed)
                         end
                     end
                     Wait(3000)
