@@ -347,7 +347,7 @@ if pluginConfig.enabled then
             end)
             -- LICENSE RECORD
             for _, v in pairs (pluginConfig.customRecords.licenseTypeConfigs) do
-                if pedData[v.license] then
+                if pedData[v.license] ~= "No license" then
                     local licenseData = {
                         ['user'] = '00000000-0000-0000-0000-000000000000',
                         ['useDictionary'] = true,
