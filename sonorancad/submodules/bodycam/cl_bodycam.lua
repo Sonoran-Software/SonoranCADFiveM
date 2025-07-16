@@ -1,7 +1,7 @@
-local isOn = false
+bodyCamOn = false
 local showOverlay = true
 local doAnimation = true
-local screenshotFrequency = 2000
+screenshotFrequency = 2000
 local soundLevel = 0.3
 CreateThread(function()
     Config.LoadPlugin("bodycam", function(pluginConfig)
@@ -71,7 +71,7 @@ CreateThread(function()
                     Wait(1)
                     local ped = PlayerPedId()
                     local weapon = GetSelectedPedWeapon(ped)
-                    if not isOn and pluginConfig.weapons then
+                    if not bodyCamOn and pluginConfig.weapons then
                         for _, weaponName in ipairs(pluginConfig.weapons) do
                             if weapon == GetHashKey(weaponName) then
                                 TriggerEvent('SonoranCAD::bodycam::Toggle', false)
@@ -90,10 +90,10 @@ CreateThread(function()
                     -- Only check if player is in a vehicle and is the driver
                     if veh ~= 0 and GetPedInVehicleSeat(veh, -1) == ped and GetVehicleClass(veh) == 18 then
                         if IsVehicleSirenOn(veh) then
-                            if not isOn then
+                            if not bodyCamOn then
                                 TriggerEvent('SonoranCAD::bodycam::Toggle', false)
                             end
-                        elseif not IsVehicleSirenOn(veh) and isOn then
+                        elseif not IsVehicleSirenOn(veh) and bodyCamOn then
                             TriggerEvent('SonoranCAD::bodycam::Toggle', false)
                         end
                     end
@@ -103,7 +103,7 @@ CreateThread(function()
             CreateThread(function()
                 while true do
                     Wait(1)
-                    if isOn then
+                    if bodyCamOn then
                         TriggerServerEvent('SonoranCAD::core:TakeScreenshot')
                         Wait(screenshotFrequency)
                     end
@@ -114,7 +114,7 @@ CreateThread(function()
                 while true do
                     Wait(1)
                     if pluginConfig.enableBeeps then
-                        if isOn then
+                        if bodyCamOn then
                             PlayBeepSound()
                             TriggerServerEvent('SonoranCAD::bodycam::RequestSound')
                             Wait(pluginConfig.beepFrequency)
@@ -162,8 +162,8 @@ CreateThread(function()
                         Wait(1880)
                     end
 
-                    if isOn then
-                        isOn = false
+                    if bodyCamOn then
+                        bodyCamOn = false
                         if showOverlay then
                             SendNUIMessage({
                                 type = 'toggleGif',
@@ -175,7 +175,7 @@ CreateThread(function()
                             { args = { 'Sonoran Bodycam', 'Bodycam disabled' } })
                         PlayBeepSound()
                     else
-                        isOn = true
+                        bodyCamOn = true
                         if showOverlay then
                             SendNUIMessage({
                                 type = 'toggleGif',
@@ -241,7 +241,7 @@ CreateThread(function()
                     else
                         showOverlay = true
                     end
-                    if isOn then
+                    if bodyCamOn then
                         SendNUIMessage({
                             type = 'toggleGif',
                             location = pluginConfig.overlayLocation
