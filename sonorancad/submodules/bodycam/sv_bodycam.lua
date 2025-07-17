@@ -12,6 +12,16 @@ CreateThread(function()
                     })
                     return
                 end
+                local unit = GetUnitByPlayerId(source)
+                if unit == nil then
+                    TriggerClientEvent('chat:addMessage', source, {
+                        args = {
+                            'Sonoran Bodycam',
+                            'You must be onduty in CAD to use this command.'
+                        }
+                    })
+                    return
+                end
                 if #args == 0 then
                     TriggerClientEvent('SonoranCAD::bodycam::Toggle', source, true)
                 end
