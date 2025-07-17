@@ -63,7 +63,7 @@ CreateThread(function()
             TriggerEvent('chat:addSuggestion', '/' .. pluginConfig.command, '',
                 { { name = "[freq|sound|anim|overlay]", help = "Subcommand" } })
             RegisterCommand('SonoranCAD::bodycam::Keybind', function()
-                TriggerEvent('SonoranCAD::bodycam::Toggle', true)
+                TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', true)
             end, false)
             RegisterKeyMapping('SonoranCAD::bodycam::Keybind', "Toggle BodyCam", "keyboard", pluginConfig.defaultKeybind)
             CreateThread(function()
@@ -74,7 +74,7 @@ CreateThread(function()
                     if not bodyCamOn and pluginConfig.weapons then
                         for _, weaponName in ipairs(pluginConfig.weapons) do
                             if weapon == GetHashKey(weaponName) then
-                                TriggerEvent('SonoranCAD::bodycam::Toggle', false)
+                                TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', false)
                                 break
                             end
                         end
@@ -91,10 +91,10 @@ CreateThread(function()
                     if veh ~= 0 and GetPedInVehicleSeat(veh, -1) == ped and GetVehicleClass(veh) == 18 then
                         if IsVehicleSirenOn(veh) then
                             if not bodyCamOn then
-                                TriggerEvent('SonoranCAD::bodycam::Toggle', false)
+                                TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', false)
                             end
                         elseif not IsVehicleSirenOn(veh) and bodyCamOn then
-                            TriggerEvent('SonoranCAD::bodycam::Toggle', false)
+                            TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', false)
                         end
                     end
                 end
