@@ -9,9 +9,10 @@ local config = {
     enabled = false,
     pluginName = "ersintegration", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author
-    configVersion = "1.2",
+    configVersion = "1.3",
     -- put your configuration options below
     DOBFormat = "en", -- Make sure this matches | en: dd/mm/yyyy | us: mm/dd/yyyy | iso: yyyy/mm/dd
+    clearRecordsAfter = 30, -- Clear records after this many minutes (0 = never)
     create911Call = true, -- Create a 911 call when an ERS callout is created
     createEmergencyCall = true, -- Create an emergency call when an ERS callout is accepted
     callPriority = 2, -- Priority of the call created in CAD (1-3) | Only used if createEmergencyCall is true

@@ -185,6 +185,14 @@ if pluginConfig.enabled then
             AddEventHandler('SonoranCAD::ErsIntegration::CalloutOffered', function(calloutData)
                 local uniqueKey = generateUniqueCalloutKey(calloutData)
                 debugLog('Generated unqiue key for callout: '.. uniqueKey)
+                if pluginConfig.clearRecordsAfter ~= 0 and processedCalloutOffered[uniqueKey] then
+                    local entry   = processedCalloutOffered[uniqueKey]
+                    local ageSecs = os.time() - entry.timestamp
+                    if ageSecs >= (pluginConfig.clearRecordsAfter * 60) then
+                        debugLog(("Expiring callout %s after %d minutes."):format(uniqueKey, pluginConfig.clearRecordsAfter))
+                        processedCalloutOffered[uniqueKey] = nil
+                    end
+                end
                 if processedCalloutOffered[uniqueKey] then
                     debugLog("Callout " .. calloutData.calloutId .. " already processed. Skipping 911 call.")
                 else
@@ -218,10 +226,13 @@ if pluginConfig.enabled then
                             ['postal'] = postal
                         }
                     }
+                    if pluginConfig.clearRecordsAfter ~= 0 then
+                        data.deleteAfterMinutes = pluginConfig.clearRecordsAfter
+                    end
                     performApiRequest({data}, 'CALL_911', function(response)
                         local callId = string.match(response, "ID%s+(%d+)")
                         if callId then
-                            processedCalloutOffered[uniqueKey] = callId
+                            processedCalloutOffered[uniqueKey] = {id = callId, timestamp = os.time()}
                             debugLog("Saved call ID: " .. processedCalloutOffered[uniqueKey])
                         else
                             debugLog("Could not extract call ID from response.")
@@ -236,6 +247,14 @@ if pluginConfig.enabled then
         if pluginConfig.createEmergencyCall then
             AddEventHandler('SonoranCAD::ErsIntegration::CalloutAccepted', function(calloutData)
                 local uniqueKey = generateUniqueCalloutKey(calloutData)
+                if pluginConfig.clearRecordsAfter ~= 0 and processedCalloutAccepted[uniqueKey] then
+                    local entry   = processedCalloutAccepted[uniqueKey]
+                    local ageSecs = os.time() - entry.timestamp
+                    if ageSecs >= (pluginConfig.clearRecordsAfter * 60) then
+                        debugLog(("Expiring callout %s after %d minutes."):format(uniqueKey, pluginConfig.clearRecordsAfter))
+                        processedCalloutAccepted[uniqueKey] = nil
+                    end
+                end
                 if processedCalloutAccepted[uniqueKey] then
                     debugLog("Callout " .. calloutData.calloutId .. " already processed. Skipping emergency call... adding new units")
                     if pluginConfig.autoAddCall then
@@ -293,12 +312,15 @@ if pluginConfig.enabled then
                             ['y'] = calloutData.Coordinates.y
                         }
                     }
+                    if pluginConfig.clearRecordsAfter ~= 0 then
+                        data.deleteAfterMinutes = pluginConfig.clearRecordsAfter
+                    end
                     registerApiType("NEW_DISPATCH", "emergency")
                     performApiRequest({data}, 'NEW_DISPATCH', function(response)
                         local callId = response:match("ID: {?(%w+)}?")
                         if callId then
                             -- Save the callId in the processedCalloutOffered table using the unique key
-                            processedCalloutAccepted[uniqueKey] = callId
+                            processedCalloutAccepted[uniqueKey] = {id = callId, timestamp = os.time()}
                             if processedCalloutOffered[uniqueKey] ~= nil then
                                 local payload = { serverId = Config.serverId, callId = processedCalloutOffered[uniqueKey]}
                                 performApiRequest({payload}, "REMOVE_911", function(resp)
@@ -318,6 +340,14 @@ if pluginConfig.enabled then
         ]]
         AddEventHandler('SonoranCAD::ErsIntegration::BuildChars', function(pedData)
             local uniqueKey = generateUniquePedDataKey(pedData)
+            if pluginConfig.clearRecordsAfter ~= 0 and processedPedData[uniqueKey] then
+                local entry   = processedPedData[uniqueKey]
+                local ageSecs = os.time() - entry.timestamp
+                if ageSecs >= (pluginConfig.clearRecordsAfter * 60) then
+                    debugLog(("Expiring character data %s after %d minutes."):format(uniqueKey, pluginConfig.clearRecordsAfter))
+                    processedPedData[uniqueKey] = nil
+                end
+            end
             if processedPedData[uniqueKey] then
                 debugLog("Ped " .. pedData.FirstName .. " " .. pedData.LastName .. " already processed.")
                 return
@@ -329,6 +359,9 @@ if pluginConfig.enabled then
                 ['recordTypeId'] = pluginConfig.customRecords.civilianRecordID,
                 ['replaceValues'] = {}
             }
+            if pluginConfig.clearRecordsAfter ~= 0 then
+                data.deleteAfterMinutes = pluginConfig.clearRecordsAfter
+            end
             data.replaceValues = generateReplaceValues(pedData, pluginConfig.customRecords.civilianValues)
             performApiRequest({data}, 'NEW_CHARACTER', function(response)
                 local success, response = pcall(json.decode, response)
@@ -336,7 +369,7 @@ if pluginConfig.enabled then
                     local recordId = response.id
                     if recordId then
                         -- Save the recordId in the processedPedData table using the unique key
-                        processedPedData[uniqueKey] = recordId
+                        processedPedData[uniqueKey] = {id = recordId, timestamp = os.time()}
                         debugLog("Record ID " .. recordId .. " saved for unique key: " .. uniqueKey)
                     else
                         debugLog("Failed to extract recordId from response: " .. json.encode(response))
@@ -353,6 +386,9 @@ if pluginConfig.enabled then
                         ['useDictionary'] = true,
                         ['recordTypeId'] = pluginConfig.customRecords.licenseRecordId
                     }
+                    if pluginConfig.clearRecordsAfter ~= 0 then
+                        licenseData.deleteAfterMinutes = pluginConfig.clearRecordsAfter
+                    end
                     licenseData.replaceValues = generateLicenseReplaceValues(pedData, pluginConfig.customRecords.licenseRecordValues, v)
                     licenseData.replaceValues[pluginConfig.customRecords.licenseTypeField] = v.type
                     performApiRequest({licenseData}, 'NEW_RECORD', function(_)
@@ -374,6 +410,9 @@ if pluginConfig.enabled then
                     ['recordTypeId'] = pluginConfig.customRecords.warrantRecordID,
                     ['replaceValues'] = {}
                 }
+                if pluginConfig.clearRecordsAfter ~= 0 then
+                    boloData.deleteAfterMinutes = pluginConfig.clearRecordsAfter
+                end
                 local warrantTypes = mapFlagsToBoloOptions(pedData.FlagsOrMarkers)
                 local pedReplaceData = generateReplaceValues(pedData, pluginConfig.customRecords.civilianValues)
                 for k, v in pairs(pedReplaceData) do
@@ -387,6 +426,14 @@ if pluginConfig.enabled then
         end)
         AddEventHandler('SonoranCAD::ErsIntegration::BuildVehs', function(vehData)
             local uniqueKey = generateUniqueVehDataKey(vehData)
+            if pluginConfig.clearRecordsAfter ~= 0 and processedVehData[uniqueKey] then
+                local entry   = processedVehData[uniqueKey]
+                local ageSecs = os.time() - entry.timestamp
+                if ageSecs >= (pluginConfig.clearRecordsAfter * 60) then
+                    debugLog(("Expiring vehicle data %s after %d minutes."):format(uniqueKey, pluginConfig.clearRecordsAfter))
+                    processedVehData[uniqueKey] = nil
+                end
+            end
             if processedVehData[uniqueKey] then
                 debugLog("Vehicle " .. vehData.model .. " " .. vehData.license_plate .. " already processed.")
                 return
@@ -396,14 +443,17 @@ if pluginConfig.enabled then
                 ['useDictionary'] = true,
                 ['recordTypeId'] = pluginConfig.customRecords.vehicleRegistrationRecordID,
             }
+            if pluginConfig.clearRecordsAfter ~= 0 then
+                data.deleteAfterMinutes = pluginConfig.clearRecordsAfter
+            end
             data.replaceValues = generateReplaceValues(vehData, pluginConfig.customRecords.vehicleRegistrationValues)
             performApiRequest({data}, 'NEW_RECORD', function(response)
                 local success, response = pcall(json.decode, response)
                 if success and type(response) == "table" and response.id ~= nil then
                     local recordId = response.id
                     if recordId then
-                        -- Save the recordId in the processedPedData table using the unique key
-                        processedVehData[uniqueKey] = recordId
+                        -- Save the recordId in the processedVehData table using the unique key
+                        processedVehData[uniqueKey] = {id = recordId, timestamp = os.time()}
                         debugLog("Record ID " .. recordId .. " saved for unique key: " .. uniqueKey)
                     else
                         debugLog("Failed to extract recordId from response: " .. json.encode(response))
@@ -419,6 +469,9 @@ if pluginConfig.enabled then
                     ['recordTypeId'] = pluginConfig.customRecords.boloRecordID,
                     ['replaceValues'] = {}
                 }
+                if pluginConfig.clearRecordsAfter ~= 0 then
+                    boloData.deleteAfterMinutes = pluginConfig.clearRecordsAfter
+                end
                 boloData.replaceValues = generateReplaceValues(vehData, pluginConfig.customRecords.boloRecordValues)
                 local vehReplaceData = generateReplaceValues(vehData, pluginConfig.customRecords.vehicleRegistrationValues)
                 for k, v in pairs(vehReplaceData) do

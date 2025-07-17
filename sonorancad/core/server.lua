@@ -254,34 +254,36 @@ end)
     @param silenceAlert boolean
     @param useCallLocation boolean
 ]]
-function call911(caller, location, description, postal, plate, cb, silenceAlert, useCallLocation)
+function call911(caller, location, description, postal, plate, cb, silenceAlert, useCallLocation, deleteAfter)
     if not silenceAlert then
         silenceAlert = false
     end
     if not useCallLocation then
         useCallLocation = false
     end
-	exports['sonorancad']:performApiRequest({
-		{
-			['serverId'] = GetConvar('sonoran_serverId', 1),
-			['isEmergency'] = true,
-			['caller'] = caller,
-			['location'] = location,
-			['description'] = description,
-			['metaData'] = {
-				['plate'] = plate,
-				['postal'] = postal,
-                ['useCallLocation'] = useCallLocation,
-                ['silenceAlert'] = silenceAlert
-			}
-		}
-	}, 'CALL_911', cb)
+    local data = {
+        ['serverId'] = GetConvar('sonoran_serverId', 1),
+        ['isEmergency'] = true,
+        ['caller'] = caller,
+        ['location'] = location,
+        ['description'] = description,
+        ['metaData'] = {
+            ['plate'] = plate or "",
+            ['postal'] = postal or "",
+            ['useCallLocation'] = useCallLocation,
+            ['silenceAlert'] = silenceAlert
+        }
+    }
+    if deleteAfter then
+        data['deleteAfter'] = deleteAfter
+    end
+	exports['sonorancad']:performApiRequest(data, 'CALL_911', cb)
 end
 
-RegisterNetEvent('SonoranScripts::Call911', function(caller, location, description, postal, plate, cb, silenceAlert, useCallLocation)
+RegisterNetEvent('SonoranScripts::Call911', function(caller, location, description, postal, plate, cb, silenceAlert, useCallLocation, deleteAfter)
 	call911(caller, location, description, postal, plate, function(response)
 		json.encode(response) -- Not, CB's can only be used on the server side, so we just print this here for you to see.
-	end, silenceAlert, useCallLocation)
+	end, silenceAlert, useCallLocation, deleteAfter)
 end)
 
 -- Jordan - CAD Utils
