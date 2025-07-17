@@ -21,9 +21,9 @@ local config = {
     -- Enables or disables the blinking body camera image on screen when enabled.
     enableOverlay = true,
 
-    --[[ 
+    --[[
         The position (corner) of the screen where the body camera image is displayed.
-    
+
         Options:
         - top-left
         - top-right
@@ -37,7 +37,7 @@ local config = {
 
     --[[
         Type of audio that the beeps use.
-        
+
         native: GtaV Native Sounds
 
         nui/custom: Custom Sound File
@@ -54,7 +54,7 @@ local config = {
     screenshotFrequency=2000,
 
     -- The default keybind for toggling the bodycam.
-    defaultKeybind="O",
+    defaultKeybind="",
 
     -- Automaticlly enable bodycam when lights are enabled / disabled
     autoEnableWithLights = true,
@@ -64,7 +64,7 @@ local config = {
 
     --[[
         If you want to use ped/clothing based bodycams, you can add them here.
- 
+
         Examples:
         { ped = "s_m_y_cop_01" }
         {
@@ -78,9 +78,9 @@ local config = {
             drawable = 148,
             textures = {2, 4},
         }
-        
+
         ----
-        
+
         Components:
             0  - Head
             1  - Beard
