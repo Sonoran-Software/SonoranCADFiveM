@@ -216,7 +216,6 @@ $(function () {
 			switch (event.data.key) {
 				case 'maxrows':
 					maxrows = event.data.value;
-					console.log("Rows set to " + event.data.value);
 					refreshCall();
 					break;
 				default:
@@ -383,3 +382,7 @@ function runApiCheck() {
 	$.post('https://tablet/runApiCheck');
 	$("#check-api-data").hide();
 }
+
+document.getElementById('homeButton').addEventListener('click', function() {
+	$.post('https://tablet/NUIFocusOff', JSON.stringify({}));
+});
