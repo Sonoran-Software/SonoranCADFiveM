@@ -15,6 +15,8 @@ local config = {
     -- The command name to toggle your body camera on or off.
     command="bodycam",
 
+    requireUnitDuty = true, -- if true, the player must be onduty in CAD to use the bodycam
+
     -- Enables or disables animations on start up
     enableAnimation = true,
 

@@ -67,19 +67,23 @@ CreateThread(function()
                 TriggerClientEvent('SonoranCAD::bodycam::GiveSound', -1, source, GetEntityCoords(GetPlayerPed(source)))
             end)
             RegisterNetEvent('SonoranCAD::bodycam::RequestToggle', function(manualActivation)
-                local unit = GetUnitByPlayerId(source)
-                if unit == nil then
-                    if manualActivation then
-                        TriggerClientEvent('chat:addMessage', source, {
-                            args = {
-                                'Sonoran Bodycam',
-                                'You must be onduty in CAD to use this command.'
-                            }
-                        })
+                if pluginConfig.requireUnitDuty then
+                    local unit = GetUnitByPlayerId(source)
+                    if unit == nil then
+                        if manualActivation then
+                            TriggerClientEvent('chat:addMessage', source, {
+                                args = {
+                                    'Sonoran Bodycam',
+                                    'You must be onduty in CAD to use this command.'
+                                }
+                            })
+                        end
                         return
                     end
+                    TriggerClientEvent('SonoranCAD::bodycam::Toggle', source, manualActivation)
+                else
+                    TriggerClientEvent('SonoranCAD::bodycam::Toggle', source, manualActivation)
                 end
-                TriggerClientEvent('SonoranCAD::bodycam::Toggle', source, manualActivation)
             end)
         end
     end)
