@@ -396,14 +396,6 @@ AddEventHandler('SonoranCAD::core:sendClientConfig', function()
         debugMode = Config.debugMode,
         devHiddenSwitch = Config.devHiddenSwitch,
         statusLabels = Config.statusLabels,
-        bodycamEnabled = Config.bodycamEnabled,
-        bodycamBeepFrequency = Config.bodycamBeepFrequency,
-        bodycamScreenshotFrequency = Config.bodycamScreenshotFrequency,
-        bodycamPlayBeeps = Config.bodycamPlayBeeps,
-        bodycamOverlayEnabled = Config.bodycamOverlayEnabled,
-        bodycamOverlayLocation = Config.bodycamOverlayLocation,
-        bodycamCommandToggle = Config.bodycamCommandToggle,
-        bodycamCommandChangeFrequncy = Config.bodycamCommandChangeFrequncy,
         apiVersion = Config.apiVersion,
         mode = Config.mode
     }
@@ -542,21 +534,7 @@ CreateThread(function()
     end
     Config.proxyUrl = ('https://%s/sonorancad/'):format(GetConvar('web_baseUrl',''))
     debugLog(('Set proxyUrl to %s'):format(Config.proxyUrl))
-    TriggerClientEvent('SonoranCAD::Core::InitBodycam', -1, 1, Config.apiVersion)
-end)
-
-RegisterNetEvent('SonoranCAD::Core::RequestBodycam', function()
-    if not Config.proxyUrl or Config.proxyUrl == '' then
-        -- tell client we're not ready
-        TriggerClientEvent('SonoranCAD::Core::InitBodycam', source, 0, Config.apiVersion)
-    else
-        -- tell client we're ready
-        if Config.apiVersion == -1 then
-            debugLog('API version not set, waiting for it to be set...')
-            while Config.apiVersion == -1 do Wait(1000) end
-        end
-        TriggerClientEvent('SonoranCAD::Core::InitBodycam', source, 1, Config.apiVersion)
-    end
+    TriggerClientEvent('SonoranCAD::bodycam::Init', -1, 1, Config.apiVersion)
 end)
 
 CreateThread(function()
