@@ -66,10 +66,10 @@ CreateThread(function()
                 local source = source
                 TriggerClientEvent('SonoranCAD::bodycam::GiveSound', -1, source, GetEntityCoords(GetPlayerPed(source)))
             end)
-            RegisterNetEvent('SonoranCAD::bodycam::RequestToggle', function(manualActivation)
+            RegisterNetEvent('SonoranCAD::bodycam::RequestToggle', function(manualActivation, toggle)
                 if pluginConfig.requireUnitDuty then
                     local unit = GetUnitByPlayerId(source)
-                    if unit == nil then
+                    if unit == nil and toggle then
                         if manualActivation then
                             TriggerClientEvent('chat:addMessage', source, {
                                 args = {
@@ -80,9 +80,9 @@ CreateThread(function()
                         end
                         return
                     end
-                    TriggerClientEvent('SonoranCAD::bodycam::Toggle', source, manualActivation)
+                    TriggerClientEvent('SonoranCAD::bodycam::Toggle', source, manualActivation, toggle)
                 else
-                    TriggerClientEvent('SonoranCAD::bodycam::Toggle', source, manualActivation)
+                    TriggerClientEvent('SonoranCAD::bodycam::Toggle', source, manualActivation, toggle)
                 end
             end)
         end
