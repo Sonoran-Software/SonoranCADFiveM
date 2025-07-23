@@ -69,7 +69,11 @@ CreateThread(function()
             RegisterNetEvent('SonoranCAD::bodycam::RequestToggle', function(manualActivation, toggle)
                 if pluginConfig.requireUnitDuty then
                     local unit = GetUnitByPlayerId(source)
-                    if unit == nil and toggle then
+                    if not toggle then
+                        TriggerClientEvent('SonoranCAD::bodycam::Toggle', source, manualActivation, false)
+                        return
+                    end
+                    if unit == nil then
                         if manualActivation then
                             TriggerClientEvent('chat:addMessage', source, {
                                 args = {

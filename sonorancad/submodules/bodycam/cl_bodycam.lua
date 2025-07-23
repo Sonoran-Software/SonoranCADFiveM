@@ -93,8 +93,6 @@ CreateThread(function()
                             if not bodyCamOn then
                                 TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', false, true)
                             end
-                        elseif not IsVehicleSirenOn(veh) and bodyCamOn then
-                            TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', false, false)
                         end
                     end
                 end
