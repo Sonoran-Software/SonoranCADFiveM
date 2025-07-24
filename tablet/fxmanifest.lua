@@ -4,6 +4,10 @@ games {'gta5'}
 
 ui_page 'html/index.html'
 
+shared_scripts {
+    'config.lua'
+}
+
 server_scripts {
     'sv_main.lua'
 }
@@ -17,5 +21,6 @@ files {
     'html/index.html',
     'html/style.css',
     'html/reset.css',
-    "html/script.js"
+    "html/script.js",
+    "html/tablet.png"
 }
