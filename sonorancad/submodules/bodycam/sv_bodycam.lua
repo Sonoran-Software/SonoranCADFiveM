@@ -23,7 +23,7 @@ CreateThread(function()
                     return
                 end
                 if #args == 0 then
-                    TriggerClientEvent('SonoranCAD::bodycam::Toggle', source, true)
+                    TriggerClientEvent('SonoranCAD::bodycam::CommandToggle', source)
                 end
                 if args[1] == 'freq' then
                     TriggerClientEvent('SonoranCAD::bodycam::SetScreenshotFrequency', source, args[2])

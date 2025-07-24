@@ -63,7 +63,8 @@ CreateThread(function()
             TriggerEvent('chat:addSuggestion', '/' .. pluginConfig.command, '',
                 { { name = "[freq|sound|anim|overlay]", help = "Subcommand" } })
             RegisterCommand('SonoranCAD::bodycam::Keybind', function()
-                TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', true, not bodyCamOn)
+                local turnOn = not bodyCamOn
+                TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', true, turnOn)
             end, false)
             RegisterKeyMapping('SonoranCAD::bodycam::Keybind', "Toggle BodyCam", "keyboard", pluginConfig.defaultKeybind)
             CreateThread(function()
@@ -204,6 +205,9 @@ CreateThread(function()
                             args = { 'Sonoran Bodycam', ('Current screenshot frequency is %s'):format((screenshotFrequency / 1000)) }
                         })
                     end
+                end)
+                RegisterNetEvent('SonoranCAD::bodycam::CommandToggle', function()
+                    TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', true, not bodyCamOn)
                 end)
                 RegisterNetEvent('SonoranCAD::bodycam::SetSoundLevel', function(level)
                     if level then
