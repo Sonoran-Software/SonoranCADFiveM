@@ -1,201 +1,456 @@
-/* The device with borders */
 /* Tablet Device */
 #cadDiv {
 	position: absolute;
-	top: 25%;
+	top: 5%;
 	left: 50%;
 	transform: translate(-50%, 0);
-	width: 1100px;
-	height: 525px;
+	width: 1200px;
+	height: 900px;
+	border: 20px solid #1a1a1a;
+	border-top-width: 35px;
+	border-bottom-width: 35px;
+	border-radius: 35px;
+	background: #2c2c2c;
+	box-shadow: 
+		0 4px 16px rgba(0, 0, 0, 0.2),
+		0 2px 8px rgba(0, 0, 0, 0.1);
+}
 
-	border: 20px black solid;
-	border-top-width: 25px;
-	border-bottom-width: 25px;
-	border-radius: 15px;
-	background: black;
+#cadDiv:before {
+	content: '';
+	position: absolute;
+	top: -35px;
+	left: -20px;
+	right: -20px;
+	bottom: -35px;
+	border-radius: 35px;
+	background: #1a1a1a;
+	pointer-events: none;
+	z-index: -1;
 }
-.cadDiv .content {
-	margin-left: 37%;
-	margin-bottom: 15%;
-	margin-top: 10%;
-	border: 5px;
-	border-color: yellow
-	
+
+#tabletCamera {
+	position: absolute;
+	top: -22px;
+	left: 50%;
+	transform: translateX(-50%);
+	width: 10px;
+	height: 10px;
+	background: #404040;
+	border-radius: 50%;
+	border: 1px solid #2c2c2c;
+	box-shadow: 
+		0 0 0 1px rgba(0, 0, 0, 0.3),
+		inset 0 0 2px 1px rgba(0, 0, 0, 0.5);
 }
+
+#tabletCamera:after {
+	content: '';
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: #1a1a1a;
+	box-shadow: inset 0 0 1px 1px rgba(0, 0, 0, 0.8);
+}
+
+#homeButton {
+	position: absolute;
+	bottom: -25px;
+	left: 50%;
+	transform: translateX(-50%);
+	width: 40px;
+	height: 14px;
+	border: 1px solid #404040;
+	border-radius: 7px;
+	background: #2c2c2c;
+	box-shadow: 
+		0 0 2px rgba(0, 0, 0, 0.5),
+		inset 0 0 2px rgba(255, 255, 255, 0.1);
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+#homeButton:hover {
+	background: #e74c3c;
+	border-color: #e74c3c;
+}
+
+#cadDiv .content {
+	margin: 0;
+	padding: 0;
+	width: 100%;
+	height: 100%;
+	border: none;
+}
+
+#cadFrame {
+	margin: 0;
+	padding: 0;
+	border: none;
+	width: 100%;
+	height: 100%;
+	display: block;
+	overflow: hidden;
+	pointer-events: auto;
+}
+
+/* Prevent iframe interference during drag operations */
+.dragging #cadFrame {
+	pointer-events: none;
+}
+
+/* Ensure drag elements maintain pointer events during drag */
+#hudDiv.dragging,
+#cadDiv.dragging {
+	pointer-events: auto;
+	z-index: 9999;
+}
+
+/* Hide scrollbars */
+::-webkit-scrollbar {
+    display: none;
+}
+
 #blackbar {
-	background-color: #333;
+	background-color: #1a1a1a;
 	height: 15px;
 	width: 1100px;
 	color: white;
 	font-family: 'Trebuchet MS', 'Lucida Sans Unicode', 'Lucida Grande', 'Lucida Sans', Arial, sans-serif;
-	
 }
 
 #check-api-data {
-	background-color: #e00000;
+	background-color: #e74c3c;
 	font-family: 'Trebuchet MS', 'Lucida Sans Unicode', 'Lucida Grande', 'Lucida Sans', Arial, sans-serif;
 	color: white;
 	width: 100%;
-	height:20px;
-	line-height:20px;
-	font-weight: bolder;
-	text-align:center;
+	height: 20px;
+	line-height: 20px;
+	font-weight: bold;
+	text-align: center;
 }
 
 /* Mini-Cad Hud */
 a {
 	color: white;
 	text-decoration: none; /* no underline */
-	font-size: 18px;
+	font-size: 14px;
+	transition: all 0.2s ease;
+}
+
+a:hover {
+	opacity: 0.8;
 }
 
 .control {
-	font-size: 18px;
+	font-size: 16px;
+	padding: 0 5px;
 }
 
 #hudDiv {
-	font-family: system-ui;
+	font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
 	position: absolute;
 	top: 3%;
 	left: 86%;
 	transform: translate(-50%, 0);
-	width: 300px;
-	height: 130px;
-
-	border: 1px black solid;
-	border-top-width: 1px;
-	border-bottom-width: 1px;
-	border-radius: 1px;
+	width: 360px;
+	height: auto;
+	border-radius: 8px;
+	overflow: hidden;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+	background: #2c2c2c;
+	border: 1px solid #404040;
 }
+
 #hudFrame {
 	text-align: center;
 }
+
 #hudFrame #hudHeader {
-	height: 15%;
-	background-color: rgb(70, 70, 70);
+	height: 44px;
+	background: #1a1a1a;
 	color: white;
 	display: flex;
-    justify-content: space-between;
+	justify-content: space-between;
 	align-items: center;
-	font-size: 12px;
-	padding: 0 5;
-	border-bottom: 1px solid red;
+	font-size: 13px;
+	padding: 0 16px;
+	border-bottom: 2px solid #e74c3c;
 }
+
+#hudHeaderCalls {
+	font-weight: 600;
+	color: #ffffff;
+	background: #e74c3c;
+	padding: 4px 8px;
+	border-radius: 4px;
+	font-size: 12px;
+}
+
+#hudHeaderTime {
+	font-weight: 500;
+	color: #b0b0b0;
+}
+
+#hudHeaderControls {
+	display: flex;
+	gap: 6px;
+}
+
+#hudHeaderControls .control {
+	width: 22px;
+	height: 22px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 4px;
+	background: #404040;
+	transition: all 0.2s ease;
+}
+
+#hudHeaderControls .control:hover {
+	background: #e74c3c;
+}
+
 #hudFrame #hudContent {
-	height: 65%;
-	background-color: rgb(70, 70, 70,0.8);
-	font-weight: bold;
+	height: auto;
+	min-height: 110px;
+	background: #2c2c2c;
+	font-weight: 500;
 	color: white;
 	display: flex;
-    justify-content: space-evenly;
-    align-items: center;
+	justify-content: space-evenly;
+	align-items: center;
 	flex-direction: column;
+	padding: 16px;
 }
+
 #hudFrame #hudContent #callCode {
-	font-size: 14px;
+	font-size: 17px;
+	color: #e74c3c;
+	font-weight: 700;
+	margin-bottom: 6px;
+	letter-spacing: 0.3px;
 }
+
 #hudFrame #hudContent #callTitle {
-	font-size: 12px;
+	font-size: 14px;
+	margin-bottom: 6px;
+	color: #ffffff;
+	font-weight: 600;
+	line-height: 1.3;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	display: block;
 }
+
 #hudFrame #hudContent #callLocation {
-	font-size: 12px;
+	font-size: 13px;
+	margin-bottom: 10px;
+	color: #b0b0b0;
+	background: #404040;
+	padding: 4px 8px;
+	border-radius: 4px;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	display: block;
 }
+
 #hudFrame #hudContent #callUnits {
 	font-size: 12px;
 	display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
+	flex-direction: row;
+	flex-wrap: wrap;
+	justify-content: center;
+	align-items: center;
+	gap: 4px;
+	padding: 6px 0;
 }
+
 #hudFrame #hudContent #callUnits #nounits {
-	color: tomato;
+	color: #e74c3c;
+	font-style: italic;
+	opacity: 0.9;
+	background: #1a1a1a;
+	padding: 3px 6px;
+	border-radius: 3px;
+	border: 1px solid #404040;
 }
+
 #hudFrame #hudContent #callUnits .unit {
-	background-color: #9c27b0;
-    border-radius: 4px;
-    padding: 0.5px 3px;
+	background: #e74c3c;
+	border-radius: 3px;
+	padding: 3px 6px;
+	font-size: 11px;
+	letter-spacing: 0.3px;
+	font-weight: 600;
+	max-width: 80px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	display: inline-block;
 }
-/* #hudFrame .hudContent #callUnits .unavailable {
-	background-color: rgb(193, 0, 21);
-    border-radius: 4px;
-    padding: 0.5px 3px;
-}
-#hudFrame .hudContent #callUnits .busy {
-	background-color: rgb(255, 111, 0);
-    border-radius: 4px;
-    padding: 0.5px 3px;
-}
-#hudFrame .hudContent #callUnits .available {
-	background-color: rgb(38, 166, 154);
-    border-radius: 4px;
-    padding: 0.5px 3px;
-}
-#hudFrame .hudContent #callUnits .enroute {
-	background-color: rgb(38, 83, 166);;
-    border-radius: 4px;
-    padding: 0.5px 3px;
-}
-#hudFrame .hudContent #callUnits .onscene {
-	background-color: rgb(38, 166, 66);
-    border-radius: 4px;
-    padding: 0.5px 3px;
-} */
 
 #hudFrame #hudFooter {
-	height: 20%;
-	background-color: rgb(70, 70, 70);
+	height: 44px;
+	background: #1a1a1a;
 	color: white;
 	display: flex;
-    justify-content: space-between;
+	justify-content: space-between;
 	align-items: center;
-	padding: 0 5;
+	padding: 0 12px;
+	border-top: 1px solid #404040;
+}
+
+#hudFrame #hudFooter a {
+	padding: 6px 10px;
+	border-radius: 4px;
+	transition: all 0.2s ease;
+	font-weight: 500;
+	font-size: 12px;
+	background: #404040;
+}
+
+#hudFrame #hudFooter a:hover {
+	background: #e74c3c;
 }
 
 #hudFrame #hudFooter .hidden {
-	color: rgb(70, 70, 70);
+	color: rgba(70, 70, 70, 0.3);
+	background: #2c2c2c;
+	border: 1px solid #404040;
+	cursor: not-allowed;
+}
+
+#hudFrame #hudFooter .hidden:hover {
+	background: #2c2c2c;
+}
+
+#hudFrame #hudFooter a.active {
+	background: #e74c3c;
+	color: white;
+}
+
+#hudFrame #hudFooter a.details-active {
+	background: #e74c3c;
+	color: white;
 }
 
 #hudDetails {
-	padding: 10px 10px;
-	background-color: rgb(70, 70, 70,0.8);
+	padding: 12px 16px;
+	background: #262626;
+	font-weight: 500;
+	color: white;
+	display: block;
+	border-top: 1px solid #404040;
+}
+
+#hudDetails .label {
+	padding-bottom: 6px;
+	color: #e74c3c;
+	font-size: 12px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.3px;
+	display: block;
+	margin-top: 8px;
+}
+
+#hudDetails .label:first-child {
+	margin-top: 0;
+}
+
+#hudDetails #callDescription {
+	font-size: 13px;
+	padding: 8px;
+	line-height: 1.4;
+	color: #e0e0e0;
+	background: #2c2c2c;
+	border-radius: 4px;
+	border: 1px solid #404040;
+	margin-bottom: 8px;
+	display: block;
+	word-wrap: break-word;
+	overflow-wrap: break-word;
+	max-width: 100%;
+}
+
+#hudDetails #callNotes {
+	display: block;
+	width: 100%;
+}
+
+#hudDetails #callNotes span {
+	font-size: 12px;
+	padding: 6px 8px;
+	border-bottom: 1px solid #404040;
+	background: #2c2c2c;
+	border-radius: 3px;
+	line-height: 1.3;
+	display: block;
+	margin-bottom: 4px;
+	word-wrap: break-word;
+	overflow-wrap: break-word;
+	max-width: 100%;
+}
+
+#hudDetails #callNotes span:last-child {
+	border-bottom: none;
+	margin-bottom: 0;
+}
+
+#hudInput {
+	height: 48px;
+	background: #1a1a1a;
+	color: white;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 0 12px;
+	border-top: 1px solid #404040;
+	gap: 8px;
+}
+
+#hudInput input {
+	background: #2c2c2c;
+	color: white;
+	border: 1px solid #404040;
+	border-radius: 4px;
+	padding: 6px 10px;
+	transition: all 0.2s ease;
+	font-size: 13px;
+}
+
+#hudInput input:focus {
+	outline: none;
+	border-color: #e74c3c;
+	background: #2c2c2c;
+}
+
+#hudInput #newnote {
+	width: 85%;
+	font-size: 13px;
+}
+
+#hudInput #addnote {
+	width: 15%;
+	background: #e74c3c;
+	cursor: pointer;
 	font-weight: bold;
 	color: white;
-	display: flex;
-    justify-content: space-evenly;
-    align-items: flex-start;
-	flex-direction: column;
+	border: none;
+	border-radius: 4px;
+	transition: all 0.2s ease;
 }
-#hudDetails .label {
-	padding-bottom: 5px;
-}
-#hudDetails #callDescription {
-	font-size: 12px;
-	padding-bottom: 5px;
-}
-#hudDetails #callNotes {
-	display: flex;
-    flex-direction: column;
-}
-#hudDetails #callNotes span {
-	font-size: 11px;
-}
-#hudInput {
-	height: 20%;
-	background-color: rgb(70, 70, 70);
-	color: white;
-	display: flex;
-    justify-content: space-between;
-	align-items: center;
-	padding: 0 5;
-}
-#hudInput input {
-	background-color: rgb(70, 70, 70,0.8);
-	color: white;
-}
-#hudInput #newnote {
-	width: 90%;
-}
-#hudInput #addnote {
-	width: 10%;
+
+#hudInput #addnote:hover {
+	background: #c0392b;
 }

@@ -5,7 +5,27 @@ myident = nil
 isMiniVisible = false
 
 -- Debugging Information
-isDebugging = true
+isDebugging = false
+
+Framework = nil
+Core = nil
+
+if Config.Framework == "qb" and GetResourceState("qb-core") == "started" then
+    Framework = exports["qb-core"]:GetCoreObject()
+    Core = "qb"
+elseif Config.Framework == "esx" and GetResourceState("es_extended") == "started" then
+    Framework = exports["es_extended"]:getSharedObject()
+    Core = "esx"
+elseif GetResourceState("qb-core") == "started" then
+    Framework = exports["qb-core"]:GetCoreObject()
+    Core = "qb"
+elseif GetResourceState("es_extended") == "started" then
+    Framework = exports["es_extended"]:getSharedObject()
+    Core = "esx"
+else
+    Framework = nil
+    Core = nil
+end
 
 function DebugMessage(message, module)
 	if not isDebugging then return end
@@ -14,7 +34,7 @@ function DebugMessage(message, module)
 end
 
 -- Initialization Procedure
-Citizen.CreateThread(function()
+CreateThread(function()
 	Wait(1000)
 	-- Set Default Module Sizes
 	InitModuleSize("cad")
@@ -37,6 +57,38 @@ Citizen.CreateThread(function()
 
 	TriggerServerEvent("SonoranCAD::mini:CallSync_S")
 
+	-- Vehicle Exit/Enter Detection for Auto-Hide Mini-CAD
+	if Config.AutoHideOnVehicleExit then
+		local wasInVehicle = false
+		local miniCadWasVisible = false
+		
+		CreateThread(function()
+			while true do
+				local playerPed = GetPlayerPed(-1)
+				local isInVehicle = IsPedInAnyVehicle(playerPed, false)
+				
+				-- Check if player just exited a vehicle
+				if wasInVehicle and not isInVehicle then
+					if isMiniVisible then
+						miniCadWasVisible = true
+						DisplayModule("hud", false)
+						DebugMessage("Auto-hiding mini-CAD on vehicle exit")
+					end
+				-- Check if player just entered a vehicle
+				elseif not wasInVehicle and isInVehicle then
+					if miniCadWasVisible then
+						DisplayModule("hud", true)
+						miniCadWasVisible = false
+						DebugMessage("Auto-showing mini-CAD on vehicle enter")
+					end
+				end
+				
+				wasInVehicle = isInVehicle
+				Wait(50)
+			end
+		end)
+	end
+
 	-- Disable Controls Loop
 	while true do
 		if nuiFocused then	-- Disable controls while NUI is focused.
@@ -45,17 +97,15 @@ Citizen.CreateThread(function()
 			DisableControlAction(0, 142, nuiFocused) -- MeleeAttackAlternate
 			DisableControlAction(0, 106, nuiFocused) -- VehicleMouseControlOverride
 		end
-		Citizen.Wait(0) -- Yield until next frame.
+		Wait(0) -- Yield until next frame.
 	end
 end)
 
 function InitModuleSize(module)
-	-- Check if the size of the specified module is already configured.
 	local moduleWidth = GetResourceKvpString(module .. "width")
 	local moduleHeight = GetResourceKvpString(module .. "height")
 	if moduleWidth ~= nil and moduleHeight ~= nil then
 		DebugMessage("retrieving saved presets", module)
-		-- Send message to NUI to resize the specified module.
 		SetModuleSize(module, moduleWidth, moduleHeight)
 		SendNUIMessage({
 			type = "refresh",
@@ -68,7 +118,6 @@ function InitModuleConfig(module)
 	local moduleMaxRows = GetResourceKvpString(module .. "maxrows")
 	if moduleMaxRows ~= nil then
 		DebugMessage("retrieving config presets", module)
-		-- Send messsage to NUI to update config of specified module.
 		SetModuleConfigValue(module, "maxrows", moduleMaxRows)
 		SendNUIMessage({
 			type = "refresh",
@@ -143,6 +192,7 @@ end
 
 -- Print a chat message to the current player
 function PrintChatMessage(text)
+	exports['qbx_core']:Notify(text, "error")
 	TriggerEvent('chatMessage', "System", { 255, 0, 0 }, text)
 end
 
@@ -163,7 +213,11 @@ RegisterNetEvent("SonoranCAD::mini:OpenMini:Return")
 AddEventHandler('SonoranCAD::mini:OpenMini:Return', function(authorized, ident)
 	myident = ident
 	if authorized then
-		DisplayModule("hud", true)
+		if not isMiniVisible then
+			DisplayModule("hud", true)
+		else
+			DisplayModule("hud", false)
+		end
 		if not GetResourceKvpString("shownTutorial") then
 			ShowHelpMessage()
 			SetResourceKvp("shownTutorial", "yes")
@@ -186,9 +240,66 @@ function ShowHelpMessage()
 	PrintChatMessage("Keybinds: Attach/Detach [K], Details [L], Previous/Next [LEFT/RIGHT], changable in settings!")
 end
 
+function IsInWhitelistedVehicle()
+	local ped = PlayerPedId()
+	if not IsPedInAnyVehicle(ped, false) then return false end
+	local veh = GetVehiclePedIsIn(ped, false)
+	if veh and veh ~= 0 then
+		local model = GetEntityModel(veh)
+		for _, allowed in ipairs(Config.AccessRestrictions.AllowedVehicles or {}) do
+			if model == GetHashKey(allowed) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+function CheckJobRestriction()
+	local jobAllowed = true
+	if Config.AccessRestrictions.RestrictByJob then
+		jobAllowed = false
+		local playerJob = nil
+		if Core == "qb" then
+			local Player = Framework.Functions.GetPlayerData()
+			playerJob = Player.job.name
+		elseif Core == "esx" then
+			local xPlayer = Framework.GetPlayerData()
+			playerJob = xPlayer.job.name
+		end
+		
+		if playerJob then
+			for _, allowedJob in pairs(Config.AccessRestrictions.AllowedJobs) do
+				if playerJob == allowedJob then
+					jobAllowed = true
+					break
+				end
+			end
+		end
+	end
+	
+	local vehicleAllowed = true
+	if Config.AccessRestrictions.RestrictByVehicle then
+		vehicleAllowed = IsInWhitelistedVehicle()
+	end
+	
+	return jobAllowed and vehicleAllowed
+end
+
 -- Mini Module Commands
 RegisterCommand("minicad", function(source, args, rawCommand)
-	TriggerServerEvent("SonoranCAD::mini:OpenMini")
+	if not CheckJobRestriction() then
+		PrintChatMessage("You do not have permission to access the Mini-CAD.")
+		return
+	end
+	
+	local ped = PlayerPedId()
+	local inVehicle = IsPedInAnyVehicle(ped, false)
+	if Config.AllowMiniCadOnFoot or inVehicle then
+		TriggerServerEvent("SonoranCAD::mini:OpenMini")
+	else
+		PrintChatMessage("You must be in a vehicle to access the Mini-CAD.")
+	end
 end, false)
 RegisterKeyMapping('minicad', 'Mini CAD', 'keyboard', '')
 
@@ -201,7 +312,7 @@ end, false)
 RegisterKeyMapping('minicadp', 'Previous Call', 'keyboard', 'LEFT')
 
 RegisterCommand("minicada", function(source, args, rawCommand)
-	print("ismini "..tostring(isMiniVisible))
+	print("attach")
 	if not isMiniVisible then return end
 	SendNUIMessage({ type = "command", key="attach" })
 end, false)
@@ -243,13 +354,22 @@ TriggerEvent('chat:addSuggestion', '/minicadrows', "Specify max number of call n
 	{ name="rows", help="any number (default 10)" }
 })
 
+
 -- CAD Module Commands
 RegisterCommand("showcad", function(source, args, rawCommand)
+	if not CheckJobRestriction() then
+		PrintChatMessage("You do not have permission to access the CAD Tablet.")
+		return
+	end
+	TriggerServerEvent("SonoranCAD::requestTablet")
+end, false)
+RegisterKeyMapping('showcad', 'CAD Tablet', 'keyboard', '')
+
+RegisterNetEvent("SonoranCAD::showcad", function()
 	DisplayModule("cad", true)
 	SetTablet(true)
 	SetFocused(true)
-end, false)
-RegisterKeyMapping('showcad', 'CAD Tablet', 'keyboard', '')
+end)
 
 TriggerEvent('chat:addSuggestion', '/cadsize', "Resize CAD to specific width and height in pixels. Default is 1100x510", {
 	{ name="Width", help="Width in pixels" }, { name="Height", help="Height in pixels" }
@@ -272,13 +392,13 @@ function SetTablet(using)
 		-- Take out the tablet.
 		RequestAnimDict("amb@code_human_in_bus_passenger_idles@female@tablet@base")
 		while not HasAnimDictLoaded("amb@code_human_in_bus_passenger_idles@female@tablet@base") do
-				Citizen.Wait(0)
+				Wait(0)
 		end
 		local tabletModel = GetHashKey("prop_cs_tablet")
 		local bone = GetPedBoneIndex(GetPlayerPed(-1), 60309)
 		RequestModel(tabletModel)
 		while not HasModelLoaded(tabletModel) do
-				Citizen.Wait(100)
+				Wait(100)
 		end
 		tabletProp = CreateObject(tabletModel, 1.0, 1.0, 1.0, 1, 1, 0)
 		AttachEntityToEntity(tabletProp, GetPlayerPed(-1), bone, 0.03, 0.002, -0.0, 10.0, 160.0, 0.0, 1, 0, 0, 0, 2, 1)

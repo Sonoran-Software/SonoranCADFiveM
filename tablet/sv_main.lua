@@ -1,5 +1,24 @@
 CallCache = {}
 EmergencyCache = {}
+Framework = nil
+Core = nil
+
+if Config.Framework == "qb" and GetResourceState("qb-core") == "started" then
+    Framework = exports["qb-core"]:GetCoreObject()
+    Core = "qb"
+elseif Config.Framework == "esx" and GetResourceState("es_extended") == "started" then
+    Framework = exports["es_extended"]:getSharedObject()
+    Core = "esx"
+elseif GetResourceState("qb-core") == "started" then
+    Framework = exports["qb-core"]:GetCoreObject()
+    Core = "qb"
+elseif GetResourceState("es_extended") == "started" then
+    Framework = exports["es_extended"]:getSharedObject()
+    Core = "esx"
+else
+    Framework = nil
+    Core = nil
+end
 
 CreateThread(function()
     while GetResourceState("sonorancad") ~= "started" do
@@ -12,7 +31,7 @@ CreateThread(function()
         return function()
             i = i + 1
             local iCopy = i
-            Citizen.CreateThread(function()
+            CreateThread(function()
                 Wait(time)
                 -- invoke if 'i' hasn't been incremented since this thread was created
                 if i == iCopy then fn() end
@@ -92,10 +111,10 @@ CreateThread(function()
         if ident ~= nil then
             local data = {callId = callId, units = {ident.data.apiIds[1]}, serverId = GetConvar("sonoran_serverId", 1)}
             exports["sonorancad"]:performApiRequest({data}, "ATTACH_UNIT", function(res)
-                --print("Attach OK: " .. tostring(res))
+                print("Attach OK: " .. tostring(res))
             end)
         else
-            --print("Unable to attach... if api id is set properly, try relogging into cad.")
+            print("Unable to attach... if api id is set properly, try relogging into cad.")
         end
     end)
 
@@ -105,11 +124,73 @@ CreateThread(function()
         if ident ~= nil then
             local data = {callId = callId, units = {ident.data.apiIds[1]}, serverId = GetConvar("sonoran_serverId", 1)}
             exports["sonorancad"]:performApiRequest({data}, "DETACH_UNIT", function(res)
-                --print("Detach OK: " .. tostring(res))
+                print("Detach OK: " .. tostring(res))
             end)
         else
-            --print("Unable to detach... if api id is set properly, try relogging into cad.")
+            print("Unable to detach... if api id is set properly, try relogging into cad.")
         end
     end)
 end)
+-- Server-side job restriction check function
+function CheckJobRestrictionServer(source)
+	if not Config.AccessRestrictions.RestrictByJob then
+		return true
+	end
+	
+	local playerJob = nil
+	if Core == "qb" then
+		local Player = Framework.Functions.GetPlayer(source)
+		if Player then
+			playerJob = Player.PlayerData.job.name
+		end
+	elseif Core == "esx" then
+		local xPlayer = Framework.GetPlayerFromId(source)
+		if xPlayer then
+			playerJob = xPlayer.job.name
+		end
+	end
+	
+	if playerJob then
+		for _, allowedJob in pairs(Config.AccessRestrictions.AllowedJobs) do
+			if playerJob == allowedJob then
+				return true
+			end
+		end
+	end
+	
+	return false
+end
 
+if Config.AccessRestrictions.RequireTabletItem and Core == "qb" then
+    Framework.Functions.CreateUseableItem(Config.AccessRestrictions.TabletItemName, function(source, item)
+        if CheckJobRestrictionServer(source) then
+            TriggerClientEvent("SonoranCAD::showcad", source)
+        else
+            TriggerClientEvent('chatMessage', source, "System", {255, 0, 0}, "You do not have permission to use the CAD Tablet.")
+        end
+    end)
+elseif Config.AccessRestrictions.RequireTabletItem and GetResourceState("qbx_core") == "started" then
+    exports.qbx_core:CreateUseableItem(Config.AccessRestrictions.TabletItemName, function(source, item)
+        if CheckJobRestrictionServer(source) then
+            TriggerClientEvent("SonoranCAD::showcad", source)
+        else
+            TriggerClientEvent('chatMessage', source, "System", {255, 0, 0}, "You do not have permission to use the CAD Tablet.")
+        end
+    end)
+elseif Config.AccessRestrictions.RequireTabletItem and Core == "esx" then
+    Framework.RegisterUsableItem(Config.AccessRestrictions.TabletItemName, function(source, item)
+        if CheckJobRestrictionServer(source) then
+            TriggerClientEvent("SonoranCAD::showcad", source)
+        else
+            TriggerClientEvent('chatMessage', source, "System", {255, 0, 0}, "You do not have permission to use the CAD Tablet.")
+        end
+    end)
+elseif not Config.AccessRestrictions.RequireTabletItem or Core == nil then
+    RegisterCommand("showcad", function(source, args, rawCommand)
+        if CheckJobRestrictionServer(source) then
+            TriggerClientEvent("SonoranCAD::showcad", source)
+        else
+            TriggerClientEvent('chatMessage', source, "System", {255, 0, 0}, "You do not have permission to use the CAD Tablet.")
+        end
+    end, false)
+end
