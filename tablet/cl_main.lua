@@ -5,27 +5,10 @@ myident = nil
 isMiniVisible = false
 
 -- Debugging Information
-isDebugging = false
+isDebugging = true
 
+FrameworkConfig = nil
 Framework = nil
-Core = nil
-
-if Config.Framework == "qb" and GetResourceState("qb-core") == "started" then
-    Framework = exports["qb-core"]:GetCoreObject()
-    Core = "qb"
-elseif Config.Framework == "esx" and GetResourceState("es_extended") == "started" then
-    Framework = exports["es_extended"]:getSharedObject()
-    Core = "esx"
-elseif GetResourceState("qb-core") == "started" then
-    Framework = exports["qb-core"]:GetCoreObject()
-    Core = "qb"
-elseif GetResourceState("es_extended") == "started" then
-    Framework = exports["es_extended"]:getSharedObject()
-    Core = "esx"
-else
-    Framework = nil
-    Core = nil
-end
 
 function DebugMessage(message, module)
 	if not isDebugging then return end
@@ -36,6 +19,9 @@ end
 -- Initialization Procedure
 CreateThread(function()
 	Wait(1000)
+	-- Request framework configuration from server
+	TriggerServerEvent("SonoranCAD::requestFrameworkConfig")
+	
 	-- Set Default Module Sizes
 	InitModuleSize("cad")
 	InitModuleSize("hud")
@@ -192,7 +178,6 @@ end
 
 -- Print a chat message to the current player
 function PrintChatMessage(text)
-	exports['qbx_core']:Notify(text, "error")
 	TriggerEvent('chatMessage', "System", { 255, 0, 0 }, text)
 end
 
@@ -205,7 +190,7 @@ end
 -- Remove NUI focus
 RegisterNUICallback('NUIFocusOff', function()
 	DisplayModule("cad", false)
-	SetTablet(false)
+	toggleTabletDisplay(false)
 	SetFocused(false)
 end)
 
@@ -260,10 +245,12 @@ function CheckJobRestriction()
 	if Config.AccessRestrictions.RestrictByJob then
 		jobAllowed = false
 		local playerJob = nil
-		if Core == "qb" then
+		
+		-- Check if framework is initialized
+		if FrameworkConfig.usingQBCore then
 			local Player = Framework.Functions.GetPlayerData()
 			playerJob = Player.job.name
-		elseif Core == "esx" then
+		else
 			local xPlayer = Framework.GetPlayerData()
 			playerJob = xPlayer.job.name
 		end
@@ -367,7 +354,7 @@ RegisterKeyMapping('showcad', 'CAD Tablet', 'keyboard', '')
 
 RegisterNetEvent("SonoranCAD::showcad", function()
 	DisplayModule("cad", true)
-	SetTablet(true)
+	toggleTabletDisplay(true)
 	SetFocused(true)
 end)
 
@@ -386,29 +373,59 @@ RegisterCommand("checkapiid", function(source,args,rawCommand)
 	TriggerServerEvent("sonoran:tablet:forceCheckApiId")
 end, false)
 
--- This function will eventually be expanded to multiple items.
-function SetTablet(using)
-	if using then
-		-- Take out the tablet.
-		RequestAnimDict("amb@code_human_in_bus_passenger_idles@female@tablet@base")
-		while not HasAnimDictLoaded("amb@code_human_in_bus_passenger_idles@female@tablet@base") do
-				Wait(0)
-		end
-		local tabletModel = GetHashKey("prop_cs_tablet")
-		local bone = GetPedBoneIndex(GetPlayerPed(-1), 60309)
-		RequestModel(tabletModel)
-		while not HasModelLoaded(tabletModel) do
-				Wait(100)
-		end
-		tabletProp = CreateObject(tabletModel, 1.0, 1.0, 1.0, 1, 1, 0)
-		AttachEntityToEntity(tabletProp, GetPlayerPed(-1), bone, 0.03, 0.002, -0.0, 10.0, 160.0, 0.0, 1, 0, 0, 0, 2, 1)
-		TaskPlayAnim(GetPlayerPed(-1), "amb@code_human_in_bus_passenger_idles@female@tablet@base", "base", 3.0, 3.0, -1, 49, 0, 0, 0, 0)
-	else
-		-- Put the tablet away.
-		DetachEntity(tabletProp, true, true)
-		DeleteObject(tabletProp)
-		TaskPlayAnim(GetPlayerPed(-1), "amb@code_human_in_bus_passenger_idles@female@tablet@base", "exit", 3.0, 3.0, -1, 49, 0, 0, 0, 0)
-	end
+
+local activeTablet = nil
+
+-- Helper to load an animation dictionary
+local function ensureAnimDict(dictName)
+    RequestAnimDict(dictName)
+    while not HasAnimDictLoaded(dictName) do
+        Citizen.Wait(0)
+    end
+end
+
+-- Helper to load a model by hash
+local function ensureModel(modelHash)
+    RequestModel(modelHash)
+    while not HasModelLoaded(modelHash) do
+        Citizen.Wait(100)
+    end
+end
+
+function toggleTabletDisplay(enable)
+    local ped      = PlayerPedId()
+    local animDict = "amb@code_human_in_bus_passenger_idles@female@tablet@base"
+    local enter    = "base"
+    local exit     = "exit"
+    local model    = GetHashKey("prop_cs_tablet")
+    local bone     = GetPedBoneIndex(ped, 60309)
+
+    if enable then
+        -- pull out tablet
+        ensureAnimDict(animDict)
+        ensureModel(model)
+
+        activeTablet = CreateObject(model, 1.0, 1.0, 1.0, true, true, false)
+        AttachEntityToEntity(
+            activeTablet,
+            ped,
+            bone,
+            0.03, 0.002, 0.0,    -- position offsets
+            10.0, 160.0, 0.0,    -- rotation offsets
+            false, false, false, -- collision, vertex, etc.
+            false, 2, true       -- isNetworked, boneIndex, useSoftPinning
+        )
+
+        TaskPlayAnim(ped, animDict, enter, 3.0, 3.0, -1, 49, 0, false, false, false)
+    else
+        -- put tablet away
+        if activeTablet then
+            DetachEntity(activeTablet, true, true)
+            DeleteObject(activeTablet)
+            activeTablet = nil
+        end
+        TaskPlayAnim(ped, animDict, exit, 3.0, 3.0, -1, 49, 0, false, false, false)
+    end
 end
 
 -- Mini-Cad Callbacks
@@ -483,4 +500,24 @@ end)
 RegisterNetEvent("sonoran:tablet:failed")
 AddEventHandler("sonoran:tablet:failed", function(message)
 	errorLog("Failed to set API ID: "..tostring(message))
+end)
+
+RegisterNetEvent("SonoranCAD::receiveFrameworkConfig")
+AddEventHandler("SonoranCAD::receiveFrameworkConfig", function(frameworkConfig)
+	if isDebugging then
+    print("Framework Configuration received:")
+    print("Using QBCore: " .. tostring(frameworkConfig.usingQBCore))
+    	for key, value in pairs(frameworkConfig) do
+            print(key .. ": " .. tostring(value))
+        end
+    end
+    if frameworkConfig.usingQBCore then
+		FrameworkConfig = frameworkConfig
+        Framework = exports['qb-core']:GetCoreObject()
+        print("Framework initialized: QBCore")
+    else
+		FrameworkConfig = frameworkConfig
+        Framework = exports.es_extended:getSharedObject()
+        print("Framework initialized: ESX")
+    end
 end)
