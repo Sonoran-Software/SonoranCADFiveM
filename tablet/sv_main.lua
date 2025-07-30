@@ -1,23 +1,12 @@
 CallCache = {}
 EmergencyCache = {}
+FrameworkConfig = exports.sonorancad:GetPluginConfig("frameworksupport")
 Framework = nil
-Core = nil
 
-if Config.Framework == "qb" and GetResourceState("qb-core") == "started" then
-    Framework = exports["qb-core"]:GetCoreObject()
-    Core = "qb"
-elseif Config.Framework == "esx" and GetResourceState("es_extended") == "started" then
-    Framework = exports["es_extended"]:getSharedObject()
-    Core = "esx"
-elseif GetResourceState("qb-core") == "started" then
-    Framework = exports["qb-core"]:GetCoreObject()
-    Core = "qb"
-elseif GetResourceState("es_extended") == "started" then
-    Framework = exports["es_extended"]:getSharedObject()
-    Core = "esx"
+if FrameworkConfig.usingQBCore then
+    Framework = exports['qb-core']:GetCoreObject()
 else
-    Framework = nil
-    Core = nil
+    Framework = exports.es_extended:getSharedObject()
 end
 
 CreateThread(function()
@@ -130,7 +119,14 @@ CreateThread(function()
             print("Unable to detach... if api id is set properly, try relogging into cad.")
         end
     end)
+
+    -- Send framework configuration to client
+    RegisterServerEvent("SonoranCAD::requestFrameworkConfig")
+    AddEventHandler("SonoranCAD::requestFrameworkConfig", function()
+        TriggerClientEvent("SonoranCAD::receiveFrameworkConfig", source, FrameworkConfig)
+    end)
 end)
+
 -- Server-side job restriction check function
 function CheckJobRestrictionServer(source)
 	if not Config.AccessRestrictions.RestrictByJob then
@@ -138,12 +134,12 @@ function CheckJobRestrictionServer(source)
 	end
 	
 	local playerJob = nil
-	if Core == "qb" then
+	if FrameworkConfig.usingQBCore then
 		local Player = Framework.Functions.GetPlayer(source)
 		if Player then
 			playerJob = Player.PlayerData.job.name
 		end
-	elseif Core == "esx" then
+	elseif not FrameworkConfig.usingQBCore then
 		local xPlayer = Framework.GetPlayerFromId(source)
 		if xPlayer then
 			playerJob = xPlayer.job.name
@@ -161,7 +157,7 @@ function CheckJobRestrictionServer(source)
 	return false
 end
 
-if Config.AccessRestrictions.RequireTabletItem and Core == "qb" then
+if Config.AccessRestrictions.RequireTabletItem and FrameworkConfig.usingQBCore then
     Framework.Functions.CreateUseableItem(Config.AccessRestrictions.TabletItemName, function(source, item)
         if CheckJobRestrictionServer(source) then
             TriggerClientEvent("SonoranCAD::showcad", source)
@@ -169,7 +165,7 @@ if Config.AccessRestrictions.RequireTabletItem and Core == "qb" then
             TriggerClientEvent('chatMessage', source, "System", {255, 0, 0}, "You do not have permission to use the CAD Tablet.")
         end
     end)
-elseif Config.AccessRestrictions.RequireTabletItem and GetResourceState("qbx_core") == "started" then
+elseif Config.AccessRestrictions.RequireTabletItem and FrameworkConfig.usingQBCore then
     exports.qbx_core:CreateUseableItem(Config.AccessRestrictions.TabletItemName, function(source, item)
         if CheckJobRestrictionServer(source) then
             TriggerClientEvent("SonoranCAD::showcad", source)
@@ -177,7 +173,7 @@ elseif Config.AccessRestrictions.RequireTabletItem and GetResourceState("qbx_cor
             TriggerClientEvent('chatMessage', source, "System", {255, 0, 0}, "You do not have permission to use the CAD Tablet.")
         end
     end)
-elseif Config.AccessRestrictions.RequireTabletItem and Core == "esx" then
+elseif Config.AccessRestrictions.RequireTabletItem and not FrameworkConfig.usingQBCore then
     Framework.RegisterUsableItem(Config.AccessRestrictions.TabletItemName, function(source, item)
         if CheckJobRestrictionServer(source) then
             TriggerClientEvent("SonoranCAD::showcad", source)
@@ -185,7 +181,7 @@ elseif Config.AccessRestrictions.RequireTabletItem and Core == "esx" then
             TriggerClientEvent('chatMessage', source, "System", {255, 0, 0}, "You do not have permission to use the CAD Tablet.")
         end
     end)
-elseif not Config.AccessRestrictions.RequireTabletItem or Core == nil then
+elseif not Config.AccessRestrictions.RequireTabletItem or FrameworkConfig == nil then
     RegisterCommand("showcad", function(source, args, rawCommand)
         if CheckJobRestrictionServer(source) then
             TriggerClientEvent("SonoranCAD::showcad", source)
