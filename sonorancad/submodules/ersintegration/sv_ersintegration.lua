@@ -233,7 +233,7 @@ if pluginConfig.enabled then
                         local callId = string.match(response, "ID%s+(%d+)")
                         if callId then
                             processedCalloutOffered[uniqueKey] = {id = callId, timestamp = os.time()}
-                            debugLog("Saved call ID: " .. processedCalloutOffered[uniqueKey])
+                            debugLog("Saved call ID: " .. processedCalloutOffered[uniqueKey].id)
                         else
                             debugLog("Could not extract call ID from response.")
                         end
