@@ -375,7 +375,6 @@ RegisterCommand("checkapiid", function(source,args,rawCommand)
 	TriggerServerEvent("sonoran:tablet:forceCheckApiId")
 end, false)
 
-
 local activeTablet = nil
 
 -- Helper to load an animation dictionary
