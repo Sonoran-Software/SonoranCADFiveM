@@ -20,11 +20,20 @@ CreateThread(function() Config.LoadPlugin("vehreg", function(pluginConfig)
             local primary, secondary = GetVehicleColours(veh)
             local class = GetVehicleClass(veh)
             local model = GetEntityModel(veh)
-            local realName = GetDisplayNameFromVehicleModel(model)
-            realName = GetLabelText(realName)
+            local displayCode = GetDisplayNameFromVehicleModel(model)
+            local spawncode   = displayCode:lower()
             primary = colorNames[tostring(primary)]
             class = classes[tostring(class)]
-            TriggerServerEvent(GetCurrentResourceName() .. "::registerVeh", primary, plate, class, realName)
+            local override = pluginConfig.customData[spawncode]
+            local realName, make, year
+            if override then
+                realName = override.model
+                make = override.make
+                year = override.year
+            else
+                realName = GetLabelText(displayCode)    -- e.g. “Adder”
+            end
+            TriggerServerEvent(GetCurrentResourceName() .. "::registerVeh", primary, plate, class, realName, make, year)
         end
     end)
     TriggerEvent("chat:addSuggestion", "/" .. pluginConfig.reigsterCommand,

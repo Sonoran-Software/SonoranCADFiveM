@@ -68,41 +68,41 @@ if Config.forceSetApiId then
     AddEventHandler("sonoran:tablet:forceCheckApiId", function()
         local identifier=GetIdentifiers(source)[Config.primaryIdentifier]
         local plid=source
-    
+
         cadApiIdExists(identifier, function(exists)
             if not exists then
-                TriggerClientEvent("sonoran:tablet:apiIdNotFound", plid)
+                TriggerClientEvent("SonoranCAD::Tablet::ApiIdNotLinked", plid)
             else
                 TriggerClientEvent("sonoran:tablet:apiIdFound", plid)
             end
         end)
     end)
-    
-    RegisterNetEvent("sonoran:tablet:setApiId")
-    AddEventHandler("sonoran:tablet:setApiId", function(session,username)
+
+    RegisterNetEvent("SonoranCAD::Tablet::SetApiData")
+    AddEventHandler("SonoranCAD::Tablet::SetApiData", function(session,username)
         local identifier=GetIdentifiers(source)[Config.primaryIdentifier]
         local source = source
         cadApiIdExists(identifier, function(exists)
             if not exists then
-                
+
                 registerApiType("SET_API_ID", "general")
-                
+
                 local data = {{
                         ["apiIds"] = { identifier },
                         ["sessionId"] = session,
                         ["username"] = username
                 }}
-                
+
                 performApiRequest(data, "SET_API_ID", function(res, flag)
                     if (not flag) then
                         TriggerClientEvent("sonoran:tablet:failed", source, res)
                     end
                 end)
-                
+
             end
         end)
-        
-        
+
+
     end)
 
 end

@@ -140,9 +140,9 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
                     local BlipQueue = {}
 
                     debugLog(json.encode(TowerCache))
-                    for _,t in ipairs(TowerCache) do
+                    for _,tower in ipairs(TowerCache) do
 
-                        if t.NotPhysical then
+                        if tower.NotPhysical then
                             -- Handling for Mobile Repeaters
                             title = "Mobile Repeater"
                             color = "#ff00f6"
@@ -160,10 +160,10 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
                                 ["id"] = -1,
                                 ["subType"] = "repeater",
                                 ["coordinates"] = {
-                                    ["x"] = t.PropPosition.x,
-                                    ["y"] = t.PropPosition.y
+                                    ["x"] = tower.PropPosition.x,
+                                    ["y"] = tower.PropPosition.y
                                 },
-                                ["radius"] = t.Range * 0.7937,
+                                ["radius"] = tower.Range * 0.7937,
                                 ["icon"] = "https://sonoransoftware.com/assets/images/icons/email/radio.png",
                                 ["color"] = color,
                                 ["tooltip"] =  title,

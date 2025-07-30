@@ -1,4 +1,4 @@
-var isApiBeingChecked = false;
+var currentlyCheckingApi = false;
 
 var myident = null;
 
@@ -207,8 +207,8 @@ $(function () {
 		if (event.data.type == "display") {
 			moduleVisible(event.data.module, event.data.enabled)
 			if (event.data.apiCheck) {
-				isApiBeingChecked = true;
-				//$("#check-api-data").show();
+				currentlyCheckingApi = true;
+				//$("#check-api-id").show();
 			}
 			setHotkeys(event.data.keyMap);
 		}
@@ -269,8 +269,8 @@ $(function () {
 			}
 		}
 		else if (event.data.type == "regbar") {
-			isApiBeingChecked = true;
-			$("#check-api-data").show();
+			currentlyCheckingApi = true;
+			$("#check-api-id").show();
 		}
 		else if (event.data.type == "resize") {
 			if (event.data.module == "cad") {
@@ -462,9 +462,9 @@ function receiveMessage(event) {
 	let cadframe = document.getElementById("cadFrame");
 	let frameorigin = new URL(cadframe.src).origin;
 
-	if (isApiBeingChecked && event.origin == frameorigin) {
-		$.post('https://tablet/SetAPIData', JSON.stringify(event.data));
-		$("#check-api-data").hide();
+	if (currentlyCheckingApi && event.origin == frameorigin) {
+		$.post('https://tablet/SetAPIInformation', JSON.stringify(event.data));
+		$("#check-api-id").hide();
 	}
 }
 
@@ -473,7 +473,7 @@ function addCallNote(call, data) {
 }
 
 function runApiCheck() {
-	isApiBeingChecked = true;
+	currentlyCheckingApi = true;
 	document.getElementById("cadFrame").src += '';
 	$.post('https://tablet/runApiCheck');
 	$("#check-api-data").hide();
