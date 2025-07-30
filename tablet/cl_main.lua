@@ -348,7 +348,9 @@ RegisterCommand("showcad", function(source, args, rawCommand)
 		PrintChatMessage("You do not have permission to access the CAD Tablet.")
 		return
 	end
-	TriggerServerEvent("SonoranCAD::requestTablet")
+	DisplayModule("cad", true)
+	toggleTabletDisplay(true)
+	SetFocused(true)
 end, false)
 RegisterKeyMapping('showcad', 'CAD Tablet', 'keyboard', '')
 
