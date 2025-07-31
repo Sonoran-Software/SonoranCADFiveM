@@ -160,7 +160,7 @@ function CheckJobRestrictionServer(source)
 end
 
 if TabletConfig.AccessRestrictions.RequireTabletItem and FrameworkConfig.usingQBCore then
-    Framework.Functions.CreateUseableItem(Config.AccessRestrictions.TabletItemName, function(source, item)
+    Framework.Functions.CreateUseableItem(TabletConfig.AccessRestrictions.TabletItemName, function(source, item)
         if CheckJobRestrictionServer(source) then
             TriggerClientEvent("SonoranCAD::showcad", source)
         else
@@ -168,7 +168,7 @@ if TabletConfig.AccessRestrictions.RequireTabletItem and FrameworkConfig.usingQB
         end
     end)
 elseif TabletConfig.AccessRestrictions.RequireTabletItem and FrameworkConfig.usingQBCore then
-    exports.qbx_core:CreateUseableItem(Config.AccessRestrictions.TabletItemName, function(source, item)
+    exports.qbx_core:CreateUseableItem(TabletConfig.AccessRestrictions.TabletItemName, function(source, item)
         if CheckJobRestrictionServer(source) then
             TriggerClientEvent("SonoranCAD::showcad", source)
         else
@@ -176,7 +176,7 @@ elseif TabletConfig.AccessRestrictions.RequireTabletItem and FrameworkConfig.usi
         end
     end)
 elseif TabletConfig.AccessRestrictions.RequireTabletItem and not FrameworkConfig.usingQBCore then
-    Framework.RegisterUsableItem(Config.AccessRestrictions.TabletItemName, function(source, item)
+    Framework.RegisterUsableItem(TabletConfig.AccessRestrictions.TabletItemName, function(source, item)
         if CheckJobRestrictionServer(source) then
             TriggerClientEvent("SonoranCAD::showcad", source)
         else
