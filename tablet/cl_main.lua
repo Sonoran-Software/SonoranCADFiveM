@@ -7,6 +7,7 @@ isMiniVisible = false
 -- Debugging Information
 isDebugging = true
 
+TabletConfig = nil
 FrameworkConfig = nil
 Framework = nil
 
@@ -20,8 +21,7 @@ end
 CreateThread(function()
 	Wait(1000)
 	-- Request framework configuration from server
-	TriggerServerEvent("SonoranCAD::requestFrameworkConfig")
-	
+	TriggerServerEvent("SonoranCAD::requestConfig")
 	-- Set Default Module Sizes
 	InitModuleSize("cad")
 	InitModuleSize("hud")
@@ -44,7 +44,7 @@ CreateThread(function()
 	TriggerServerEvent("SonoranCAD::mini:CallSync_S")
 
 	-- Vehicle Exit/Enter Detection for Auto-Hide Mini-CAD
-	if Config.AutoHideOnVehicleExit then
+	if TabletConfig.AutoHideOnVehicleExit then
 		local wasInVehicle = false
 		local miniCadWasVisible = false
 		
@@ -231,7 +231,7 @@ function IsInWhitelistedVehicle()
 	local veh = GetVehiclePedIsIn(ped, false)
 	if veh and veh ~= 0 then
 		local model = GetEntityModel(veh)
-		for _, allowed in ipairs(Config.AccessRestrictions.AllowedVehicles or {}) do
+		for _, allowed in ipairs(TabletConfig.AccessRestrictions.AllowedVehicles or {}) do
 			if model == GetHashKey(allowed) then
 				return true
 			end
@@ -242,7 +242,7 @@ end
 
 function CheckJobRestriction()
 	local jobAllowed = true
-	if Config.AccessRestrictions.RestrictByJob then
+	if TabletConfig.AccessRestrictions.RestrictByJob then
 		jobAllowed = false
 		local playerJob = nil
 		
@@ -256,7 +256,7 @@ function CheckJobRestriction()
 		end
 		
 		if playerJob then
-			for _, allowedJob in pairs(Config.AccessRestrictions.AllowedJobs) do
+			for _, allowedJob in pairs(TabletConfig.AccessRestrictions.AllowedJobs) do
 				if playerJob == allowedJob then
 					jobAllowed = true
 					break
@@ -266,7 +266,7 @@ function CheckJobRestriction()
 	end
 	
 	local vehicleAllowed = true
-	if Config.AccessRestrictions.RestrictByVehicle then
+	if TabletConfig.AccessRestrictions.RestrictByVehicle then
 		vehicleAllowed = IsInWhitelistedVehicle()
 	end
 	
@@ -282,7 +282,7 @@ RegisterCommand("minicad", function(source, args, rawCommand)
 	
 	local ped = PlayerPedId()
 	local inVehicle = IsPedInAnyVehicle(ped, false)
-	if Config.AllowMiniCadOnFoot or inVehicle then
+	if TabletConfig.AllowMiniCadOnFoot or inVehicle then
 		TriggerServerEvent("SonoranCAD::mini:OpenMini")
 	else
 		PrintChatMessage("You must be in a vehicle to access the Mini-CAD.")
@@ -476,8 +476,8 @@ AddEventHandler('onClientResourceStart', function(resourceName) --When resource 
 	TriggerServerEvent("sonoran:tablet:forceCheckApiId")
 end)
 
-RegisterNetEvent("SonoranCAD::Tablet::ApiIdNotLinked")
-AddEventHandler('SonoranCAD::Tablet::ApiIdNotLinked', function()
+RegisterNetEvent("sonoran:tablet:apiIdNotFound")
+AddEventHandler('sonoran:tablet:apiIdNotFound', function()
 	SendNUIMessage({
 		type = "regbar"
 	})
@@ -488,8 +488,8 @@ AddEventHandler("sonoran:tablet:apiIdFound", function()
 	isRegistered = true
 end)
 
-RegisterNUICallback('SetAPIInformation', function(data,cb)
-	TriggerServerEvent("SonoranCAD::Tablet::SetApiData", data.session, data.username)
+RegisterNUICallback('SetAPIData', function(data,cb)
+	TriggerServerEvent("sonoran:tablet:setApiId", data.session, data.username)
 	TriggerServerEvent("sonoran:tablet:forceCheckApiId")
 	cb(true)
 end)
@@ -503,21 +503,22 @@ AddEventHandler("sonoran:tablet:failed", function(message)
 	errorLog("Failed to set API ID: "..tostring(message))
 end)
 
-RegisterNetEvent("SonoranCAD::receiveFrameworkConfig")
-AddEventHandler("SonoranCAD::receiveFrameworkConfig", function(frameworkConfig)
+RegisterNetEvent("SonoranCAD::receiveConfig")
+AddEventHandler("SonoranCAD::receiveConfig", function(frameworkConfig, tabletConfig)
+	FrameworkConfig = frameworkConfig
+	TabletConfig = tabletConfig
+
 	if isDebugging then
-    print("Framework Configuration received:")
-    print("Using QBCore: " .. tostring(frameworkConfig.usingQBCore))
-    	for key, value in pairs(frameworkConfig) do
+    	print("Framework Configuration received:")
+    	print("Using QBCore: " .. tostring(FrameworkConfig.usingQBCore))
+    	for key, value in pairs(FrameworkConfig) do
             print(key .. ": " .. tostring(value))
         end
     end
-    if frameworkConfig.usingQBCore then
-		FrameworkConfig = frameworkConfig
+    if FrameworkConfig.usingQBCore then
         Framework = exports['qb-core']:GetCoreObject()
         print("Framework initialized: QBCore")
     else
-		FrameworkConfig = frameworkConfig
         Framework = exports.es_extended:getSharedObject()
         print("Framework initialized: ESX")
     end
