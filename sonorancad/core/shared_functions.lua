@@ -1,3 +1,10 @@
+-- Shared helpers used by both client and server.
+
+local isServer = IsDuplicityVersion and IsDuplicityVersion() or false
+
+---@generic T
+---@param orig T
+---@return T
 function shallowcopy(orig)
     local orig_type = type(orig)
     local copy
@@ -12,6 +19,9 @@ function shallowcopy(orig)
     return copy
 end
 
+---@param inputstr string
+---@param sep string|nil
+---@return table
 function stringsplit(inputstr, sep)
     if sep == nil then
         sep = "%s"
@@ -25,6 +35,8 @@ function stringsplit(inputstr, sep)
 end
 
 -- Helper function to determine index of given identifier
+---@param identifier any
+---@return number|nil
 function findIndex(identifier)
     for i,loc in ipairs(LocationCache) do
         if loc.apiId == identifier then
@@ -33,8 +45,13 @@ function findIndex(identifier)
     end
 end
 
-
+---@param player number
+---@return table
 function GetIdentifiers(player)
+    if not isServer then
+        warnLog("GetIdentifiers is server-only.")
+        return {}
+    end
     local ids = {}
     for _, id in ipairs(GetPlayerIdentifiers(player)) do
         local split = stringsplit(id, ":")
@@ -44,6 +61,8 @@ function GetIdentifiers(player)
     return ids
 end
 
+---@param pluginName string
+---@return boolean
 function isPluginLoaded(pluginName)
     for k, v in pairs(Plugins) do
         if v == pluginName then
@@ -65,6 +84,9 @@ function PerformHttpRequestS(url, cb, method, data, headers)
     exports["sonorancad"]:HandleHttpRequest(url, cb, method, data, headers)
 end
 
+---@param tab table
+---@param val any
+---@return boolean
 function has_value(tab, val)
     if tab == nil then
         debugLog("nil passed to has_value, ignore")
@@ -79,6 +101,7 @@ function has_value(tab, val)
     return false
 end
 
+---@return string
 function getServerVersion()
     local s = GetConvar("version", "")
     local v = s:find("v1.0.0.")
@@ -87,6 +110,9 @@ function getServerVersion()
     return i
 end
 
+---@param version1 string
+---@param version2 string
+---@return table
 function compareVersions(version1, version2)
     local v1, v2, v3 = version1:match("(%d+)%.(%d*)%.?(%d*)")
     local r1, r2, r3 = version2:match("(%d+)%.(%d*)%.?(%d*)")
