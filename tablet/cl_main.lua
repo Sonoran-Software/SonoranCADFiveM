@@ -7,6 +7,10 @@ isMiniVisible = false
 -- Debugging Information
 isDebugging = true
 
+TabletConfig = nil
+FrameworkConfig = nil
+Framework = nil
+
 function DebugMessage(message, module)
 	if not isDebugging then return end
 	if module ~= nil then message = "[" .. module .. "] " .. message end
@@ -14,8 +18,10 @@ function DebugMessage(message, module)
 end
 
 -- Initialization Procedure
-Citizen.CreateThread(function()
+CreateThread(function()
 	Wait(1000)
+	-- Request framework configuration from server
+	TriggerServerEvent("SonoranCAD::requestConfig")
 	-- Set Default Module Sizes
 	InitModuleSize("cad")
 	InitModuleSize("hud")
@@ -37,6 +43,38 @@ Citizen.CreateThread(function()
 
 	TriggerServerEvent("SonoranCAD::mini:CallSync_S")
 
+	-- Vehicle Exit/Enter Detection for Auto-Hide Mini-CAD
+	if TabletConfig.AutoHideOnVehicleExit then
+		local wasInVehicle = false
+		local miniCadWasVisible = false
+		
+		CreateThread(function()
+			while true do
+				local playerPed = GetPlayerPed(-1)
+				local isInVehicle = IsPedInAnyVehicle(playerPed, false)
+				
+				-- Check if player just exited a vehicle
+				if wasInVehicle and not isInVehicle then
+					if isMiniVisible then
+						miniCadWasVisible = true
+						DisplayModule("hud", false)
+						DebugMessage("Auto-hiding mini-CAD on vehicle exit")
+					end
+				-- Check if player just entered a vehicle
+				elseif not wasInVehicle and isInVehicle then
+					if miniCadWasVisible then
+						DisplayModule("hud", true)
+						miniCadWasVisible = false
+						DebugMessage("Auto-showing mini-CAD on vehicle enter")
+					end
+				end
+				
+				wasInVehicle = isInVehicle
+				Wait(50)
+			end
+		end)
+	end
+
 	-- Disable Controls Loop
 	while true do
 		if nuiFocused then	-- Disable controls while NUI is focused.
@@ -45,17 +83,15 @@ Citizen.CreateThread(function()
 			DisableControlAction(0, 142, nuiFocused) -- MeleeAttackAlternate
 			DisableControlAction(0, 106, nuiFocused) -- VehicleMouseControlOverride
 		end
-		Citizen.Wait(0) -- Yield until next frame.
+		Wait(0) -- Yield until next frame.
 	end
 end)
 
 function InitModuleSize(module)
-	-- Check if the size of the specified module is already configured.
 	local moduleWidth = GetResourceKvpString(module .. "width")
 	local moduleHeight = GetResourceKvpString(module .. "height")
 	if moduleWidth ~= nil and moduleHeight ~= nil then
 		DebugMessage("retrieving saved presets", module)
-		-- Send message to NUI to resize the specified module.
 		SetModuleSize(module, moduleWidth, moduleHeight)
 		SendNUIMessage({
 			type = "refresh",
@@ -68,7 +104,6 @@ function InitModuleConfig(module)
 	local moduleMaxRows = GetResourceKvpString(module .. "maxrows")
 	if moduleMaxRows ~= nil then
 		DebugMessage("retrieving config presets", module)
-		-- Send messsage to NUI to update config of specified module.
 		SetModuleConfigValue(module, "maxrows", moduleMaxRows)
 		SendNUIMessage({
 			type = "refresh",
@@ -163,7 +198,11 @@ RegisterNetEvent("SonoranCAD::mini:OpenMini:Return")
 AddEventHandler('SonoranCAD::mini:OpenMini:Return', function(authorized, ident)
 	myident = ident
 	if authorized then
-		DisplayModule("hud", true)
+		if not isMiniVisible then
+			DisplayModule("hud", true)
+		else
+			DisplayModule("hud", false)
+		end
 		if not GetResourceKvpString("shownTutorial") then
 			ShowHelpMessage()
 			SetResourceKvp("shownTutorial", "yes")
@@ -186,9 +225,68 @@ function ShowHelpMessage()
 	PrintChatMessage("Keybinds: Attach/Detach [K], Details [L], Previous/Next [LEFT/RIGHT], changable in settings!")
 end
 
+function IsInWhitelistedVehicle()
+	local ped = PlayerPedId()
+	if not IsPedInAnyVehicle(ped, false) then return false end
+	local veh = GetVehiclePedIsIn(ped, false)
+	if veh and veh ~= 0 then
+		local model = GetEntityModel(veh)
+		for _, allowed in ipairs(TabletConfig.AccessRestrictions.AllowedVehicles or {}) do
+			if model == GetHashKey(allowed) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+function CheckJobRestriction()
+	local jobAllowed = true
+	if TabletConfig.AccessRestrictions.RestrictByJob then
+		jobAllowed = false
+		local playerJob = nil
+		
+		-- Check if framework is initialized
+		if FrameworkConfig.usingQBCore then
+			local Player = Framework.Functions.GetPlayerData()
+			playerJob = Player.job.name
+		else
+			local xPlayer = Framework.GetPlayerData()
+			playerJob = xPlayer.job.name
+		end
+		
+		if playerJob then
+			for _, allowedJob in pairs(TabletConfig.AccessRestrictions.AllowedJobs) do
+				if playerJob == allowedJob then
+					jobAllowed = true
+					break
+				end
+			end
+		end
+	end
+	
+	local vehicleAllowed = true
+	if TabletConfig.AccessRestrictions.RestrictByVehicle then
+		vehicleAllowed = IsInWhitelistedVehicle()
+	end
+	
+	return jobAllowed and vehicleAllowed
+end
+
 -- Mini Module Commands
 RegisterCommand("minicad", function(source, args, rawCommand)
-	TriggerServerEvent("SonoranCAD::mini:OpenMini")
+	if not CheckJobRestriction() then
+		PrintChatMessage("You do not have permission to access the Mini-CAD.")
+		return
+	end
+	
+	local ped = PlayerPedId()
+	local inVehicle = IsPedInAnyVehicle(ped, false)
+	if TabletConfig.AllowMiniCadOnFoot or inVehicle then
+		TriggerServerEvent("SonoranCAD::mini:OpenMini")
+	else
+		PrintChatMessage("You must be in a vehicle to access the Mini-CAD.")
+	end
 end, false)
 RegisterKeyMapping('minicad', 'Mini CAD', 'keyboard', '')
 
@@ -201,7 +299,7 @@ end, false)
 RegisterKeyMapping('minicadp', 'Previous Call', 'keyboard', 'LEFT')
 
 RegisterCommand("minicada", function(source, args, rawCommand)
-	print("ismini "..tostring(isMiniVisible))
+	print("attach")
 	if not isMiniVisible then return end
 	SendNUIMessage({ type = "command", key="attach" })
 end, false)
@@ -243,13 +341,24 @@ TriggerEvent('chat:addSuggestion', '/minicadrows', "Specify max number of call n
 	{ name="rows", help="any number (default 10)" }
 })
 
+
 -- CAD Module Commands
 RegisterCommand("showcad", function(source, args, rawCommand)
+	if not CheckJobRestriction() then
+		PrintChatMessage("You do not have permission to access the CAD Tablet.")
+		return
+	end
 	DisplayModule("cad", true)
 	toggleTabletDisplay(true)
 	SetFocused(true)
 end, false)
 RegisterKeyMapping('showcad', 'CAD Tablet', 'keyboard', '')
+
+RegisterNetEvent("SonoranCAD::showcad", function()
+	DisplayModule("cad", true)
+	toggleTabletDisplay(true)
+	SetFocused(true)
+end)
 
 TriggerEvent('chat:addSuggestion', '/cadsize', "Resize CAD to specific width and height in pixels. Default is 1100x510", {
 	{ name="Width", help="Width in pixels" }, { name="Height", help="Height in pixels" }
@@ -367,8 +476,8 @@ AddEventHandler('onClientResourceStart', function(resourceName) --When resource 
 	TriggerServerEvent("sonoran:tablet:forceCheckApiId")
 end)
 
-RegisterNetEvent("SonoranCAD::Tablet::ApiIdNotLinked")
-AddEventHandler('SonoranCAD::Tablet::ApiIdNotLinked', function()
+RegisterNetEvent("sonoran:tablet:apiIdNotFound")
+AddEventHandler('sonoran:tablet:apiIdNotFound', function()
 	SendNUIMessage({
 		type = "regbar"
 	})
@@ -379,8 +488,8 @@ AddEventHandler("sonoran:tablet:apiIdFound", function()
 	isRegistered = true
 end)
 
-RegisterNUICallback('SetAPIInformation', function(data,cb)
-	TriggerServerEvent("SonoranCAD::Tablet::SetApiData", data.session, data.username)
+RegisterNUICallback('SetAPIData', function(data,cb)
+	TriggerServerEvent("sonoran:tablet:setApiId", data.session, data.username)
 	TriggerServerEvent("sonoran:tablet:forceCheckApiId")
 	cb(true)
 end)
@@ -392,4 +501,25 @@ end)
 RegisterNetEvent("sonoran:tablet:failed")
 AddEventHandler("sonoran:tablet:failed", function(message)
 	errorLog("Failed to set API ID: "..tostring(message))
+end)
+
+RegisterNetEvent("SonoranCAD::receiveConfig")
+AddEventHandler("SonoranCAD::receiveConfig", function(frameworkConfig, tabletConfig)
+	FrameworkConfig = frameworkConfig
+	TabletConfig = tabletConfig
+
+	if isDebugging then
+    	print("Framework Configuration received:")
+    	print("Using QBCore: " .. tostring(FrameworkConfig.usingQBCore))
+    	for key, value in pairs(FrameworkConfig) do
+            print(key .. ": " .. tostring(value))
+        end
+    end
+    if FrameworkConfig.usingQBCore then
+        Framework = exports['qb-core']:GetCoreObject()
+        print("Framework initialized: QBCore")
+    else
+        Framework = exports.es_extended:getSharedObject()
+        print("Framework initialized: ESX")
+    end
 end)

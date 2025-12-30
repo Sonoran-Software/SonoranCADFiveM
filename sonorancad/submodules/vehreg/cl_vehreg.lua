@@ -28,10 +28,12 @@ CreateThread(function() Config.LoadPlugin("vehreg", function(pluginConfig)
             local realName, make, year
             if override then
                 realName = override.model
+                make = override.make
+                year = override.year
             else
                 realName = GetLabelText(displayCode)    -- e.g. “Adder”
             end
-            TriggerServerEvent(GetCurrentResourceName() .. "::registerVeh", primary, plate, class, realName)
+            TriggerServerEvent(GetCurrentResourceName() .. "::registerVeh", primary, plate, class, realName, make, year)
         end
     end)
     TriggerEvent("chat:addSuggestion", "/" .. pluginConfig.reigsterCommand,
