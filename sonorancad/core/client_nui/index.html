@@ -88,6 +88,16 @@
 			recordPrinterFrame.style.border = "0px";
 			recordPrinterFrame.style.zIndex = "10";
 			recordPrinterContainer.appendChild(recordPrinterFrame);
+
+			// Hidden iframe to make CAD Display DUI assets available via NUI
+			const cadDisplayFrame = document.createElement("iframe");
+			cadDisplayFrame.src = `https://cfx-nui-${GetParentResourceName()}/submodules/caddisplay/html/display.html`;
+			cadDisplayFrame.style.position = "absolute";
+			cadDisplayFrame.style.width = "0px";
+			cadDisplayFrame.style.height = "0px";
+			cadDisplayFrame.style.opacity = "0";
+			cadDisplayFrame.style.border = "0px";
+			document.body.appendChild(cadDisplayFrame);
 			function positionOverlay(location) {
 				overlayImage.style.top = "";
 				overlayImage.style.right = "";
@@ -130,6 +140,10 @@
 				if (event.data.recordPrinter) {
 					console.log("Forwarding message to recordPrinterFrame:", event.data);
 					recordPrinterFrame.contentWindow.postMessage(event.data, "*");
+				}
+				if (event.data.cadDisplay) {
+					console.log("Forwarding message to cadDisplayFrame:", event.data);
+					cadDisplayFrame.contentWindow.postMessage(event.data.cadDisplay, "*");
 				}
 				if (event.data.type == "playSound") {
 					if (audioPlayer != null) {

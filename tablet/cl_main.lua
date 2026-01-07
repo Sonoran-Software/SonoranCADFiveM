@@ -25,7 +25,7 @@ Citizen.CreateThread(function()
 	if apiMode == 1 then
 		tabletURL = "https://sonorancad.com/"
 	elseif apiMode == 0 then
-		tabletURL = "https://cad.dev.sonoransoftware.com/"
+		tabletURL = "https://https://staging.dev.sonorancad.com/"
 	end
 	local convar = GetConvar("sonorantablet_cadUrl", tabletURL)
 	local comId = convar:match("comid=(%w+)")
@@ -154,6 +154,7 @@ end
 
 -- Remove NUI focus
 RegisterNUICallback('NUIFocusOff', function()
+	print('NUI Focus Off Received')
 	DisplayModule("cad", false)
 	toggleTabletDisplay(false)
 	SetFocused(false)
@@ -251,7 +252,7 @@ RegisterCommand("showcad", function(source, args, rawCommand)
 end, false)
 RegisterKeyMapping('showcad', 'CAD Tablet', 'keyboard', '')
 
-TriggerEvent('chat:addSuggestion', '/cadsize', "Resize CAD to specific width and height in pixels. Default is 1100x510", {
+TriggerEvent('chat:addSuggestion', '/cadsize', "Resize CAD to specific width and height in pixels. Default is 1280x640 (16:9-ish)", {
 	{ name="Width", help="Width in pixels" }, { name="Height", help="Height in pixels" }
 })
 RegisterCommand("cadsize", function(source,args,rawCommand)
@@ -267,6 +268,19 @@ RegisterCommand("checkapiid", function(source,args,rawCommand)
 end, false)
 
 local activeTablet = nil
+local function sendCadScreenshotRequest(requestId)
+	SendNUIMessage({
+		type = "caddisplay_screenshot_request",
+		requestId = requestId
+	})
+end
+
+-- Request a CAD screenshot (for caddisplay) and forward responses back via a client event.
+RegisterNetEvent("SonoranCAD::Tablet::RequestCadScreenshot")
+AddEventHandler("SonoranCAD::Tablet::RequestCadScreenshot", function(requestId)
+	if not requestId then return end
+	sendCadScreenshotRequest(requestId)
+end)
 
 -- Helper to load an animation dictionary
 local function ensureAnimDict(dictName)
@@ -392,4 +406,9 @@ end)
 RegisterNetEvent("sonoran:tablet:failed")
 AddEventHandler("sonoran:tablet:failed", function(message)
 	errorLog("Failed to set API ID: "..tostring(message))
+end)
+
+RegisterNUICallback("CadDisplayScreenshot", function(data, cb)
+	TriggerEvent("SonoranCAD::Tablet::CadScreenshotResponse", data.requestId, data.image)
+	if cb then cb({ ok = true }) end
 end)

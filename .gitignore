@@ -1,8 +1,6 @@
 .vscode
 *.zip
 wk_wars2x/config.lua
-sonorancad/stream/*.ydr
-sonorancad/stream/data/*.ytyp
 tablet/config.lua
 sonoran_updatehelper/run.lock
 filestore/**/*

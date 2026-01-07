@@ -1,5 +1,5 @@
 {
-  "resource": "3.2.27",
+  "resource": "3.2.28",
   "testedFxServerVersion": "5932",
   "submoduleConfigs": {
     "bodycam": {
@@ -10,6 +10,10 @@
           "critical": true
         }
       ]
+    },
+    "caddisplay": {
+      "version": "1.0",
+      "requiresPlugins": []
     },
     "callcommands": {
       "version": "2.2",
