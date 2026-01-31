@@ -891,6 +891,7 @@ CreateThread(function()
 
             -- Poll for CAD screenshots when the owner is seated in the vehicle and near the display
             CreateThread(function()
+                local drawInteractPrompt = false
                 while true do
                     Wait(1000)
                     if incomingRequest and incomingRequest.expires and GetGameTimer() > incomingRequest.expires then
@@ -911,13 +912,21 @@ CreateThread(function()
                             local vehNet = getVehNetIdOrNil(veh)
                             local ownerId = vehNet and displayOwners[tostring(vehNet)] or nil
                             local prop = car.prop
-                            if prop ~= nil and DoesEntityExist(prop) and ownerId == nil and hasAnyOccupant(veh) then
-                                local distPrompt = #(GetEntityCoords(ped) - GetEntityCoords(prop))
-                                local promptKey = tostring(vehNet or prop)
-                                if distPrompt <= interactRange + 0.5 and not claimedOnce[promptKey] then
-                                    drawWorldPrompt(GetEntityCoords(prop) + vector3(0.0, 0.0, 0.3),
-                                        ("Press %s to interact"):format(interactKeybind))
-                                end
+                            if not drawInteractPrompt and prop ~= nil and DoesEntityExist(prop) and ownerId == nil and hasAnyOccupant(veh) then
+                                CreateThread(function()
+                                    drawInteractPrompt = true
+                                    while drawInteractPrompt do 
+                                        Wait(0)
+                                        local distPrompt = #(GetEntityCoords(ped) - GetEntityCoords(prop))
+                                        local promptKey = tostring(vehNet or prop)
+                                        if distPrompt <= interactRange + 0.5 and not claimedOnce[promptKey] then
+                                            drawWorldPrompt(GetEntityCoords(prop) + vector3(0.0, 0.0, 0.3),
+                                                ("Press %s to interact"):format(interactKeybind))
+                                        else
+                                            drawInteractPrompt = false
+                                        end
+                                    end
+                                end)
                             end
 
                             if ownerId ~= nil and ownerId == localServerId then

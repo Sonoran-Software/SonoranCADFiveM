@@ -8,7 +8,7 @@ local config = {
     enabled = true,
     pluginName = "caddisplay",
     pluginAuthor = "Sonoran Software Systems",
-    configVersion = "1.0",
+    configVersion = "1.1",
 
     lang = {
         addNewDisplayHelp = "Open the menu to begin placing a CAD display",
