@@ -449,6 +449,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
     -- =========================
     RegisterNetEvent('SonoranPDF:client:updatePDFs', function(serverDocs)
         -- serverDocs: array of { pdf_link, Position={x,y,z} }
+        local previousDocs = WorldDocs or {}
         WorldDocs = serverDocs or {}
 
         local hash = GetHashKey('prop_notepad_01')
@@ -458,15 +459,17 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         -- Destroy any existing entities we might still hold (fresh rebuild keeps it simple)
         -- If you prefer incremental updates, you can diff instead.
         -- (This approach keeps things predictable.)
-        for i = 1, #WorldDocs do
-            if WorldDocs[i].entityObject and DoesEntityExist(WorldDocs[i].entityObject) then
-                DeleteEntity(WorldDocs[i].entityObject)
-                WorldDocs[i].entityObject = nil
+        for i = 1, #previousDocs do
+            local obj = previousDocs[i].entityObject
+            if obj and DoesEntityExist(obj) then
+                deleteWorldEntitySafely(obj)
+                previousDocs[i].entityObject = nil
             end
         end
 
         for i = 1, #WorldDocs do
-            local e = CreateObject(hash, WorldDocs[i].Position.x, WorldDocs[i].Position.y, WorldDocs[i].Position.z - 0.2, true, true, false)
+            local pos = WorldDocs[i].Position or {}
+            local e = CreateObject(hash, pos.x or 0.0, pos.y or 0.0, (pos.z or 0.0) - 0.2, false, true, false)
             WorldDocs[i].entityObject = e
         end
     end)

@@ -82,6 +82,10 @@ if Config.forceSetApiId then
     AddEventHandler("SonoranCAD::Tablet::SetApiData", function(session,username)
         local identifier=GetIdentifiers(source)[Config.primaryIdentifier]
         local source = source
+        if session == nil or username == nil then
+            warnLog('Failed to set API ID for ' .. tostring(identifier) .. '. Missing session ID or username')
+            TriggerClientEvent("sonoran:tablet:failed", source, 'Failed to set API ID for ' .. tostring(identifier) .. '. Missing session ID or username')
+        end
         cadApiIdExists(identifier, function(exists)
             if not exists then
 
