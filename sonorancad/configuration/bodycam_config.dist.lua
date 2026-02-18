@@ -58,6 +58,13 @@ local config = {
     -- Adjusts the frequency at which unit body cameras update (in milliseconds).
     screenshotFrequency=2000,
 
+    -- Streams the bodycam video to PeerJS using a WebGL canvas capture in NUI.
+    peerStream = {
+        enabled = true,
+        -- Capture FPS for canvas.captureStream().
+        fps = 30,
+    },
+
     -- The default keybind for toggling the bodycam.
     defaultKeybind="",
 
