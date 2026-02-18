@@ -39,7 +39,7 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
                     debugLog("Unable to send postal because I got a null response from getNearestPostal()?!")
                 end
                 if bodyCamOn then
-                    TriggerServerEvent('SonoranCAD::locations:SendLocation', toSend, pos, screenshotFrequency)
+                    TriggerServerEvent('SonoranCAD::locations:SendLocation', toSend, pos, BodycamPeerId)
                 else
                     TriggerServerEvent('SonoranCAD::locations:SendLocation', toSend, pos)
                 end

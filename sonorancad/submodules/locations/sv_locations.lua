@@ -49,7 +49,7 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
 
         -- Event from client when location changes occur
         RegisterServerEvent('SonoranCAD::locations:SendLocation')
-        AddEventHandler('SonoranCAD::locations:SendLocation', function(currentLocation, position, bodycamFrequency)
+        AddEventHandler('SonoranCAD::locations:SendLocation', function(currentLocation, position, bodycamPeerId)
             local source = source
             local identifier = GetIdentifiers(source)[Config.primaryIdentifier]
             if identifier == nil then
@@ -57,8 +57,11 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
                 return
             end
             if bodycamFrequency  then
-                local frameNumber = latestFrame[source]
-                LocationCache[source] = {['apiId'] = identifier, ['location'] = currentLocation, ['coordinates'] = position, ['isUpdated'] = true, ['bodyFrequency'] = bodycamFrequency, ['proxyUrl'] = Config.proxyUrl, ['bodyFrame'] = frameNumber}
+                local payload = {['apiId'] = identifier, ['location'] = currentLocation, ['coordinates'] = position, ['isUpdated'] = true, ['proxyUrl'] = Config.proxyUrl}
+                if bodycamPeerId and bodycamPeerId ~= "" then
+                    payload['peerId'] = bodycamPeerId
+                end
+                LocationCache[source] = payload
             else
                 LocationCache[source] = {['apiId'] = identifier, ['location'] = currentLocation, ['coordinates'] = position, ['isUpdated'] = true}
             end

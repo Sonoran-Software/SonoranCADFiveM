@@ -1,0 +1,599 @@
+﻿<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Bodycam Viewer</title>
+		<style>
+			body {
+				margin: 0;
+				font-family: Arial, sans-serif;
+				background: #0b0b0b;
+				color: #f2f2f2;
+				display: flex;
+				flex-direction: column;
+				min-height: 100vh;
+			}
+			header {
+				padding: 16px 20px;
+				background: #111;
+				border-bottom: 1px solid #222;
+			}
+			main {
+				flex: 1;
+				display: flex;
+				flex-direction: column;
+				gap: 12px;
+				padding: 16px 20px 24px;
+			}
+			#v {
+				width: 100%;
+				max-height: calc(100vh - 140px);
+				background: #000;
+				border: 1px solid #222;
+			}
+			.status {
+				font-size: 14px;
+				color: #b3b3b3;
+			}
+			code {
+				background: #1b1b1b;
+				padding: 2px 6px;
+				border-radius: 4px;
+			}
+		</style>
+	</head>
+	<body>
+		<header>
+			<strong>Bodycam Viewer</strong>
+		</header>
+		<main>
+			<div class="status" id="status">Waiting for stream...</div>
+			<video id="v" autoplay playsinline controls></video>
+			<div class="status">
+				Open with <code>?id=YOUR_PUBLISHER_ID</code>. Add <code>&amp;communityId=COMMUNITY_ID&amp;apiKey=API_KEY</code> to use TURN. Use
+				<code>&amp;relay=1</code> to force TURN-only. Optional <code>&amp;turnHost=TURN_IP&amp;turnPort=3478</code>.
+			</div>
+		</main>
+
+		<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+		<script>
+			const statusEl = document.getElementById("status");
+			const video = document.getElementById("v");
+			const params = new URLSearchParams(location.search);
+			const publisherId = params.get("id");
+			const communityId = params.get("communityId") || params.get("community") || params.get("commId");
+			const apiKey = params.get("apiKey") || params.get("key");
+			const userId = params.get("userId") || `viewer-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+			const apiBaseUrl = params.get("apiUrl") || "https://api.sonorancad.com";
+			const turnHostOverride = params.get("turnHost") || "";
+			const turnPortOverride = params.get("turnPort") || "";
+			const relayParam = params.get("relay");
+			const relayMode = (params.get("relayMode") || "").toLowerCase();
+			const requestedRelay = relayParam === "1" || relayParam === "true" || relayMode === "relay";
+			const forceRelay = requestedRelay;
+			const BODYCAM_VIEWER_BUILD = "2026-02-17-direct-then-turn-v1";
+			const TURN_REFRESH_MS = 60 * 60 * 1000;
+			const TURN_MIN_REFRESH_MS = 60 * 1000;
+			const TURN_EXPIRY_BUFFER_MS = 60 * 1000;
+			const DIRECT_ATTEMPT_TIMEOUT_MS = 8000;
+			const FALLBACK_ICE = [{ urls: ["stun:134.199.247.110:3478"] }];
+			let currentIceServers = FALLBACK_ICE;
+			let turnExpiresAt = 0;
+			let peer = null;
+			let call = null;
+			let refreshTimer = null;
+			let seenIceCandidateErrors = new Set();
+			let activeRemoteStreamId = null;
+			let outboundOfferStream = null;
+			const canTryTurnFallback = !forceRelay && !!communityId && !!apiKey;
+			let useTurnForCurrentAttempt = forceRelay;
+			let didTryTurnFallback = forceRelay;
+			let isRetryingWithTurn = false;
+			let directAttemptTimer = null;
+			console.log("Bodycam viewer build:", BODYCAM_VIEWER_BUILD);
+			if (!forceRelay) {
+				console.log("Viewer: direct-first mode enabled (TURN retry only after direct failure).");
+			}
+			video.muted = true;
+			video.defaultMuted = true;
+			video.autoplay = true;
+			video.playsInline = true;
+			video.setAttribute("muted", "");
+			video.addEventListener("loadedmetadata", () => {
+				console.log("Video metadata loaded.", {
+					width: video.videoWidth,
+					height: video.videoHeight,
+					readyState: video.readyState,
+				});
+			});
+			video.addEventListener("playing", () => {
+				console.log("Video element is playing.");
+				statusEl.textContent = "Streaming.";
+			});
+			video.addEventListener("error", () => {
+				console.error("Video element error.", video.error);
+			});
+			video.addEventListener("click", async () => {
+				try {
+					await video.play();
+				} catch (err) {
+					console.warn("Manual play attempt failed.", err);
+				}
+			});
+
+			async function attachRemoteStream(remoteStream, source) {
+				if (!remoteStream) {
+					return;
+				}
+				const tracks = remoteStream.getTracks ? remoteStream.getTracks() : [];
+				console.log("Attaching remote stream.", {
+					source,
+					streamId: remoteStream.id,
+					tracks: tracks.map((t) => ({
+						id: t.id,
+						kind: t.kind,
+						enabled: t.enabled,
+						muted: t.muted,
+						readyState: t.readyState,
+					})),
+				});
+				if (activeRemoteStreamId !== remoteStream.id || video.srcObject !== remoteStream) {
+					video.srcObject = remoteStream;
+					activeRemoteStreamId = remoteStream.id;
+				}
+				try {
+					await video.play();
+				} catch (err) {
+					console.warn("Video autoplay failed; user interaction may be required.", err);
+					statusEl.textContent = "Connected. Click video to start playback.";
+				}
+			}
+
+			function buildViewerOfferStream() {
+				const stream = new MediaStream();
+				try {
+					const canvas = document.createElement("canvas");
+					canvas.width = 2;
+					canvas.height = 2;
+					const ctx = canvas.getContext("2d");
+					if (ctx) {
+						ctx.fillStyle = "#000";
+						ctx.fillRect(0, 0, 2, 2);
+					}
+					const canvasStream = canvas.captureStream(1);
+					const videoTrack = canvasStream.getVideoTracks()[0];
+					if (videoTrack) {
+						stream.addTrack(videoTrack);
+					}
+				} catch (err) {
+					console.warn("Failed to create dummy offer stream; falling back to empty stream.", err);
+				}
+				return stream;
+			}
+
+			function clearDirectAttemptTimer() {
+				if (directAttemptTimer) {
+					clearTimeout(directAttemptTimer);
+					directAttemptTimer = null;
+				}
+			}
+
+			function disposeOutboundOfferStream() {
+				if (!outboundOfferStream) {
+					return;
+				}
+				outboundOfferStream.getTracks().forEach((t) => t.stop());
+				outboundOfferStream = null;
+			}
+
+			async function retryWithTurnFallback(reason) {
+				if (!canTryTurnFallback || didTryTurnFallback || forceRelay || isRetryingWithTurn) {
+					return;
+				}
+				isRetryingWithTurn = true;
+				didTryTurnFallback = true;
+				useTurnForCurrentAttempt = true;
+				clearDirectAttemptTimer();
+				statusEl.textContent = "Direct connection failed; retrying with TURN fallback...";
+				console.warn("Viewer: direct attempt failed; retrying with TURN fallback.", { reason });
+				try {
+					if (call) {
+						try {
+							call.close();
+						} catch (err) {}
+						call = null;
+					}
+					if (peer) {
+						try {
+							peer.destroy();
+						} catch (err) {}
+						peer = null;
+					}
+					disposeOutboundOfferStream();
+					await ensurePeer();
+				} finally {
+					isRetryingWithTurn = false;
+				}
+			}
+
+			function summarizeIceCandidatesFromStats(stats) {
+				const makeTypeCounts = () => ({ host: 0, srflx: 0, relay: 0, prflx: 0, other: 0 });
+				const local = makeTypeCounts();
+				const remote = makeTypeCounts();
+				const add = (bucket, report) => {
+					const t = (report && report.candidateType ? report.candidateType : "other").toLowerCase();
+					if (typeof bucket[t] === "number") {
+						bucket[t] += 1;
+					} else {
+						bucket.other += 1;
+					}
+				};
+				stats.forEach((report) => {
+					if (!report || !report.type) {
+						return;
+					}
+					if (report.type === "local-candidate") {
+						add(local, report);
+					} else if (report.type === "remote-candidate") {
+						add(remote, report);
+					}
+				});
+				return { localTypes: local, remoteTypes: remote };
+			}
+
+			if (!publisherId) {
+				statusEl.textContent = "Missing ?id=... in URL.";
+			}
+
+			function buildTurnUrl() {
+				const base = apiBaseUrl.endsWith("/") ? apiBaseUrl : `${apiBaseUrl}/`;
+				const id = encodeURIComponent(communityId || "");
+				const key = encodeURIComponent(apiKey || "");
+				const user = encodeURIComponent(userId || "");
+				return `${base}api/turn?id=${id}&key=${key}&userId=${user}`;
+			}
+
+			function replaceUrlHost(url) {
+				if (!turnHostOverride && !turnPortOverride) {
+					return url;
+				}
+				if (typeof url !== "string") {
+					return url;
+				}
+				const match = url.match(/^([a-zA-Z0-9+.-]+):(\/\/)?([^?]+)(.*)$/);
+				if (!match) {
+					return url;
+				}
+				const scheme = match[1];
+				const hasSlashes = match[2] || "";
+				const hostPort = match[3];
+				const query = match[4] || "";
+				const hpMatch = hostPort.match(/^([^:]+):?(\d*)$/);
+				if (!hpMatch) {
+					return url;
+				}
+				let host = hpMatch[1];
+				let port = hpMatch[2] || "";
+				if (turnHostOverride) {
+					host = turnHostOverride;
+				}
+				if (turnPortOverride) {
+					port = turnPortOverride;
+				}
+				const hostOut = port ? `${host}:${port}` : host;
+				return `${scheme}:${hasSlashes}${hostOut}${query}`;
+			}
+
+			function applyTurnOverrides(iceServers) {
+				if (!turnHostOverride && !turnPortOverride) {
+					return iceServers;
+				}
+				if (!Array.isArray(iceServers)) {
+					return iceServers;
+				}
+				return iceServers.map((server) => {
+					if (!server || !server.urls) {
+						return server;
+					}
+					if (Array.isArray(server.urls)) {
+						return { ...server, urls: server.urls.map(replaceUrlHost) };
+					}
+					return { ...server, urls: replaceUrlHost(server.urls) };
+				});
+			}
+
+			function normalizeIceServers(iceServers) {
+				if (!Array.isArray(iceServers)) {
+					return iceServers;
+				}
+				const overridden = applyTurnOverrides(iceServers);
+				if (!forceRelay) {
+					return overridden;
+				}
+				const filtered = [];
+				for (const server of overridden) {
+					if (!server || !server.urls) {
+						continue;
+					}
+					const urlList = Array.isArray(server.urls) ? server.urls : [server.urls];
+					const turnOnly = urlList.filter((u) => typeof u === "string" && u.startsWith("turn:"));
+					if (turnOnly.length === 0) {
+						continue;
+					}
+					filtered.push({ ...server, urls: turnOnly.length === 1 ? turnOnly[0] : turnOnly });
+				}
+				return filtered.length > 0 ? filtered : overridden;
+			}
+
+			async function fetchTurnCredentials(force) {
+				const now = Date.now();
+				if (!force && currentIceServers && now < turnExpiresAt - TURN_EXPIRY_BUFFER_MS) {
+					return { ok: true, iceServers: currentIceServers };
+				}
+				if (!communityId || !apiKey) {
+					return { ok: false, reason: "missing_credentials" };
+				}
+				try {
+					statusEl.textContent = "Fetching TURN credentials...";
+					const response = await fetch(buildTurnUrl(), { method: "GET", cache: "no-store" });
+					if (!response.ok) {
+						throw new Error(`HTTP ${response.status}`);
+					}
+					const data = await response.json();
+					if (!data || !Array.isArray(data.iceServers) || data.iceServers.length === 0) {
+						throw new Error("Invalid TURN response");
+					}
+					const ttlSeconds = Math.max(60, Number(data.ttl || 3600));
+					currentIceServers = normalizeIceServers(data.iceServers);
+					turnExpiresAt = Date.now() + ttlSeconds * 1000;
+					return { ok: true, iceServers: currentIceServers, ttlSeconds };
+				} catch (err) {
+					console.error("TURN fetch failed:", err);
+					return { ok: false, reason: "fetch_failed", error: err };
+				}
+			}
+
+			function scheduleTurnRefresh(ttlSeconds) {
+				const ttlMs = (ttlSeconds || 3600) * 1000;
+				const refreshMs = Math.max(TURN_MIN_REFRESH_MS, Math.min(ttlMs, TURN_REFRESH_MS));
+				if (refreshTimer) {
+					clearTimeout(refreshTimer);
+				}
+				refreshTimer = setTimeout(async () => {
+					const result = await fetchTurnCredentials(true);
+					if (result.ok) {
+						if (peer && peer.options && peer.options.config) {
+							peer.options.config.iceServers = currentIceServers;
+						}
+					}
+					scheduleTurnRefresh(result.ttlSeconds || 3600);
+				}, refreshMs);
+			}
+
+			async function ensurePeer() {
+				if (peer) {
+					return;
+				}
+				const thisAttemptUsesTurn = useTurnForCurrentAttempt || forceRelay;
+				if (thisAttemptUsesTurn) {
+					const turnResult = await fetchTurnCredentials(false);
+					if (!turnResult.ok) {
+						if (turnResult.reason === "missing_credentials") {
+							statusEl.textContent = "TURN credentials missing; using STUN fallback.";
+						} else {
+							statusEl.textContent = "TURN fetch failed; using STUN fallback.";
+						}
+					}
+					scheduleTurnRefresh(turnResult.ttlSeconds || 3600);
+					if (forceRelay) {
+						console.log("Viewer: forcing relay-only ICE.");
+					} else {
+						console.log("Viewer: retrying with TURN fallback after direct attempt failed.");
+					}
+				} else {
+					currentIceServers = FALLBACK_ICE;
+					if (refreshTimer) {
+						clearTimeout(refreshTimer);
+						refreshTimer = null;
+					}
+					statusEl.textContent = "Trying direct P2P connection...";
+					console.log("Viewer: attempting direct-only connection first (STUN only).");
+				}
+				seenIceCandidateErrors.clear();
+				console.log("Initializing PeerJS with ICE servers:", JSON.stringify(currentIceServers));
+				peer = new Peer({
+					host: "peerjs.sonorancad.com",
+					port: 443,
+					path: "/",
+					secure: true,
+					config: {
+						iceServers: currentIceServers || FALLBACK_ICE,
+						iceTransportPolicy: thisAttemptUsesTurn ? "relay" : "all",
+					},
+				});
+
+				peer.on("open", (id) => {
+					console.log("VIEWER_ID:", id);
+					if (!publisherId) {
+						return;
+					}
+					statusEl.textContent = "Connecting to publisher...";
+					outboundOfferStream = buildViewerOfferStream();
+					console.log("Calling publisher with offer stream tracks:", outboundOfferStream.getTracks().map((t) => ({
+						kind: t.kind,
+						id: t.id,
+						readyState: t.readyState,
+					})));
+					call = peer.call(publisherId, outboundOfferStream);
+					if (!call) {
+						statusEl.textContent = "Failed to create call (PeerJS not connected).";
+						return;
+					}
+					if (!thisAttemptUsesTurn && canTryTurnFallback) {
+						clearDirectAttemptTimer();
+						directAttemptTimer = setTimeout(() => {
+							const pc = call && call.peerConnection;
+							if (pc && pc.connectionState === "connected") {
+								return;
+							}
+							retryWithTurnFallback("direct_timeout");
+						}, DIRECT_ATTEMPT_TIMEOUT_MS);
+					}
+					const startIceStatsLogger = (pc) => {
+						if (!pc || typeof pc.getStats !== "function") {
+							return;
+						}
+						let lastNoPairLogAt = 0;
+						let debugTimeout = null;
+						let timer = setInterval(async () => {
+							try {
+								const stats = await pc.getStats();
+								let selectedPairId = null;
+								stats.forEach((report) => {
+									if (report.type === "transport" && report.selectedCandidatePairId) {
+										selectedPairId = report.selectedCandidatePairId;
+									}
+								});
+								if (!selectedPairId) {
+									const now = Date.now();
+									if (now - lastNoPairLogAt >= 10000) {
+										lastNoPairLogAt = now;
+										console.log("ICE stats: no selected candidate pair yet.", {
+											iceConnectionState: pc.iceConnectionState,
+											iceGatheringState: pc.iceGatheringState,
+											connectionState: pc.connectionState,
+											candidates: summarizeIceCandidatesFromStats(stats),
+										});
+									}
+									return;
+								}
+								const pair = stats.get(selectedPairId);
+								const local = pair && stats.get(pair.localCandidateId);
+								const remote = pair && stats.get(pair.remoteCandidateId);
+								console.log("ICE stats:", {
+									state: pair && pair.state,
+									localType: local && local.candidateType,
+									localAddress: local && (local.address || local.ip),
+									localProtocol: local && local.protocol,
+									remoteType: remote && remote.candidateType,
+									remoteAddress: remote && (remote.address || remote.ip),
+									remoteProtocol: remote && remote.protocol,
+								});
+							} catch (err) {
+								console.warn("ICE stats: failed to read.", err);
+							}
+						}, 3000);
+						debugTimeout = setTimeout(async () => {
+							if (pc.connectionState === "connected" || pc.connectionState === "closed") {
+								return;
+							}
+							try {
+								const stats = await pc.getStats();
+								console.warn("ICE did not connect within 20s.", {
+									iceConnectionState: pc.iceConnectionState,
+									iceGatheringState: pc.iceGatheringState,
+									connectionState: pc.connectionState,
+									candidates: summarizeIceCandidatesFromStats(stats),
+								});
+							} catch (err) {
+								console.warn("ICE timeout snapshot failed.", err);
+							}
+						}, 20000);
+
+						pc.addEventListener("connectionstatechange", () => {
+							console.log("Connection state:", pc.connectionState);
+							if (pc.connectionState === "connected") {
+								clearDirectAttemptTimer();
+							}
+							if (!thisAttemptUsesTurn && (pc.connectionState === "failed" || pc.connectionState === "disconnected")) {
+								retryWithTurnFallback(`connection_state_${pc.connectionState}`);
+							}
+							if (pc.connectionState === "connected" || pc.connectionState === "failed" || pc.connectionState === "closed") {
+								clearInterval(timer);
+								if (debugTimeout) {
+									clearTimeout(debugTimeout);
+									debugTimeout = null;
+								}
+							}
+						});
+					};
+					if (call.peerConnection) {
+						const pc = call.peerConnection;
+						pc.addEventListener("iceconnectionstatechange", () => {
+							console.log("ICE state:", pc.iceConnectionState);
+						});
+						pc.addEventListener("signalingstatechange", () => {
+							console.log("Signaling state:", pc.signalingState);
+						});
+						pc.addEventListener("icecandidate", (event) => {
+							if (event && event.candidate) {
+								const cand = event.candidate.candidate || "";
+								const isMdns = cand.includes(".local");
+								console.log("Local ICE candidate:", cand, isMdns ? "(mDNS host candidate)" : "");
+							} else {
+								console.log("Local ICE gathering complete.");
+							}
+						});
+						pc.addEventListener("track", (event) => {
+							console.log("Remote track received.", {
+								kind: event.track && event.track.kind,
+								id: event.track && event.track.id,
+								streamCount: event.streams ? event.streams.length : 0,
+							});
+							if (event.streams && event.streams[0]) {
+								attachRemoteStream(event.streams[0], "peerConnection.ontrack");
+							}
+						});
+						pc.addEventListener("icecandidateerror", (event) => {
+							const key = `${event && event.errorCode}|${event && event.url}|${event && event.errorText}`;
+							if (seenIceCandidateErrors.has(key)) {
+								return;
+							}
+							seenIceCandidateErrors.add(key);
+							const isLookupOrTimeout = event && event.errorCode === 701;
+							const logger = isLookupOrTimeout ? console.warn : console.error;
+							logger("ICE candidate error:", {
+								errorCode: event.errorCode,
+								errorText: event.errorText,
+								url: event.url,
+								address: event.address,
+								port: event.port,
+							});
+						});
+						startIceStatsLogger(pc);
+					}
+					call.on("stream", (remoteStream) => {
+						attachRemoteStream(remoteStream, "peerjs.call.stream");
+					});
+					call.on("close", () => {
+						clearDirectAttemptTimer();
+						statusEl.textContent = "Call closed.";
+						disposeOutboundOfferStream();
+					});
+					call.on("error", (err) => {
+						clearDirectAttemptTimer();
+						statusEl.textContent = "Call error: " + (err && err.type ? err.type : err);
+						console.error(err);
+						if (!thisAttemptUsesTurn) {
+							retryWithTurnFallback(`call_error_${err && err.type ? err.type : "unknown"}`);
+						}
+					});
+				});
+
+				peer.on("error", (err) => {
+					clearDirectAttemptTimer();
+					statusEl.textContent = "Peer error: " + (err && err.type ? err.type : err);
+					console.error(err);
+					if (!thisAttemptUsesTurn) {
+						retryWithTurnFallback(`peer_error_${err && err.type ? err.type : "unknown"}`);
+					}
+				});
+			}
+
+			if (publisherId) {
+				ensurePeer();
+			}
+		</script>
+	</body>
+</html>

@@ -1,22 +1,7 @@
 latestFrame = {};
 
 RegisterNetEvent('SonoranCAD::core:TakeScreenshot', function()
-	local source = source
-	local unit = GetUnitByPlayerId(source)
-	if unit == nil then
-		debugLog('Unit not found')
-		-- TriggerClientEvent('SonoranCAD::core::ScreenshotOff', source)
-		return
-	end
-	local screenshotDirectory = exports['sonorancad']:createScreenshotDirectory(tostring(unit.id))
-	local screenshotName = exports['sonorancad']:createScreenshotFilename(screenshotDirectory)
-	local frameName = screenshotName:gsub("%.jpg$", "")
-	latestFrame[source] = tonumber(frameName)
-	exports['screenshot-basic']:requestClientScreenshot(source, {
-		fileName = screenshotDirectory .. '/' .. screenshotName,
-		quality = 0.5
-	}, function()
-	end)
+	debugLog('Bodycam screenshot capture disabled (screenshot-basic removed).')
 end)
 
 RegisterNetEvent('SonoranCAD::core::bodyCamOff', function()
