@@ -139,11 +139,11 @@ if pluginConfig.enabled then
     end
 
     local function shouldNotifyUnits()
-        if not pluginConfig.enableUnitNotify then
-            return false
-        end
         if unitNotifyOverride ~= nil then
             return unitNotifyOverride
+        end
+        if not pluginConfig.enableUnitNotify then
+            return false
         end
         if pluginConfig.dispatchDisablesUnitNotify and areDispatchersOnline() then
             return false
@@ -153,6 +153,9 @@ if pluginConfig.enabled then
 
     local function formatUnitNotifyState()
         if unitNotifyOverride == nil then
+            if not pluginConfig.enableUnitNotify then
+                return "auto (disabled by config)"
+            end
             if pluginConfig.dispatchDisablesUnitNotify and areDispatchersOnline() then
                 return "auto (suppressed: dispatcher online)"
             end
