@@ -15,6 +15,9 @@ if pluginConfig.enabled then
     if pluginConfig.unitStatusNotifyMethod == nil then
         pluginConfig.unitStatusNotifyMethod = "auto"
     end
+    if pluginConfig.dispatchDisablesUnitNotify == nil then
+        pluginConfig.dispatchDisablesUnitNotify = false
+    end
 
     local DISPATCH_TYPE = {"CALL_NEW", "CALL_EDIT", "CALL_CLOSE", "CALL_NOTE", "CALL_SELF_CLEAR"}
     local ORIGIN = {"CALLER", "RADIO_DISPATCH", "OBSERVED", "WALK_UP"}
@@ -129,12 +132,54 @@ if pluginConfig.enabled then
     end
 
     local ActiveDispatchers = {}
+    local unitNotifyOverride = nil -- nil = auto, true = force enable, false = force disable
+
+    local function areDispatchersOnline()
+        return #ActiveDispatchers > 0
+    end
+
+    local function shouldNotifyUnits()
+        if not pluginConfig.enableUnitNotify then
+            return false
+        end
+        if unitNotifyOverride ~= nil then
+            return unitNotifyOverride
+        end
+        if pluginConfig.dispatchDisablesUnitNotify and areDispatchersOnline() then
+            return false
+        end
+        return true
+    end
+
+    local function formatUnitNotifyState()
+        if unitNotifyOverride == nil then
+            if pluginConfig.dispatchDisablesUnitNotify and areDispatchersOnline() then
+                return "auto (suppressed: dispatcher online)"
+            end
+            return "auto"
+        end
+        return unitNotifyOverride and "forced on" or "forced off"
+    end
+
+    local function setUnitNotifyOverride(value, source)
+        unitNotifyOverride = value
+        local message = ("Unit 911 notifications are now %s."):format(formatUnitNotifyState())
+        if source == 0 then
+            print(message)
+        else
+            SendMessage("dispatch", source, message)
+        end
+    end
 
     AddEventHandler("SonoranCAD::pushevents:UnitLogin", function(unit)
-        if unit.isDispatch and pluginConfig.dispatchDisablesSelfResponse then
-            pluginConfig.enableUnitResponse = false
-            debugLog("Self dispatching disabled, dispatch is online")
-            table.insert(ActiveDispatchers, unit.id)
+        if unit.isDispatch then
+            if not has_value(ActiveDispatchers, unit.id) then
+                table.insert(ActiveDispatchers, unit.id)
+            end
+            if pluginConfig.dispatchDisablesSelfResponse then
+                pluginConfig.enableUnitResponse = false
+                debugLog("Self dispatching disabled, dispatch is online")
+            end
         end
     end)
 
@@ -154,13 +199,59 @@ if pluginConfig.enabled then
         end
     end)
 
+    if pluginConfig.enableUnitNotifyToggleCommand == nil then
+        pluginConfig.enableUnitNotifyToggleCommand = false
+    end
+    if pluginConfig.unitNotifyToggleCommand == nil then
+        pluginConfig.unitNotifyToggleCommand = "toggledispatchnotify"
+    end
+    if pluginConfig.unitNotifyToggleAce == nil then
+        pluginConfig.unitNotifyToggleAce = "sonorancad.dispatchnotify.toggle"
+    end
+
+    if pluginConfig.enableUnitNotifyToggleCommand then
+        RegisterCommand(pluginConfig.unitNotifyToggleCommand, function(source, args, rawCommand)
+            local source = tonumber(source)
+            if source ~= 0 and pluginConfig.unitNotifyToggleAce ~= "" then
+                if not IsPlayerAceAllowed(source, pluginConfig.unitNotifyToggleAce) then
+                    SendMessage("error", source, "You do not have permission to use this command.")
+                    return
+                end
+            end
+
+            local arg = args[1]
+            if arg then
+                local normalized = string.lower(arg)
+                if normalized == "on" or normalized == "enable" or normalized == "enabled" then
+                    setUnitNotifyOverride(true, source)
+                    return
+                elseif normalized == "off" or normalized == "disable" or normalized == "disabled" then
+                    setUnitNotifyOverride(false, source)
+                    return
+                elseif normalized == "auto" or normalized == "clear" then
+                    setUnitNotifyOverride(nil, source)
+                    return
+                else
+                    SendMessage("error", source, ("Usage: /%s [on|off|auto]"):format(pluginConfig.unitNotifyToggleCommand))
+                    return
+                end
+            end
+
+            if unitNotifyOverride == nil then
+                setUnitNotifyOverride(true, source)
+            else
+                setUnitNotifyOverride(not unitNotifyOverride, source)
+            end
+        end)
+    end
+
     --EVENT_911 TriggerEvent('SonoranCAD::pushevents:IncomingCadCall', body.data.call, body.data.apiIds, body.data.metaData)
     RegisterServerEvent("SonoranCAD::pushevents:IncomingCadCall")
     AddEventHandler("SonoranCAD::pushevents:IncomingCadCall", function(call, metadata, apiIds)
         if metadata ~= nil and metadata.callerPlayerId ~= nil then
             CallOriginMapping[call.callId] = metadata.callerPlayerId
         end
-        if pluginConfig.enableUnitNotify then
+        if shouldNotifyUnits() then
             local type = call.emergency and pluginConfig.civilCallType or pluginConfig.emergencyCallType
             local messageTemplate = pluginConfig.incomingCallMessage
             if pluginConfig.dispatchDisablesSelfResponse and not pluginConfig.enableUnitResponse then

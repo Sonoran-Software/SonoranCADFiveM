@@ -1,5 +1,5 @@
 {
-  "resource": "3.2.32",
+  "resource": "3.2.33",
   "testedFxServerVersion": "5932",
   "submoduleConfigs": {
     "bodycam": {
@@ -29,7 +29,7 @@
       "requiresPlugins": []
     },
     "dispatchnotify": {
-      "version": "3.2",
+      "version": "3.3",
       "requiresPlugins": [
         {
           "name": "locations",
