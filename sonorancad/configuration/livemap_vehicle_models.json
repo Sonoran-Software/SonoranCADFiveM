@@ -1,0 +1,65 @@
+{
+  "foot": {
+    "model": "https://s3.sonorancad.com/default/models/on_foot.glb",
+    "zOffset": 9,
+    "sizeOffset": 0,
+    "headingOffset": 0,
+    "lights": false
+  },
+  "police": {
+    "model": "https://s3.sonorancad.com/default/models/police_car.glb",
+    "zOffset": 9,
+    "sizeOffset": 0,
+    "headingOffset": 0,
+    "lights": false
+  },
+  "fire": {
+    "model": "https://s3.sonorancad.com/default/models/firetruck.glb",
+    "zOffset": 9,
+    "sizeOffset": 0,
+    "headingOffset": 0,
+    "lights": false
+  },
+  "ems": {
+    "model": "https://s3.sonorancad.com/default/models/ambulance.glb",
+    "zOffset": 9,
+    "sizeOffset": 0,
+    "headingOffset": 0,
+    "lights": false
+  },
+  "helicoper": {
+    "model": "https://s3.sonorancad.com/default/models/helicopter.glb",
+    "zOffset": 9,
+    "sizeOffset": 0,
+    "headingOffset": 0,
+    "lights": false
+  },
+  "plane": {
+    "model": "https://s3.sonorancad.com/default/models/airplane.glb",
+    "zOffset": 9,
+    "sizeOffset": 0,
+    "headingOffset": 0,
+    "lights": false
+  },
+  "car": {
+    "model": "https://s3.sonorancad.com/default/models/car.glb",
+    "zOffset": 9,
+    "sizeOffset": 0,
+    "headingOffset": 0,
+    "lights": false
+  },
+  "bicycle": {
+    "model": "https://s3.sonorancad.com/default/models/bicycle.glb",
+    "zOffset": 9,
+    "sizeOffset": 0,
+    "headingOffset": 0,
+    "lights": false
+  },
+  "motorcycle": {
+    "model": "https://s3.sonorancad.com/default/models/motorcycle.glb",
+    "zOffset": 9,
+    "sizeOffset": 0,
+    "headingOffset": 0,
+    "lights": false
+  }
+}

@@ -65,7 +65,7 @@
 			const communityId = params.get("communityId") || params.get("community") || params.get("commId");
 			const apiKey = params.get("apiKey") || params.get("key");
 			const userId = params.get("userId") || `viewer-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-			const apiBaseUrl = params.get("apiUrl") || "https://api.sonorancad.com";
+			const apiBaseUrl = params.get("apiUrl") || "https://staging-api.dev.sonorancad.com";
 			const turnHostOverride = params.get("turnHost") || "";
 			const turnPortOverride = params.get("turnPort") || "";
 			const relayParam = params.get("relay");

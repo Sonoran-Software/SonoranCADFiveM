@@ -11,6 +11,47 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
         -- Pending location updates array
         LocationCache = {}
         local LastSend = 0
+        local vehicleModelConfig = {}
+        local vehicleModelConfigPath = "/configuration/livemap_vehicle_models.json"
+
+        local function loadVehicleModelConfig()
+            local raw = LoadResourceFile(GetCurrentResourceName(), vehicleModelConfigPath)
+            if not raw or raw == "" then
+                warnLog(("Livemap vehicle model config missing: %s"):format(vehicleModelConfigPath))
+                vehicleModelConfig = {}
+                return
+            end
+            local ok, data = pcall(json.decode, raw)
+            if not ok or type(data) ~= "table" then
+                warnLog(("Livemap vehicle model config invalid: %s"):format(vehicleModelConfigPath))
+                vehicleModelConfig = {}
+                return
+            end
+            vehicleModelConfig = data
+        end
+
+        local function cloneTable(src)
+            if type(src) ~= "table" then
+                return nil
+            end
+            local out = {}
+            for k, v in pairs(src) do
+                out[k] = v
+            end
+            return out
+        end
+
+        local function buildVehiclePayload(vehicleType, lightsOn)
+            local entry = vehicleModelConfig[vehicleType]
+            local payload = cloneTable(entry)
+            if payload == nil then
+                payload = { type = vehicleType }
+            end
+            if lightsOn ~= nil then
+                payload.lights = lightsOn == true
+            end
+            return payload
+        end
 
         -- Main api POST function
         local function SendLocations()
@@ -47,23 +88,26 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
             SendLocations()
         end)
 
+        loadVehicleModelConfig()
+
         -- Event from client when location changes occur
         RegisterServerEvent('SonoranCAD::locations:SendLocation')
-        AddEventHandler('SonoranCAD::locations:SendLocation', function(currentLocation, position, bodycamPeerId)
+        AddEventHandler('SonoranCAD::locations:SendLocation', function(currentLocation, position, vehicleType, lightsOn, bodycamPeerId)
             local source = source
             local identifier = GetIdentifiers(source)[Config.primaryIdentifier]
             if identifier == nil then
                 debugLog(("user %s has no identifier for %s, skipped."):format(source, Config.primaryIdentifier))
                 return
             end
-            if bodycamFrequency  then
-                local payload = {['apiId'] = identifier, ['location'] = currentLocation, ['coordinates'] = position, ['isUpdated'] = true, ['proxyUrl'] = Config.proxyUrl}
+            local vehiclePayload = buildVehiclePayload(vehicleType, lightsOn)
+            if bodycamPeerId  then
+                local payload = {['apiId'] = identifier, ['location'] = currentLocation, ['coordinates'] = position, ['vehicle'] = vehiclePayload, ['isUpdated'] = true, ['proxyUrl'] = Config.proxyUrl}
                 if bodycamPeerId and bodycamPeerId ~= "" then
                     payload['peerId'] = bodycamPeerId
                 end
                 LocationCache[source] = payload
             else
-                LocationCache[source] = {['apiId'] = identifier, ['location'] = currentLocation, ['coordinates'] = position, ['isUpdated'] = true}
+                LocationCache[source] = {['apiId'] = identifier, ['location'] = currentLocation, ['coordinates'] = position, ['vehicle'] = vehiclePayload, ['isUpdated'] = true}
             end
         end)
 

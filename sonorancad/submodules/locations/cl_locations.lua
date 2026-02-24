@@ -12,10 +12,51 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
         local currentLocation = ''
         local lastLocation = 'none'
         local lastSentTime = nil
-        local lastCoords = { x = 0, y = 0, z = 0 }
+        local lastCoords = { x = 0, y = 0, z = 0, w = 0 }
+
+        local function resolveVehicleType(ped, veh)
+            if not ped then
+                return "foot"
+            end
+            if not IsPedInAnyVehicle(ped, false) then
+                return "foot"
+            end
+            if not veh or veh == 0 then
+                return "foot"
+            end
+            local vehClass = GetVehicleClass(veh)
+            if vehClass == 15 then
+                return "helicoper"
+            end
+            if vehClass == 16 then
+                return "plane"
+            end
+            if vehClass == 13 then
+                return "bicycle"
+            end
+            if vehClass == 8 then
+                return "motorcycle"
+            end
+            if vehClass == 18 then
+                local modelName = GetDisplayNameFromVehicleModel(GetEntityModel(veh))
+                modelName = string.upper(modelName or "")
+                if string.find(modelName, "FIRE", 1, true) then
+                    return "fire"
+                end
+                if string.find(modelName, "AMBUL", 1, true) or string.find(modelName, "EMS", 1, true) then
+                    return "ems"
+                end
+                return "police"
+            end
+            return "car"
+        end
 
         local function sendLocation()
-            local pos = GetEntityCoords(PlayerPedId())
+            local ped = PlayerPedId()
+            local pos = GetEntityCoords(ped)
+            local heading = GetEntityHeading(ped)
+            local pos4 = vector4(pos.x, pos.y, pos.z, heading)
+            local veh = GetVehiclePedIsIn(ped, false)
             local var1, var2 = GetStreetNameAtCoord(pos.x, pos.y, pos.z, Citizen.ResultAsInteger(), Citizen.ResultAsInteger())
             local postal = nil
             if isPluginLoaded("postals") then
@@ -33,17 +74,19 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
             if (bodyCamOn or currentLocation ~= lastLocation or vector3(pos.x, pos.y, pos.z) ~= vector3(lastCoords.x, lastCoords.y, lastCoords.z))  then
                 -- Location changed, continue
                 local toSend = currentLocation
+                local vehicleType = resolveVehicleType(ped, veh)
+                local lightsOn = veh ~= 0 and IsVehicleSirenOn(veh) == 1
                 if pluginConfig.prefixPostal and postal ~= nil then
                     toSend = "["..tostring(postal).."] "..currentLocation
                 elseif postal == nil and pluginConfig.prefixPostal == true then
                     debugLog("Unable to send postal because I got a null response from getNearestPostal()?!")
                 end
                 if bodyCamOn then
-                    TriggerServerEvent('SonoranCAD::locations:SendLocation', toSend, pos, BodycamPeerId)
+                    TriggerServerEvent('SonoranCAD::locations:SendLocation', toSend, pos4, vehicleType, lightsOn, BodycamPeerId)
                 else
-                    TriggerServerEvent('SonoranCAD::locations:SendLocation', toSend, pos)
+                    TriggerServerEvent('SonoranCAD::locations:SendLocation', toSend, pos4, vehicleType, lightsOn)
                 end
-                lastCoords = pos
+                lastCoords = pos4
                 debugLog(("Locations different, sending. (%s ~= %s) SENT: %s (POS: %s)"):format(currentLocation, lastLocation, toSend, json.encode(lastCoords)))
                 lastSentTime = GetGameTimer()
                 lastLocation = currentLocation

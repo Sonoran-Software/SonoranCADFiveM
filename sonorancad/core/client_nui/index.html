@@ -183,6 +183,7 @@
 			let wsProbe = null;
 			let wsProbeTimer = null;
 			let wsProbeEnabled = true;
+			let peerForceRelay = false;
 			const peerStream = {
 				mediaStream: null,
 				remotePeerId: null,
@@ -322,7 +323,7 @@
 					},
 				};
 
-				const apiBaseUrl = incoming.apiUrl || incoming.apiBaseUrl || "https://api.sonorancad.com";
+				const apiBaseUrl = incoming.apiUrl || incoming.apiBaseUrl || "https://staging-api.dev.sonorancad.com";
 				const communityId = incoming.communityId || incoming.community || incoming.commId || "";
 				const apiKey = incoming.apiKey || incoming.key || "";
 				const userId = incoming.userId || `publisher-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
@@ -330,6 +331,7 @@
 				const requestedRelay = incoming.relay === true || incoming.relay === 1 || incoming.relay === "1" || incoming.forceRelay === true || relayMode === "relay";
 				const explicitDirect = incoming.allowDirect === true || incoming.allowDirect === 1 || incoming.allowDirect === "1" || relayMode === "all";
 				const forceRelay = requestedRelay && !explicitDirect;
+				// const forceRelay = true
 				const defaultRelayTurnHost = incoming.defaultTurnHost || "134.199.247.110";
 				const defaultRelayTurnPort = incoming.defaultTurnPort || 3478;
 				const turnHostOverride = incoming.turnHost || (forceRelay ? defaultRelayTurnHost : "");
@@ -370,6 +372,7 @@
 				const baseIceServers = Array.isArray(iceServers) && iceServers.length ? iceServers : options.config.iceServers;
 				options.config.iceServers = normalizeIceServers(baseIceServers, turnHostOverride, turnPortOverride, forceRelay);
 				options.config.iceTransportPolicy = forceRelay ? "relay" : options.config.iceTransportPolicy || "all";
+				peerForceRelay = forceRelay;
 				if (typeof options.debug === "undefined") {
 					options.debug = 3;
 				}
@@ -420,6 +423,7 @@
 								return;
 							}
 							let lastNoPairLogAt = 0;
+							let loggedTurnFallback = false;
 							let debugTimeout = null;
 							let timer = setInterval(async function () {
 								try {
@@ -440,6 +444,25 @@
 									const pair = stats.get(selectedPairId);
 									const local = pair && stats.get(pair.localCandidateId);
 									const remote = pair && stats.get(pair.remoteCandidateId);
+									if (!loggedTurnFallback) {
+										const localType = local && local.candidateType ? String(local.candidateType).toLowerCase() : "";
+										const remoteType = remote && remote.candidateType ? String(remote.candidateType).toLowerCase() : "";
+										const usingRelay = localType === "relay" || remoteType === "relay";
+										if (usingRelay) {
+											loggedTurnFallback = true;
+											if (!peerForceRelay) {
+												console.log("Bodycam stream: TURN fallback active (relay candidate selected).", {
+													localType,
+													remoteType,
+												});
+											} else {
+												console.log("Bodycam stream: TURN relay mode active (relay candidate selected).", {
+													localType,
+													remoteType,
+												});
+											}
+										}
+									}
 								} catch (err) {
 									console.warn("Bodycam stream: ICE stats failed.", err);
 								}
