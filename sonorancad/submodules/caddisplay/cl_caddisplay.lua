@@ -58,8 +58,23 @@ CreateThread(function()
                 end
             end
             local placementDb = {}
+            local worldPlacementDb = {}
             local spawnedDisplays = {}
             local vehiclesWithDisplays = {}
+            local worldDisplayObjects = {}
+            local worldDisplayNextReq = {}
+            local worldPlacementLabels = {}
+            local worldPlacementIndex = 1
+            local worldEditActive = false
+            local worldEditIsNew = false
+            local worldEditObject = nil
+            local worldEditPlacementId = nil
+            local worldEditLabel = nil
+            local worldEditDisplayModel = nil
+            local worldEditScale = nil
+            local worldEditPosition = { x = 0.0, y = 0.0, z = 0.0 }
+            local worldEditRotation = { x = 0.0, y = 0.0, z = 0.0 }
+            local worldEditOriginal = nil
             local miscDisplayIndex = 1
             local spawnedDisplayIndex = 1
             local displayMoveSpeed = 0.01
@@ -75,6 +90,7 @@ CreateThread(function()
             local activeRequests = {}
             local incomingRequest = nil
             local claimedOnce = {}
+            local worldAdmin = false
 
             local interactRange = pluginConfig.interactRange or 1.5
             local interactControl = pluginConfig.interactControl or 47
@@ -197,6 +213,38 @@ CreateThread(function()
                 return not pluginConfig.general.useAllowlistAsBlacklist
             end
 
+            local function isWorldDisplayEnabled()
+                return not (pluginConfig.worldDisplays and pluginConfig.worldDisplays.enabled == false)
+            end
+
+            local function getWorldDisplayKey(id)
+                return ("world:%s"):format(tostring(id))
+            end
+
+            local function buildWorldPlacementLabels()
+                worldPlacementLabels = {}
+                for _, entry in ipairs(worldPlacementDb) do
+                    local label = entry.Label or entry.label or entry.name
+                    if label == nil or label == "" then
+                        label = ("Station Display %s"):format(tostring(entry.ID or "?"))
+                    end
+                    table.insert(worldPlacementLabels, label)
+                end
+                if worldPlacementIndex > #worldPlacementLabels then
+                    worldPlacementIndex = #worldPlacementLabels
+                end
+                if worldPlacementIndex < 1 then
+                    worldPlacementIndex = 1
+                end
+            end
+
+            local function getWorldPlacementByIndex(index)
+                if index == nil or index < 1 or index > #worldPlacementDb then
+                    return nil
+                end
+                return worldPlacementDb[index]
+            end
+
             local function hasTrackedVehicle(tab, veh)
                 local targetVehNet = getVehNetId(veh)
                 for _, value in ipairs(tab) do
@@ -277,6 +325,36 @@ CreateThread(function()
                     forward.x * sy, forward.y * sy, forward.z * sy,
                     up.x * sz, up.y * sz, up.z * sz,
                     at.x, at.y, at.z)
+            end
+
+            local function spawnWorldDisplay(placement)
+                if placement == nil then
+                    return nil
+                end
+                local pos = placement.Position or placement.position or {}
+                local rot = placement.Rotation or placement.rotation or {}
+                local scaleCfg = placement.Scale or placement.scale or {}
+                local modelName = placement.DisplayModel or placement.displayModel or displayModel
+                local hash = ensureModel(modelName)
+                local obj = CreateObject(hash, pos.x or 0.0, pos.y or 0.0, pos.z or 0.0, false, false, false)
+                SetEntityRotation(obj, rot.pitch or rot.x or 0.0, rot.roll or rot.y or 0.0, rot.yaw or rot.z or 0.0, 2,
+                    true)
+                FreezeEntityPosition(obj, true)
+                SetEntityCollision(obj, false, false)
+                applyConfiguredScale(obj, scaleCfg)
+                ensureDui()
+                return obj
+            end
+
+            local function applyWorldPlacement(obj, placement)
+                if obj == nil or not DoesEntityExist(obj) or placement == nil then
+                    return
+                end
+                local pos = placement.Position or placement.position or {}
+                local rot = placement.Rotation or placement.rotation or {}
+                SetEntityCoordsNoOffset(obj, pos.x or 0.0, pos.y or 0.0, pos.z or 0.0, false, false, false)
+                SetEntityRotation(obj, rot.pitch or rot.x or 0.0, rot.roll or rot.y or 0.0, rot.yaw or rot.z or 0.0, 2,
+                    true)
             end
 
             local function drawWorldPrompt(pos, text)
@@ -432,6 +510,279 @@ CreateThread(function()
                 end
                 if spawnedDisplayIndex > #spawnedDisplays then
                     spawnedDisplayIndex = #spawnedDisplays > 0 and #spawnedDisplays or 1
+                end
+            end
+
+            local function clearWorldDisplays()
+                for _, obj in pairs(worldDisplayObjects) do
+                    if obj and DoesEntityExist(obj) then
+                        DeleteObject(obj)
+                    end
+                end
+                worldDisplayObjects = {}
+                worldDisplayNextReq = {}
+            end
+
+            local function syncWorldPlacements(serverDb)
+                worldPlacementDb = serverDb or {}
+                if not isWorldDisplayEnabled() then
+                    clearWorldDisplays()
+                    buildWorldPlacementLabels()
+                    return
+                end
+
+                local seen = {}
+                for _, entry in ipairs(worldPlacementDb) do
+                    local id = tostring(entry.ID or "")
+                    if id ~= "" then
+                        seen[id] = true
+                        local obj = worldDisplayObjects[id]
+                        if obj == nil or not DoesEntityExist(obj) then
+                            obj = spawnWorldDisplay(entry)
+                            worldDisplayObjects[id] = obj
+                        else
+                            applyWorldPlacement(obj, entry)
+                        end
+                    end
+                end
+
+                for id, obj in pairs(worldDisplayObjects) do
+                    if not seen[id] then
+                        if obj and DoesEntityExist(obj) then
+                            DeleteObject(obj)
+                        end
+                        worldDisplayObjects[id] = nil
+                        worldDisplayNextReq[id] = nil
+                    end
+                end
+
+                buildWorldPlacementLabels()
+            end
+
+            local function getClosestWorldDisplay(pedCoords, range)
+                local closestId = nil
+                local closestObj = nil
+                local closestDist = range or interactRange
+                for id, obj in pairs(worldDisplayObjects) do
+                    if obj and DoesEntityExist(obj) then
+                        local dist = #(pedCoords - GetEntityCoords(obj))
+                        if dist <= closestDist then
+                            closestDist = dist
+                            closestId = id
+                            closestObj = obj
+                        end
+                    end
+                end
+                return closestId, closestObj, closestDist
+            end
+
+            local function beginWorldEdit(placement, isNew)
+                worldEditActive = true
+                worldEditIsNew = isNew
+                worldEditPlacementId = placement and placement.ID or nil
+                worldEditLabel = placement and (placement.Label or placement.label or placement.name) or "Station Display"
+                worldEditDisplayModel = placement and (placement.DisplayModel or placement.displayModel) or displayModel
+                worldEditScale = placement and (placement.Scale or placement.scale) or { x = 1.0, y = 1.0, z = 1.0 }
+                worldEditOriginal = nil
+
+                local obj = nil
+                if isNew then
+                    local ped = PlayerPedId()
+                    local coords = GetEntityCoords(ped)
+                    local heading = GetEntityHeading(ped)
+                    local tempPlacement = {
+                        Position = { x = coords.x, y = coords.y, z = coords.z },
+                        Rotation = { pitch = 0.0, roll = 0.0, yaw = heading },
+                        DisplayModel = worldEditDisplayModel,
+                        Scale = worldEditScale
+                    }
+                    obj = spawnWorldDisplay(tempPlacement)
+                else
+                    local idKey = placement and tostring(placement.ID) or nil
+                    obj = idKey and worldDisplayObjects[idKey] or nil
+                    if obj == nil or not DoesEntityExist(obj) then
+                        obj = spawnWorldDisplay(placement)
+                        if idKey then
+                            worldDisplayObjects[idKey] = obj
+                        end
+                    end
+                    local pos = placement.Position or placement.position or {}
+                    local rot = placement.Rotation or placement.rotation or {}
+                    worldEditOriginal = {
+                        position = {
+                            x = pos.x or 0.0,
+                            y = pos.y or 0.0,
+                            z = pos.z or 0.0
+                        },
+                        rotation = {
+                            x = rot.pitch or rot.x or 0.0,
+                            y = rot.roll or rot.y or 0.0,
+                            z = rot.yaw or rot.z or 0.0
+                        }
+                    }
+                end
+
+                worldEditObject = obj
+                if worldEditObject and DoesEntityExist(worldEditObject) then
+                    local pos = GetEntityCoords(worldEditObject)
+                    local rot = GetEntityRotation(worldEditObject, 2)
+                    worldEditPosition = { x = pos.x, y = pos.y, z = pos.z }
+                    worldEditRotation = { x = rot.x, y = rot.y, z = rot.z }
+                end
+            end
+
+            local function cancelWorldEdit()
+                if worldEditObject and DoesEntityExist(worldEditObject) then
+                    if worldEditIsNew then
+                        DeleteObject(worldEditObject)
+                    elseif worldEditOriginal then
+                        SetEntityCoordsNoOffset(worldEditObject, worldEditOriginal.position.x,
+                            worldEditOriginal.position.y, worldEditOriginal.position.z, false, false, false)
+                        SetEntityRotation(worldEditObject, worldEditOriginal.rotation.x, worldEditOriginal.rotation.y,
+                            worldEditOriginal.rotation.z, 2, true)
+                    end
+                end
+                worldEditActive = false
+                worldEditIsNew = false
+                worldEditObject = nil
+                worldEditPlacementId = nil
+                worldEditLabel = nil
+                worldEditDisplayModel = nil
+                worldEditScale = nil
+                worldEditOriginal = nil
+            end
+
+            local function saveWorldEdit()
+                if worldEditObject == nil or not DoesEntityExist(worldEditObject) then
+                    return
+                end
+                local data = {
+                    id = worldEditPlacementId,
+                    label = worldEditLabel,
+                    position = worldEditPosition,
+                    rotation = worldEditRotation,
+                    displayModel = worldEditDisplayModel,
+                    scale = worldEditScale
+                }
+                TriggerServerEvent("SonoranCAD::caddisplay::SaveWorldPlacement", data)
+                if worldEditIsNew then
+                    DeleteObject(worldEditObject)
+                end
+                worldEditActive = false
+                worldEditIsNew = false
+                worldEditObject = nil
+                worldEditPlacementId = nil
+                worldEditLabel = nil
+                worldEditDisplayModel = nil
+                worldEditScale = nil
+                worldEditOriginal = nil
+            end
+
+            local function updateWorldEditControls()
+                if not worldEditActive or worldEditObject == nil or not DoesEntityExist(worldEditObject) then
+                    return
+                end
+
+                if IsControlPressed(0, 118) and GetLastInputMethod(0) then
+                    worldEditRotation.x = worldEditRotation.x + displayMoveSpeed
+                elseif IsControlPressed(0, 117) and GetLastInputMethod(0) then
+                    worldEditRotation.x = worldEditRotation.x - displayMoveSpeed
+                elseif IsControlPressed(0, 121) and GetLastInputMethod(0) then
+                    worldEditRotation.y = worldEditRotation.y + displayMoveSpeed
+                elseif IsControlPressed(0, 178) and GetLastInputMethod(0) then
+                    worldEditRotation.y = worldEditRotation.y - displayMoveSpeed
+                elseif IsControlPressed(0, 207) and GetLastInputMethod(0) then
+                    worldEditRotation.z = worldEditRotation.z + displayMoveSpeed
+                elseif IsControlPressed(0, 208) and GetLastInputMethod(0) then
+                    worldEditRotation.z = worldEditRotation.z - displayMoveSpeed
+                elseif IsControlPressed(0, 108) and GetLastInputMethod(0) then
+                    worldEditPosition.x = worldEditPosition.x + displayMoveSpeed
+                elseif IsControlPressed(0, 107) and GetLastInputMethod(0) then
+                    worldEditPosition.x = worldEditPosition.x - displayMoveSpeed
+                elseif IsControlPressed(0, 112) and GetLastInputMethod(0) then
+                    worldEditPosition.y = worldEditPosition.y + displayMoveSpeed
+                elseif IsControlPressed(0, 111) and GetLastInputMethod(0) then
+                    worldEditPosition.y = worldEditPosition.y - displayMoveSpeed
+                elseif IsControlPressed(0, 313) and GetLastInputMethod(0) then
+                    worldEditPosition.z = worldEditPosition.z + displayMoveSpeed
+                elseif IsControlPressed(0, 312) and GetLastInputMethod(0) then
+                    worldEditPosition.z = worldEditPosition.z - displayMoveSpeed
+                elseif IsControlJustReleased(0, 21) and GetLastInputMethod(0) then
+                    if displayMoveSpeed < 2.0 then
+                        displayMoveSpeed = displayMoveSpeed + 0.001
+                    else
+                        notify(pluginConfig.lang.cannotGoFaster)
+                    end
+                elseif IsControlJustReleased(0, 132) and GetLastInputMethod(0) then
+                    if displayMoveSpeed > 0.001 then
+                        displayMoveSpeed = displayMoveSpeed - 0.001
+                    else
+                        notify(pluginConfig.lang.cannotGoSlower)
+                    end
+                end
+
+                SetEntityCoordsNoOffset(worldEditObject, worldEditPosition.x, worldEditPosition.y, worldEditPosition.z, false,
+                    false, false)
+                SetEntityRotation(worldEditObject, worldEditRotation.x, worldEditRotation.y, worldEditRotation.z, 2, true)
+                marker(GetEntityCoords(worldEditObject))
+
+                if displayScale and HasScaleformMovieLoaded(displayScale) then
+                    BeginScaleformMovieMethod(displayScale, "CLEAR_ALL")
+                    EndScaleformMovieMethod()
+
+                    BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
+                    ScaleformMovieMethodAddParamInt(0)
+                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 108))
+                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 107))
+                    PushScaleformMovieMethodParameterString("Move X")
+                    EndScaleformMovieMethod()
+
+                    BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
+                    ScaleformMovieMethodAddParamInt(1)
+                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 112))
+                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 111))
+                    PushScaleformMovieMethodParameterString("Move Y")
+                    EndScaleformMovieMethod()
+
+                    BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
+                    ScaleformMovieMethodAddParamInt(6)
+                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 21))
+                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 36))
+                    PushScaleformMovieMethodParameterString("Change Speed")
+                    EndScaleformMovieMethod()
+
+                    BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
+                    ScaleformMovieMethodAddParamInt(2)
+                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 313))
+                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 312))
+                    PushScaleformMovieMethodParameterString("Move Z")
+                    EndScaleformMovieMethod()
+
+                    BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
+                    ScaleformMovieMethodAddParamInt(3)
+                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 118))
+                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 117))
+                    PushScaleformMovieMethodParameterString("Rotate X")
+                    EndScaleformMovieMethod()
+
+                    BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
+                    ScaleformMovieMethodAddParamInt(4)
+                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 121))
+                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 178))
+                    PushScaleformMovieMethodParameterString("Rotate Y")
+                    EndScaleformMovieMethod()
+
+                    BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
+                    ScaleformMovieMethodAddParamInt(5)
+                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 207))
+                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 208))
+                    PushScaleformMovieMethodParameterString("Rotate Z")
+                    EndScaleformMovieMethod()
+
+                    BeginScaleformMovieMethod(displayScale, "DRAW_INSTRUCTIONAL_BUTTONS")
+                    ScaleformMovieMethodAddParamInt(0)
+                    EndScaleformMovieMethod()
+                    DrawScaleformMovieFullscreen(displayScale, 255, 255, 255, 255, 0)
                 end
             end
 
@@ -694,13 +1045,23 @@ CreateThread(function()
                 WarMenu.CreateSubMenu("caddisplay_spawn_menu", "caddisplay_menu", pluginConfig.lang.spawningSubMenu)
                 WarMenu.CreateSubMenu("caddisplay_attach_menu", "caddisplay_menu", pluginConfig.lang.attachingSubMenu)
                 WarMenu.CreateSubMenu("caddisplay_delete_menu", "caddisplay_menu", pluginConfig.lang.deletionSubMenu)
+                WarMenu.CreateSubMenu("caddisplay_world_menu", "caddisplay_menu", pluginConfig.lang.worldMenuHeader)
+                WarMenu.CreateSubMenu("caddisplay_world_edit_menu", "caddisplay_world_menu",
+                    pluginConfig.lang.worldPlacementSubMenu)
                 while true do
+                    if worldEditActive and not WarMenu.IsMenuOpened("caddisplay_world_edit_menu") then
+                        cancelWorldEdit()
+                    end
                     if WarMenu.IsMenuOpened("caddisplay_menu") then
                         if WarMenu.MenuButton(pluginConfig.lang.spawnMenuButton, "caddisplay_spawn_menu") then
                         end
                         if WarMenu.MenuButton(pluginConfig.lang.attachMenuButton, "caddisplay_attach_menu") then
                         end
                         if WarMenu.MenuButton(pluginConfig.lang.deleteMenuButton, "caddisplay_delete_menu") then
+                        end
+                        if isWorldDisplayEnabled() and worldAdmin then
+                            if WarMenu.MenuButton(pluginConfig.lang.worldMenuButton, "caddisplay_world_menu") then
+                            end
                         end
                         WarMenu.Display()
                     elseif WarMenu.IsMenuOpened("caddisplay_spawn_menu") then
@@ -726,6 +1087,50 @@ CreateThread(function()
                             end
                         else
                             notify(pluginConfig.lang.notInVeh)
+                        end
+                        WarMenu.Display()
+                    elseif WarMenu.IsMenuOpened("caddisplay_world_menu") then
+                        if not isWorldDisplayEnabled() then
+                            WarMenu.CloseMenu()
+                        else
+                            if #worldPlacementDb > 0 then
+                                WarMenu.ComboBox(pluginConfig.lang.worldPlacementSelect, worldPlacementLabels,
+                                    worldPlacementIndex, worldPlacementIndex,
+                                    function(current) worldPlacementIndex = current end)
+                                if WarMenu.Button(pluginConfig.lang.worldEditButton) then
+                                    local placement = getWorldPlacementByIndex(worldPlacementIndex)
+                                    if placement then
+                                        beginWorldEdit(placement, false)
+                                        WarMenu.OpenMenu("caddisplay_world_edit_menu")
+                                    end
+                                end
+                                if WarMenu.Button(pluginConfig.lang.worldDeleteButton) then
+                                    local placement = getWorldPlacementByIndex(worldPlacementIndex)
+                                    if placement then
+                                        TriggerServerEvent("SonoranCAD::caddisplay::DeleteWorldPlacement", placement.ID)
+                                        WarMenu.CloseMenu()
+                                    end
+                                end
+                            else
+                                WarMenu.Button(pluginConfig.lang.worldNoDisplays)
+                            end
+
+                            if WarMenu.Button(pluginConfig.lang.worldSpawnButton) then
+                                beginWorldEdit(nil, true)
+                                WarMenu.OpenMenu("caddisplay_world_edit_menu")
+                            end
+
+                            WarMenu.Display()
+                        end
+                    elseif WarMenu.IsMenuOpened("caddisplay_world_edit_menu") then
+                        updateWorldEditControls()
+                        if WarMenu.Button(pluginConfig.lang.worldSaveButton) then
+                            saveWorldEdit()
+                            WarMenu.OpenMenu("caddisplay_world_menu")
+                        end
+                        if WarMenu.Button(pluginConfig.lang.worldCancelButton) then
+                            cancelWorldEdit()
+                            WarMenu.OpenMenu("caddisplay_world_menu")
                         end
                         WarMenu.Display()
                     end
@@ -763,6 +1168,10 @@ CreateThread(function()
                 end
             end)
 
+            RegisterNetEvent("SonoranCAD::caddisplay::SyncWorldPlacements", function(serverDb)
+                syncWorldPlacements(serverDb or {})
+            end)
+
             RegisterNetEvent("SonoranCAD::caddisplay::SyncOwners", function(serverOwners)
                 displayOwners = serverOwners or {}
                 local me = GetPlayerServerId(PlayerId())
@@ -789,6 +1198,8 @@ CreateThread(function()
                 updateDui({ type = "cad_image", image = image })
                 if meta.vehNet ~= nil then
                     TriggerLatentServerEvent("SonoranCAD::caddisplay::BroadcastCadScreenshot", 0, meta.vehNet, image)
+                elseif meta.worldId ~= nil then
+                    TriggerLatentServerEvent("SonoranCAD::caddisplay::BroadcastWorldCadScreenshot", 0, meta.worldId, image)
                 end
             end)
 
@@ -807,10 +1218,11 @@ CreateThread(function()
                 incomingRequest = nil
             end)
 
-            RegisterNetEvent("SonoranCAD::caddisplay::OpenMenu", function(adminFlag)
+            RegisterNetEvent("SonoranCAD::caddisplay::OpenMenu", function(adminFlag, worldFlag)
                 isAdmin = adminFlag or false
+                worldAdmin = worldFlag or false
                 local veh = GetVehiclePedIsIn(PlayerPedId(), false)
-                if veh ~= 0 and not isVehicleBlocked(veh) then
+                if (veh ~= 0 and not isVehicleBlocked(veh)) or (isWorldDisplayEnabled() and worldAdmin) then
                     WarMenu.OpenMenu("caddisplay_menu")
                 else
                     notify(pluginConfig.lang.vehNotCompatible)
@@ -827,6 +1239,7 @@ CreateThread(function()
                     while #spawnedDisplays > 0 do
                         removeDisplayAtIndex(1)
                     end
+                    clearWorldDisplays()
                     destroyDuiObjects()
                 end
             end)
@@ -839,6 +1252,20 @@ CreateThread(function()
                 local ped = PlayerPedId()
                 local veh = GetVehiclePedIsIn(ped, false)
                 if veh == 0 then
+                    if isWorldDisplayEnabled() then
+                        local pedCoords = GetEntityCoords(ped)
+                        local displayId, displayObj, dist = getClosestWorldDisplay(pedCoords, interactRange)
+                        if displayId == nil or displayObj == nil then
+                            notify(pluginConfig.lang.noDisplayFound)
+                            return
+                        end
+                        if dist > interactRange then
+                            notify("Move closer to the CAD display to interact.")
+                            return
+                        end
+                        TriggerServerEvent("SonoranCAD::caddisplay::ClaimWorldDisplay", tonumber(displayId))
+                        return
+                    end
                     notify(pluginConfig.lang.notInVeh)
                     return
                 end
@@ -936,6 +1363,39 @@ CreateThread(function()
                                         activeRequests[reqId] = { vehNet = vehNet }
                                         TriggerEvent("SonoranCAD::Tablet::RequestCadScreenshot", reqId)
                                         car._nextReq = now + screenshotInterval
+                                    end
+                                end
+                            end
+                        end
+                    end
+
+                    if isWorldDisplayEnabled() then
+                        for id, obj in pairs(worldDisplayObjects) do
+                            if obj ~= nil and DoesEntityExist(obj) then
+                                local key = getWorldDisplayKey(id)
+                                local ownerId = displayOwners[key]
+                                if not drawInteractPrompt and ownerId == nil then
+                                    CreateThread(function()
+                                        drawInteractPrompt = true
+                                        while drawInteractPrompt do
+                                            Wait(0)
+                                            local distPrompt = #(GetEntityCoords(ped) - GetEntityCoords(obj))
+                                            if distPrompt <= interactRange + 0.5 and not claimedOnce[key] then
+                                                drawWorldPrompt(GetEntityCoords(obj) + vector3(0.0, 0.0, 0.3),
+                                                    ("Press %s to interact"):format(interactKeybind))
+                                            else
+                                                drawInteractPrompt = false
+                                            end
+                                        end
+                                    end)
+                                end
+
+                                if ownerId ~= nil and ownerId == localServerId then
+                                    if (worldDisplayNextReq[id] or 0) <= now then
+                                        local reqId = ("caddisplay-world-%s-%d"):format(ownerId, now)
+                                        activeRequests[reqId] = { worldId = tonumber(id) }
+                                        TriggerEvent("SonoranCAD::Tablet::RequestCadScreenshot", reqId)
+                                        worldDisplayNextReq[id] = now + screenshotInterval
                                     end
                                 end
                             end
