@@ -7,6 +7,7 @@ version '3.2.32'
 
 server_scripts {
     'core/http.js'
+    ,'core/apiws.js'
     ,'core/unzipper/unzip.js'
     ,'core/image.js'
     ,'core/pdf.js'
