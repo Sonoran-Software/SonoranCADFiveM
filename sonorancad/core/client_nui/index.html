@@ -176,8 +176,9 @@
 			const BODYCAM_PUBLISHER_BUILD = "2026-02-17-p2p-first-v1";
 
 			let peerInstance = null;
-			let peerCall = null;
-			let pendingCall = null;
+			const MAX_BODYCAM_VIEWERS = 4;
+			const peerCalls = new Set();
+			const pendingCalls = new Set();
 			let peerReconnectTimer = null;
 			let peerReconnectAttempts = 0;
 			let wsProbe = null;
@@ -203,6 +204,24 @@
 					headers: { "Content-Type": "application/json; charset=UTF-8" },
 					body: JSON.stringify({ id: id }),
 				}).catch(function () {});
+			}
+
+			let watchingState = false;
+			function notifyWatchingState(watching) {
+				const next = !!watching;
+				if (watchingState === next) {
+					return;
+				}
+				watchingState = next;
+				fetch(`https://${GetParentResourceName()}/bodycamWatching`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json; charset=UTF-8" },
+					body: JSON.stringify({ watching: watchingState }),
+				}).catch(function () {});
+			}
+
+			function updateWatchingState() {
+				notifyWatchingState(peerCalls.size > 0 || pendingCalls.size > 0);
 			}
 
 			function safeJson(value) {
@@ -336,16 +355,6 @@
 				const defaultRelayTurnPort = incoming.defaultTurnPort || 3478;
 				const turnHostOverride = incoming.turnHost || (forceRelay ? defaultRelayTurnHost : "");
 				const turnPortOverride = incoming.turnPort || (forceRelay ? defaultRelayTurnPort : "");
-				if (!forceRelay) {
-					console.log("Bodycam stream: P2P-first ICE mode enabled (TURN fallback allowed).");
-				}
-				if (forceRelay && !incoming.turnHost) {
-					console.log("Bodycam stream: TURN host override auto-enabled for relay mode.", {
-						turnHost: turnHostOverride,
-						turnPort: turnPortOverride,
-					});
-				}
-
 				let iceServers = null;
 				if (Array.isArray(incoming.iceServers) && incoming.iceServers.length) {
 					iceServers = incoming.iceServers;
@@ -406,17 +415,16 @@
 					}
 				});
 				peerInstance.on("call", function (call) {
-					if (peerCall) {
-						peerCall.close();
-						peerCall = null;
-					}
-					if (pendingCall && pendingCall !== call) {
+					if (peerCalls.size + pendingCalls.size >= MAX_BODYCAM_VIEWERS) {
 						try {
-							pendingCall.close();
+							call.close();
 						} catch (err) {}
-						pendingCall = null;
+						return;
 					}
-					peerCall = call;
+					if (peerCalls.has(call) || pendingCalls.has(call)) {
+						updateWatchingState();
+						return;
+					}
 					if (call.peerConnection) {
 						const startIceStatsLogger = function (pc) {
 							if (!pc || typeof pc.getStats !== "function") {
@@ -450,17 +458,6 @@
 										const usingRelay = localType === "relay" || remoteType === "relay";
 										if (usingRelay) {
 											loggedTurnFallback = true;
-											if (!peerForceRelay) {
-												console.log("Bodycam stream: TURN fallback active (relay candidate selected).", {
-													localType,
-													remoteType,
-												});
-											} else {
-												console.log("Bodycam stream: TURN relay mode active (relay candidate selected).", {
-													localType,
-													remoteType,
-												});
-											}
 										}
 									}
 								} catch (err) {
@@ -516,27 +513,27 @@
 						startIceStatsLogger(pc);
 					}
 					if (peerStream.mediaStream) {
-						call.answer(peerStream.mediaStream);
+						try {
+							call.answer(peerStream.mediaStream);
+							peerCalls.add(call);
+						} catch (err) {
+							console.error("Bodycam stream: failed to answer call.", err);
+						}
 					} else {
-						pendingCall = call;
+						pendingCalls.add(call);
 						console.warn("Bodycam stream: stream not ready; deferring answer.");
 					}
+					updateWatchingState();
 					call.on("close", function () {
-						if (peerCall === call) {
-							peerCall = null;
-						}
-						if (pendingCall === call) {
-							pendingCall = null;
-						}
+						peerCalls.delete(call);
+						pendingCalls.delete(call);
+						updateWatchingState();
 					});
 					call.on("error", function (err) {
 						console.error("Bodycam stream: PeerJS call error.", err);
-						if (peerCall === call) {
-							peerCall = null;
-						}
-						if (pendingCall === call) {
-							pendingCall = null;
-						}
+						peerCalls.delete(call);
+						pendingCalls.delete(call);
+						updateWatchingState();
 					});
 				});
 				peerInstance.on("error", function (err) {
@@ -548,6 +545,7 @@
 				});
 				peerInstance.on("close", function () {
 					console.warn("Bodycam stream: PeerJS closed.");
+					updateWatchingState();
 				});
 			}
 
@@ -685,30 +683,36 @@
 					};
 				});
 
-				if (pendingCall) {
-					try {
-						pendingCall.answer(peerStream.mediaStream);
-					} catch (err) {
-						console.error("Bodycam stream: failed to answer deferred call.", err);
-					} finally {
-						pendingCall = null;
-					}
+				if (pendingCalls.size > 0) {
+					pendingCalls.forEach(function (call) {
+						try {
+							call.answer(peerStream.mediaStream);
+							peerCalls.add(call);
+						} catch (err) {
+							console.error("Bodycam stream: failed to answer deferred call.", err);
+						}
+					});
+					pendingCalls.clear();
+					updateWatchingState();
 				}
 
 				await ensurePeer(peerConfig, peerStream.remotePeerId);
 			}
 
 			async function stopBodycamStream() {
-				if (peerCall) {
-					peerCall.close();
-					peerCall = null;
-				}
-				if (pendingCall) {
+				peerCalls.forEach(function (call) {
 					try {
-						pendingCall.close();
+						call.close();
 					} catch (err) {}
-					pendingCall = null;
-				}
+				});
+				peerCalls.clear();
+				pendingCalls.forEach(function (call) {
+					try {
+						call.close();
+					} catch (err) {}
+				});
+				pendingCalls.clear();
+				updateWatchingState();
 				if (window.BodycamGameRenderer) {
 					BodycamGameRenderer.stop();
 				}

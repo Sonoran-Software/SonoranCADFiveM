@@ -8,16 +8,18 @@
   },
   "police": {
     "model": "https://s3.sonorancad.com/default/models/police_car.glb",
-    "zOffset": 9,
-    "sizeOffset": 0,
-    "headingOffset": 0,
+    "zOffset": 7,
+    "sizeOffset": 2.0,
+    "headingOffset": 90,
+    "lightZOffset": 3.62,
     "lights": false
   },
   "fire": {
     "model": "https://s3.sonorancad.com/default/models/firetruck.glb",
-    "zOffset": 9,
-    "sizeOffset": 0,
+    "zOffset": 6,
+    "sizeOffset": 2.0,
     "headingOffset": 0,
+    "lightZOffset": 4.75,
     "lights": false
   },
   "ems": {
@@ -57,6 +59,13 @@
   },
   "motorcycle": {
     "model": "https://s3.sonorancad.com/default/models/motorcycle.glb",
+    "zOffset": 9,
+    "sizeOffset": 0,
+    "headingOffset": 0,
+    "lights": false
+  },
+  "boat": {
+    "model": "https://s3.sonorancad.com/default/models/boat.glb",
     "zOffset": 9,
     "sizeOffset": 0,
     "headingOffset": 0,

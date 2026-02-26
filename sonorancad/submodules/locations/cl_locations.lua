@@ -13,6 +13,7 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
         local lastLocation = 'none'
         local lastSentTime = nil
         local lastCoords = { x = 0, y = 0, z = 0, w = 0 }
+        local lastLightsOn = nil
 
         local function resolveVehicleType(ped, veh)
             if not ped then
@@ -36,6 +37,9 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
             end
             if vehClass == 8 then
                 return "motorcycle"
+            end
+            if vehClass == 14 then
+                return "boat"
             end
             if vehClass == 18 then
                 local modelName = GetDisplayNameFromVehicleModel(GetEntityModel(veh))
@@ -71,11 +75,11 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
             else
                 currentLocation = l1
             end
-            if (bodyCamOn or currentLocation ~= lastLocation or vector3(pos.x, pos.y, pos.z) ~= vector3(lastCoords.x, lastCoords.y, lastCoords.z))  then
+            local lightsOn = veh ~= 0 and IsVehicleSirenOn(veh) == 1
+            if (bodyCamOn or currentLocation ~= lastLocation or vector3(pos.x, pos.y, pos.z) ~= vector3(lastCoords.x, lastCoords.y, lastCoords.z) or lightsOn ~= lastLightsOn)  then
                 -- Location changed, continue
                 local toSend = currentLocation
                 local vehicleType = resolveVehicleType(ped, veh)
-                local lightsOn = veh ~= 0 and IsVehicleSirenOn(veh) == 1
                 if pluginConfig.prefixPostal and postal ~= nil then
                     toSend = "["..tostring(postal).."] "..currentLocation
                 elseif postal == nil and pluginConfig.prefixPostal == true then
@@ -87,6 +91,7 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
                     TriggerServerEvent('SonoranCAD::locations:SendLocation', toSend, pos4, vehicleType, lightsOn)
                 end
                 lastCoords = pos4
+                lastLightsOn = lightsOn
                 debugLog(("Locations different, sending. (%s ~= %s) SENT: %s (POS: %s)"):format(currentLocation, lastLocation, toSend, json.encode(lastCoords)))
                 lastSentTime = GetGameTimer()
                 lastLocation = currentLocation
@@ -102,7 +107,10 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
                 end
                 sendLocation()
                 -- Wait (1000ms) before checking for an updated unit location
-                Citizen.Wait(pluginConfig.checkTime)
+                if not pluginConfig.clientCheckTime then
+                    pluginConfig.clientCheckTime = 250
+                end
+                Citizen.Wait(pluginConfig.clientCheckTime)
             end
         end)
 

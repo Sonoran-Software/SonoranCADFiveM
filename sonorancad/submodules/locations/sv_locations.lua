@@ -78,6 +78,28 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
             return math.sqrt(dx * dx + dy * dy + dz * dz)
         end
 
+        local function normalizeCoords(pos)
+            if pos == nil then
+                return nil
+            end
+            if type(pos) == "table" then
+                if pos.x ~= nil and pos.y ~= nil and pos.z ~= nil then
+                    return { x = pos.x, y = pos.y, z = pos.z, w = pos.w or 0 }
+                end
+                if pos[1] ~= nil and pos[2] ~= nil and pos[3] ~= nil then
+                    return { x = pos[1], y = pos[2], z = pos[3], w = pos[4] or 0 }
+                end
+            end
+            local okX, x = pcall(function() return pos.x end)
+            local okY, y = pcall(function() return pos.y end)
+            local okZ, z = pcall(function() return pos.z end)
+            local okW, w = pcall(function() return pos.w end)
+            if okX and okY and okZ and x ~= nil and y ~= nil and z ~= nil then
+                return { x = x, y = y, z = z, w = okW and w or 0 }
+            end
+            return nil
+        end
+
         local function findPendingIndex(apiId)
             if apiId == nil then
                 return nil
@@ -94,8 +116,10 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
             local existingIndex = findPendingIndex(payload.apiId)
             if existingIndex ~= nil then
                 PendingQueue[existingIndex] = payload
+                debugLog(("UNIT_LOCATION: Updated pending entry for %s (queue size: %s)"):format(payload.apiId, #PendingQueue))
             else
                 table.insert(PendingQueue, payload)
+                debugLog(("UNIT_LOCATION: Enqueued update for %s (queue size: %s)"):format(payload.apiId, #PendingQueue))
             end
         end
 
@@ -115,13 +139,19 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
                     for i = batchSize, 1, -1 do
                         table.remove(PendingQueue, i)
                     end
+                    debugLog(("UNIT_LOCATION: Sending WS batch of %s (pending remaining: %s)"):format(#batch, #PendingQueue))
                     exports['sonorancad']:sendUnitLocations(batch)
                     for _, entry in ipairs(batch) do
                         if entry and entry.apiId then
+                            local peerId = entry.peerId
+                            if peerId == "" then
+                                peerId = nil
+                            end
                             LastSent[entry.apiId] = {
                                 coordinates = entry.coordinates,
                                 heading = entry.coordinates and entry.coordinates.w or nil,
-                                peerId = entry.peerId
+                                peerId = peerId,
+                                vehicle = entry.vehicle
                             }
                         end
                     end
@@ -154,30 +184,35 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
                 debugLog(("user %s has no identifier for %s, skipped."):format(source, Config.primaryIdentifier))
                 return
             end
+            local normalizedPosition = normalizeCoords(position)
+            if normalizedPosition == nil then
+                debugLog(("UNIT_LOCATION: Skipped %s (invalid coordinates payload: %s)"):format(identifier, tostring(position)))
+                return
+            end
             local vehiclePayload = buildVehiclePayload(vehicleType, lightsOn)
             local lastSent = LastSent[identifier]
             local lastCoords = lastSent and lastSent.coordinates or nil
             local lastHeading = lastSent and lastSent.heading or nil
             local lastPeerId = lastSent and lastSent.peerId or nil
-            local distance = coordsDistance(position, lastCoords)
-            local headingDiff = headingDelta(position and position.w or nil, lastHeading)
+            local lastVehicle = lastSent and lastSent.vehicle or nil
+            local distance = coordsDistance(normalizedPosition, lastCoords)
+            local headingDiff = headingDelta(normalizedPosition.w, lastHeading)
             local currentPeerId = (bodycamPeerId and bodycamPeerId ~= "") and bodycamPeerId or nil
             local bodycamChanged = currentPeerId ~= lastPeerId
-            if distance <= CoordinateThreshold and headingDiff <= HeadingThreshold and not bodycamChanged then
+            local vehicleChanged = json.encode(vehiclePayload or {}) ~= json.encode(lastVehicle or {})
+            if distance <= CoordinateThreshold and headingDiff <= HeadingThreshold and not bodycamChanged and not vehicleChanged then
                 return
             end
 
             local payload = {
                 ['apiId'] = identifier,
                 ['location'] = currentLocation,
-                ['coordinates'] = position,
+                ['coordinates'] = normalizedPosition,
                 ['vehicle'] = vehiclePayload
             }
             if bodycamPeerId then
                 payload['proxyUrl'] = Config.proxyUrl
-                if bodycamPeerId ~= "" then
-                    payload['peerId'] = bodycamPeerId
-                end
+                payload['peerId'] = bodycamPeerId
             end
             LocationCache[source] = payload
             enqueueUpdate(payload)
