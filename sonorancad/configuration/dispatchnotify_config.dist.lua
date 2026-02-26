@@ -8,7 +8,7 @@
 ]]
 local config = {
     enabled = false,
-    configVersion = "3.2",
+    configVersion = "3.3",
     pluginName = "dispatchnotify", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author
     requiresPlugins = {
@@ -50,6 +50,22 @@ local config = {
         If a dispatcher is detected to be online, automatically disable the response command.
     ]]
     dispatchDisablesSelfResponse = false,
+    --[[
+        If a dispatcher is detected to be online, automatically suppress incoming 911 call notifications to units.
+    ]]
+    dispatchDisablesUnitNotify = false,
+    --[[
+        Enable an in-game command to override unit 911 notifications.
+
+        Usage: /<unitNotifyToggleCommand> [on|off|auto]
+            on: force notifications on
+            off: force notifications off
+            auto: follow dispatcher detection + config
+    ]]
+    enableUnitNotifyToggleCommand = true,
+    unitNotifyToggleCommand = "toggledispatchnotify",
+    -- Leave blank ("") to allow anyone to use the command.
+    unitNotifyToggleAce = "sonorancad.dispatchnotify.toggle",
 
     --[[
         Enable "units are on the way" notifications

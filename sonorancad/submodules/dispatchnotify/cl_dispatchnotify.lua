@@ -91,6 +91,13 @@ CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfi
             TriggerEvent("chat:addMessage", {args = {"^0[ ^2GPS ^0] ", ("GPS lock has been %s"):format(gpsLock and "enabled" or "disabled")}})
         end)
 
+        if pluginConfig.enableUnitNotifyToggleCommand then
+            TriggerEvent("chat:addSuggestion", "/" .. pluginConfig.unitNotifyToggleCommand,
+                "Toggle unit 911 notifications (override)", {
+                    { name = "mode", help = "on | off | auto" }
+                })
+        end
+
         RegisterNetEvent("SonoranCAD::dispatchnotify:CallAttach")
         RegisterNetEvent("SonoranCAD::dispatchnotify:CallDetach")
         RegisterNetEvent("SonoranCAD::dispatchnotify:AddNoteToCall")
