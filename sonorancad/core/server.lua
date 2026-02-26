@@ -2,7 +2,7 @@ Plugins = {}
 
 ApiUrls = {
     production = "https://api.sonorancad.com/",
-    development = "https://cadapi.dev.sonoransoftware.com/"
+    development = "https://staging-api.dev.sonorancad.com/"
 }
 
 function getApiUrl()

@@ -17,6 +17,16 @@
 				z-index: 10;
 			}
 
+			#app {
+				position: absolute;
+				left: -10000px;
+				top: -10000px;
+				width: 1px;
+				height: 1px;
+				opacity: 0;
+				pointer-events: none;
+			}
+
 			#bodycamOverlayContainer {
 				position: absolute;
 				inset: 0;
@@ -30,13 +40,30 @@
 				display: none;
 				height: 6vh;
 			}
+
+			#bodycamStreamCanvas {
+				position: absolute;
+				left: -10000px;
+				top: -10000px;
+				width: 1px;
+				height: 1px;
+				opacity: 0;
+				z-index: 1;
+				background: #000;
+				pointer-events: none;
+			}
 		</style>
 	</head>
 	<body>
 		<div id="recordPrinterContainer"></div>
+		<div id="app"></div>
 		<div id="bodycamOverlayContainer">
 			<img src="./img/logo.gif" alt="header" id="bodycamOverlayImage" />
 		</div>
+		<canvas id="bodycamStreamCanvas" width="1" height="1"></canvas>
+		<script src="https://unpkg.com/@citizenfx/three/build/three.js" type="text/javascript"></script>
+		<script src="js/bodycam_canvas.js" type="text/javascript"></script>
+		<script src="js/canvas_recorder.js" type="text/javascript"></script>
 		<script>
 			// CRED: https://stackoverflow.com/questions/6150289/how-can-i-convert-an-image-into-base64-string-using-javascript/20285053#20285053
 			function toDataUrl(url, callback) {
@@ -70,6 +97,7 @@
 			});
 		</script>
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.1.1/howler.min.js" type="text/javascript"></script>
+		<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js" type="text/javascript"></script>
 		<script>
 			var audioPlayer = null;
 			var bodycamOverlayVisible = false;
@@ -136,13 +164,616 @@
 				}
 			}
 
+			const defaultPeerConfig = {
+				host: "peerjs.sonorancad.com",
+				port: 443,
+				path: "/",
+				secure: true,
+				config: {
+					iceServers: [{ urls: "stun:134.199.247.110:3478" }],
+				},
+			};
+			const BODYCAM_PUBLISHER_BUILD = "2026-02-17-p2p-first-v1";
+
+			let peerInstance = null;
+			const MAX_BODYCAM_VIEWERS = 4;
+			const peerCalls = new Set();
+			const pendingCalls = new Set();
+			let peerReconnectTimer = null;
+			let peerReconnectAttempts = 0;
+			let wsProbe = null;
+			let wsProbeTimer = null;
+			let wsProbeEnabled = true;
+			let peerForceRelay = false;
+			const peerStream = {
+				mediaStream: null,
+				remotePeerId: null,
+				videoStream: null,
+				micStream: null,
+				audioContext: null,
+				audioDestination: null,
+				silentAudio: null,
+			};
+
+			function notifyPeerId(id) {
+				if (!id) {
+					return;
+				}
+				fetch(`https://${GetParentResourceName()}/bodycamPeerId`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json; charset=UTF-8" },
+					body: JSON.stringify({ id: id }),
+				}).catch(function () {});
+			}
+
+			let watchingState = false;
+			function notifyWatchingState(watching) {
+				const next = !!watching;
+				if (watchingState === next) {
+					return;
+				}
+				watchingState = next;
+				fetch(`https://${GetParentResourceName()}/bodycamWatching`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json; charset=UTF-8" },
+					body: JSON.stringify({ watching: watchingState }),
+				}).catch(function () {});
+			}
+
+			function updateWatchingState() {
+				notifyWatchingState(peerCalls.size > 0 || pendingCalls.size > 0);
+			}
+
+			function safeJson(value) {
+				try {
+					return JSON.stringify(value);
+				} catch (err) {
+					return String(value);
+				}
+			}
+
+			function summarizeIceCandidatesFromStats(stats) {
+				const makeTypeCounts = function () {
+					return { host: 0, srflx: 0, relay: 0, prflx: 0, other: 0 };
+				};
+				const local = makeTypeCounts();
+				const remote = makeTypeCounts();
+				const protocols = { udp: 0, tcp: 0, other: 0 };
+				const addReport = function (target, report) {
+					const type = (report && report.candidateType ? report.candidateType : "other").toLowerCase();
+					if (typeof target[type] === "number") {
+						target[type] += 1;
+					} else {
+						target.other += 1;
+					}
+					const protocol = (report && report.protocol ? report.protocol : "other").toLowerCase();
+					if (typeof protocols[protocol] === "number") {
+						protocols[protocol] += 1;
+					} else {
+						protocols.other += 1;
+					}
+				};
+				stats.forEach(function (report) {
+					if (!report || !report.type) {
+						return;
+					}
+					if (report.type === "local-candidate") {
+						addReport(local, report);
+					} else if (report.type === "remote-candidate") {
+						addReport(remote, report);
+					}
+				});
+				return { localTypes: local, remoteTypes: remote, protocols: protocols };
+			}
+
+			function replaceIceUrlHost(url, turnHostOverride, turnPortOverride) {
+				if (!turnHostOverride && !turnPortOverride) {
+					return url;
+				}
+				if (typeof url !== "string") {
+					return url;
+				}
+				const match = url.match(/^([a-zA-Z0-9+.-]+):(\/\/)?([^?]+)(.*)$/);
+				if (!match) {
+					return url;
+				}
+				const scheme = match[1];
+				const hasSlashes = match[2] || "";
+				const hostPort = match[3];
+				const query = match[4] || "";
+				const hpMatch = hostPort.match(/^([^:]+):?(\d*)$/);
+				if (!hpMatch) {
+					return url;
+				}
+				let host = hpMatch[1];
+				let port = hpMatch[2] || "";
+				if (turnHostOverride) {
+					host = turnHostOverride;
+				}
+				if (turnPortOverride) {
+					port = turnPortOverride;
+				}
+				const hostOut = port ? `${host}:${port}` : host;
+				return `${scheme}:${hasSlashes}${hostOut}${query}`;
+			}
+
+			function normalizeIceServers(iceServers, turnHostOverride, turnPortOverride, forceRelay) {
+				if (!Array.isArray(iceServers)) {
+					return iceServers;
+				}
+				const overridden = iceServers.map(function (server) {
+					if (!server || !server.urls) {
+						return server;
+					}
+					if (Array.isArray(server.urls)) {
+						return { ...server, urls: server.urls.map(function (u) { return replaceIceUrlHost(u, turnHostOverride, turnPortOverride); }) };
+					}
+					return { ...server, urls: replaceIceUrlHost(server.urls, turnHostOverride, turnPortOverride) };
+				});
+				if (!forceRelay) {
+					return overridden;
+				}
+				const filtered = [];
+				overridden.forEach(function (server) {
+					if (!server || !server.urls) {
+						return;
+					}
+					const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+					const turnOnly = urls.filter(function (u) {
+						return typeof u === "string" && u.indexOf("turn:") === 0;
+					});
+					if (!turnOnly.length) {
+						return;
+					}
+					filtered.push({ ...server, urls: turnOnly.length === 1 ? turnOnly[0] : turnOnly });
+				});
+				return filtered.length ? filtered : overridden;
+			}
+
+			async function buildPeerOptions(peerConfig) {
+				const incoming = peerConfig && typeof peerConfig === "object" ? peerConfig : {};
+				const incomingRtcConfig = incoming.config && typeof incoming.config === "object" ? incoming.config : {};
+				const options = {
+					...defaultPeerConfig,
+					...incoming,
+					config: {
+						...(defaultPeerConfig.config || {}),
+						...incomingRtcConfig,
+					},
+				};
+
+				const apiBaseUrl = incoming.apiUrl || incoming.apiBaseUrl || "https://staging-api.dev.sonorancad.com";
+				const communityId = incoming.communityId || incoming.community || incoming.commId || "";
+				const apiKey = incoming.apiKey || incoming.key || "";
+				const userId = incoming.userId || `publisher-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+				const relayMode = String(incoming.relayMode || "").toLowerCase();
+				const requestedRelay = incoming.relay === true || incoming.relay === 1 || incoming.relay === "1" || incoming.forceRelay === true || relayMode === "relay";
+				const explicitDirect = incoming.allowDirect === true || incoming.allowDirect === 1 || incoming.allowDirect === "1" || relayMode === "all";
+				const forceRelay = requestedRelay && !explicitDirect;
+				// const forceRelay = true
+				const defaultRelayTurnHost = incoming.defaultTurnHost || "134.199.247.110";
+				const defaultRelayTurnPort = incoming.defaultTurnPort || 3478;
+				const turnHostOverride = incoming.turnHost || (forceRelay ? defaultRelayTurnHost : "");
+				const turnPortOverride = incoming.turnPort || (forceRelay ? defaultRelayTurnPort : "");
+				let iceServers = null;
+				if (Array.isArray(incoming.iceServers) && incoming.iceServers.length) {
+					iceServers = incoming.iceServers;
+				} else if (Array.isArray(incomingRtcConfig.iceServers) && incomingRtcConfig.iceServers.length) {
+					iceServers = incomingRtcConfig.iceServers;
+				} else if (communityId && apiKey) {
+					try {
+						const base = apiBaseUrl.endsWith("/") ? apiBaseUrl : `${apiBaseUrl}/`;
+						const turnUrl = `${base}api/turn?id=${encodeURIComponent(communityId)}&key=${encodeURIComponent(apiKey)}&userId=${encodeURIComponent(userId)}`;
+						const response = await fetch(turnUrl, { method: "GET", cache: "no-store" });
+						if (response.ok) {
+							const data = await response.json();
+							if (data && Array.isArray(data.iceServers) && data.iceServers.length) {
+								iceServers = data.iceServers;
+							}
+						} else {
+							console.warn("Bodycam stream: TURN credentials fetch failed with HTTP", response.status);
+						}
+					} catch (err) {
+						console.warn("Bodycam stream: TURN credentials fetch failed.", err);
+					}
+				}
+
+				const baseIceServers = Array.isArray(iceServers) && iceServers.length ? iceServers : options.config.iceServers;
+				options.config.iceServers = normalizeIceServers(baseIceServers, turnHostOverride, turnPortOverride, forceRelay);
+				options.config.iceTransportPolicy = forceRelay ? "relay" : options.config.iceTransportPolicy || "all";
+				peerForceRelay = forceRelay;
+				if (typeof options.debug === "undefined") {
+					options.debug = 3;
+				}
+				return options;
+			}
+
+			async function ensurePeer(peerConfig, desiredPeerId) {
+				if (peerInstance) {
+					return;
+				}
+				if (typeof Peer === "undefined") {
+					console.warn("PeerJS not available; bodycam stream disabled.");
+					return;
+				}
+				const options = await buildPeerOptions(peerConfig);
+				peerInstance = desiredPeerId ? new Peer(desiredPeerId, options) : new Peer(options);
+				startWsProbe(options);
+				peerInstance.on("open", function (id) {
+					peerReconnectAttempts = 0;
+					notifyPeerId(id);
+					wsProbeEnabled = false;
+					if (wsProbe) {
+						try {
+							wsProbe.close();
+						} catch (err) {}
+						wsProbe = null;
+					}
+					if (wsProbeTimer) {
+						clearTimeout(wsProbeTimer);
+						wsProbeTimer = null;
+					}
+				});
+				peerInstance.on("call", function (call) {
+					if (peerCalls.size + pendingCalls.size >= MAX_BODYCAM_VIEWERS) {
+						try {
+							call.close();
+						} catch (err) {}
+						return;
+					}
+					if (peerCalls.has(call) || pendingCalls.has(call)) {
+						updateWatchingState();
+						return;
+					}
+					if (call.peerConnection) {
+						const startIceStatsLogger = function (pc) {
+							if (!pc || typeof pc.getStats !== "function") {
+								return;
+							}
+							let lastNoPairLogAt = 0;
+							let loggedTurnFallback = false;
+							let debugTimeout = null;
+							let timer = setInterval(async function () {
+								try {
+									const stats = await pc.getStats();
+									let selectedPairId = null;
+									stats.forEach(function (report) {
+										if (report.type === "transport" && report.selectedCandidatePairId) {
+											selectedPairId = report.selectedCandidatePairId;
+										}
+									});
+									if (!selectedPairId) {
+										const now = Date.now();
+										if (now - lastNoPairLogAt >= 10000) {
+											lastNoPairLogAt = now;
+										}
+										return;
+									}
+									const pair = stats.get(selectedPairId);
+									const local = pair && stats.get(pair.localCandidateId);
+									const remote = pair && stats.get(pair.remoteCandidateId);
+									if (!loggedTurnFallback) {
+										const localType = local && local.candidateType ? String(local.candidateType).toLowerCase() : "";
+										const remoteType = remote && remote.candidateType ? String(remote.candidateType).toLowerCase() : "";
+										const usingRelay = localType === "relay" || remoteType === "relay";
+										if (usingRelay) {
+											loggedTurnFallback = true;
+										}
+									}
+								} catch (err) {
+									console.warn("Bodycam stream: ICE stats failed.", err);
+								}
+							}, 3000);
+
+							debugTimeout = setTimeout(async function () {
+								if (pc.connectionState === "connected" || pc.connectionState === "closed") {
+									return;
+								}
+								try {
+									const stats = await pc.getStats();
+									console.warn("Bodycam stream: ICE did not connect within 20s.", {
+										iceConnectionState: pc.iceConnectionState,
+										iceGatheringState: pc.iceGatheringState,
+										connectionState: pc.connectionState,
+										candidates: summarizeIceCandidatesFromStats(stats),
+									});
+								} catch (err) {
+									console.warn("Bodycam stream: ICE timeout snapshot failed.", err);
+								}
+							}, 20000);
+
+							pc.addEventListener("connectionstatechange", function () {
+								if (pc.connectionState === "connected" || pc.connectionState === "failed" || pc.connectionState === "closed") {
+									clearInterval(timer);
+									if (debugTimeout) {
+										clearTimeout(debugTimeout);
+										debugTimeout = null;
+									}
+								}
+							});
+						};
+						const pc = call.peerConnection;
+						pc.addEventListener("icecandidate", function (event) {
+							if (event && event.candidate) {
+								const cand = event.candidate.candidate || "";
+								const isMdns = cand.indexOf(".local") !== -1;
+								const typeMatch = cand.match(/\btyp\s([a-z0-9]+)/i);
+								const candType = typeMatch && typeMatch[1] ? typeMatch[1].toLowerCase() : "unknown";
+							}
+						});
+						pc.addEventListener("icecandidateerror", function (event) {
+							console.warn("Bodycam stream: ICE candidate error", {
+								errorCode: event && event.errorCode,
+								errorText: event && event.errorText,
+								url: event && event.url,
+								address: event && event.address,
+								port: event && event.port,
+							});
+						});
+						startIceStatsLogger(pc);
+					}
+					if (peerStream.mediaStream) {
+						try {
+							call.answer(peerStream.mediaStream);
+							peerCalls.add(call);
+						} catch (err) {
+							console.error("Bodycam stream: failed to answer call.", err);
+						}
+					} else {
+						pendingCalls.add(call);
+						console.warn("Bodycam stream: stream not ready; deferring answer.");
+					}
+					updateWatchingState();
+					call.on("close", function () {
+						peerCalls.delete(call);
+						pendingCalls.delete(call);
+						updateWatchingState();
+					});
+					call.on("error", function (err) {
+						console.error("Bodycam stream: PeerJS call error.", err);
+						peerCalls.delete(call);
+						pendingCalls.delete(call);
+						updateWatchingState();
+					});
+				});
+				peerInstance.on("error", function (err) {
+					console.error("Bodycam stream: PeerJS error.", err && err.type ? { type: err.type, error: err } : err);
+				});
+				peerInstance.on("disconnected", function () {
+					console.warn("Bodycam stream: PeerJS disconnected.");
+					schedulePeerReconnect();
+				});
+				peerInstance.on("close", function () {
+					console.warn("Bodycam stream: PeerJS closed.");
+					updateWatchingState();
+				});
+			}
+
+			function startWsProbe(options) {
+				if (!wsProbeEnabled || wsProbe || !options || !options.host) {
+					return;
+				}
+				const scheme = options.secure === false ? "ws" : "wss";
+				const port = options.port ? `:${options.port}` : "";
+				const path = options.path || "/";
+				const url = `${scheme}://${options.host}${port}${path}`;
+				try {
+					wsProbe = new WebSocket(url);
+					wsProbe.onclose = function (event) {
+						wsProbe = null;
+						if (wsProbeEnabled && !wsProbeTimer) {
+							wsProbeTimer = setTimeout(function () {
+								wsProbeTimer = null;
+								startWsProbe(options);
+							}, 10000);
+						}
+					};
+					wsProbe.onerror = function (event) {
+						console.error("Bodycam stream: WS probe error.", event);
+					};
+				} catch (err) {
+					console.error("Bodycam stream: WS probe failed to start.", err);
+					wsProbe = null;
+				}
+			}
+
+			function schedulePeerReconnect() {
+				if (!peerInstance) {
+					return;
+				}
+				if (peerReconnectTimer) {
+					return;
+				}
+				if (peerReconnectAttempts >= 5) {
+					console.error("Bodycam stream: PeerJS reconnect attempts exceeded.");
+					return;
+				}
+				peerReconnectAttempts += 1;
+				peerReconnectTimer = setTimeout(function () {
+					peerReconnectTimer = null;
+					if (peerInstance && peerInstance.reconnect) {
+						peerInstance.reconnect();
+					}
+				}, 5000);
+			}
+
+			async function startBodycamStream(payload) {
+				const remotePeerId = payload && payload.remotePeerId ? payload.remotePeerId : null;
+				if (!remotePeerId) {
+					console.error("Bodycam stream: remotePeerId not configured.");
+					return;
+				}
+				if (peerStream.mediaStream) {
+					console.warn("Bodycam stream: capture already active.");
+					return;
+				}
+
+				const basePeerConfig = payload && payload.peerConfig ? payload.peerConfig : {};
+				const peerConfig = {
+					...basePeerConfig,
+					communityId: payload && payload.communityId ? payload.communityId : basePeerConfig.communityId,
+					apiKey: payload && payload.apiKey ? payload.apiKey : basePeerConfig.apiKey,
+					apiUrl: payload && payload.apiUrl ? payload.apiUrl : basePeerConfig.apiUrl,
+					turnHost: payload && payload.turnHost ? payload.turnHost : basePeerConfig.turnHost,
+					turnPort: payload && payload.turnPort ? payload.turnPort : basePeerConfig.turnPort,
+					relay: payload && typeof payload.relay !== "undefined" ? payload.relay : basePeerConfig.relay,
+				};
+				await ensurePeer(peerConfig, remotePeerId);
+
+				const fps = payload && payload.fps ? payload.fps : 30;
+				if (!window.BodycamGameRenderer) {
+					console.error("Bodycam stream: BodycamGameRenderer not initialized.");
+					return;
+				}
+				const canvas = BodycamGameRenderer.getCanvas();
+				if (typeof canvas.captureStream !== "function") {
+					console.error("Bodycam stream: canvas.captureStream not supported.");
+					return;
+				}
+
+				BodycamGameRenderer.start(fps);
+				const videoStream = canvas.captureStream(fps);
+				const videoTracks = videoStream.getVideoTracks();
+				if (!videoTracks.length) {
+					console.error("Bodycam stream: no video tracks available from canvas.");
+					return;
+				}
+				BodycamGameRenderer.setVideoTrack(videoTracks[0]);
+
+				let audioTrack = null;
+				const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+				if (AudioContextCtor) {
+					try {
+						peerStream.audioContext = new AudioContextCtor();
+						peerStream.audioDestination = peerStream.audioContext.createMediaStreamDestination();
+						if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
+							try {
+								peerStream.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+								const micSource = peerStream.audioContext.createMediaStreamSource(peerStream.micStream);
+								micSource.connect(peerStream.audioDestination);
+							} catch (err) {
+								console.error("Bodycam stream: microphone capture failed.", err);
+							}
+						} else {
+							console.warn("Bodycam stream: getUserMedia unavailable; continuing without audio.");
+						}
+						if (peerStream.audioContext.state === "suspended") {
+							await peerStream.audioContext.resume();
+						}
+						audioTrack = peerStream.audioDestination.stream.getAudioTracks()[0] || null;
+					} catch (err) {
+						console.error("Bodycam stream: audio setup failed.", err);
+					}
+				} else {
+					console.warn("Bodycam stream: AudioContext unavailable; continuing without audio.");
+				}
+
+				const tracks = [videoTracks[0]];
+				if (audioTrack) {
+					tracks.push(audioTrack);
+				}
+
+				peerStream.videoStream = videoStream;
+				peerStream.mediaStream = new MediaStream(tracks);
+				peerStream.remotePeerId = remotePeerId;
+
+				tracks.forEach((track) => {
+					track.onended = function () {
+						stopBodycamStream();
+					};
+				});
+
+				if (pendingCalls.size > 0) {
+					pendingCalls.forEach(function (call) {
+						try {
+							call.answer(peerStream.mediaStream);
+							peerCalls.add(call);
+						} catch (err) {
+							console.error("Bodycam stream: failed to answer deferred call.", err);
+						}
+					});
+					pendingCalls.clear();
+					updateWatchingState();
+				}
+
+				await ensurePeer(peerConfig, peerStream.remotePeerId);
+			}
+
+			async function stopBodycamStream() {
+				peerCalls.forEach(function (call) {
+					try {
+						call.close();
+					} catch (err) {}
+				});
+				peerCalls.clear();
+				pendingCalls.forEach(function (call) {
+					try {
+						call.close();
+					} catch (err) {}
+				});
+				pendingCalls.clear();
+				updateWatchingState();
+				if (window.BodycamGameRenderer) {
+					BodycamGameRenderer.stop();
+				}
+				if (peerStream.mediaStream) {
+					peerStream.mediaStream.getTracks().forEach(function (track) {
+						track.stop();
+					});
+					peerStream.mediaStream = null;
+				}
+				if (peerStream.videoStream) {
+					peerStream.videoStream.getTracks().forEach(function (track) {
+						track.stop();
+					});
+					peerStream.videoStream = null;
+				}
+				if (peerStream.micStream) {
+					peerStream.micStream.getTracks().forEach(function (track) {
+						track.stop();
+					});
+					peerStream.micStream = null;
+				}
+				if (peerStream.silentAudio && peerStream.silentAudio.oscillator) {
+					try {
+						peerStream.silentAudio.oscillator.stop();
+					} catch (err) {}
+					peerStream.silentAudio = null;
+				}
+				if (peerStream.audioContext) {
+					try {
+						peerStream.audioContext.close();
+					} catch (err) {}
+					peerStream.audioContext = null;
+					peerStream.audioDestination = null;
+				}
+				peerStream.remotePeerId = null;
+				if (peerInstance) {
+					peerInstance.destroy();
+					peerInstance = null;
+				}
+				if (peerReconnectTimer) {
+					clearTimeout(peerReconnectTimer);
+					peerReconnectTimer = null;
+				}
+				peerReconnectAttempts = 0;
+				if (wsProbe) {
+					try {
+						wsProbe.close();
+					} catch (err) {}
+					wsProbe = null;
+				}
+				if (wsProbeTimer) {
+					clearTimeout(wsProbeTimer);
+					wsProbeTimer = null;
+				}
+			}
+
 			window.addEventListener("message", function (event) {
 				if (event.data.recordPrinter) {
-					console.log("Forwarding message to recordPrinterFrame:", event.data);
 					recordPrinterFrame.contentWindow.postMessage(event.data, "*");
 				}
 				if (event.data.cadDisplay) {
-					console.log("Forwarding message to cadDisplayFrame:", event.data);
 					cadDisplayFrame.contentWindow.postMessage(event.data.cadDisplay, "*");
 				}
 				if (event.data.type == "playSound") {
@@ -155,7 +786,13 @@
 					audioPlayer.volume(event.data.transactionVolume);
 					audioPlayer.play();
 				}
-				if (event.data.type === "bodycamOverlay") {
+				if (event.data.type === "bodycamStream") {
+					if (event.data.enabled) {
+						startBodycamStream(event.data);
+					} else {
+						stopBodycamStream();
+					}
+				} else if (event.data.type === "bodycamOverlay") {
 					setOverlayVisibility(event.data.visible, event.data.location);
 				} else if (event.data.type === "toggleGif") {
 					// Backwards compatibility: flip current visibility

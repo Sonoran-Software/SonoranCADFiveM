@@ -1,0 +1,81 @@
+{
+  "foot": {
+    "model": "https://s3.sonorancad.com/default/models/on_foot.glb",
+    "zOffset": 9,
+    "sizeOffset": 0,
+    "headingOffset": 270,
+    "lights": false
+  },
+  "police": {
+    "model": "https://s3.sonorancad.com/default/models/police_car.glb",
+    "zOffset": 7,
+    "sizeOffset": 2.0,
+    "headingOffset": 90,
+    "lightZOffset": 3.62,
+    "lights": false
+  },
+  "fire": {
+    "model": "https://s3.sonorancad.com/default/models/firetruck.glb",
+    "zOffset": 6,
+    "sizeOffset": 2.0,
+    "headingOffset": 0,
+    "lightZOffset": 4.75,
+    "lights": false
+  },
+  "ems": {
+    "model": "https://s3.sonorancad.com/default/models/ambulance.glb",
+    "zOffset": 9,
+    "sizeOffset": 2.0,
+    "headingOffset": 90,
+    "lights": false
+  },
+  "helicoper": {
+    "model": "https://s3.sonorancad.com/default/models/helicopter.glb",
+    "zOffset": 9,
+    "sizeOffset": 2.0,
+    "headingOffset": 0,
+    "lights": false
+  },
+  "plane": {
+    "model": "https://s3.sonorancad.com/default/models/airplane.glb",
+    "zOffset": 9,
+    "sizeOffset": 2.0,
+    "headingOffset": 90,
+    "lights": false
+  },
+  "car": {
+    "model": "https://s3.sonorancad.com/default/models/car.glb",
+    "zOffset": 9,
+    "sizeOffset": 1.0,
+    "headingOffset": 270,
+    "lights": false
+  },
+  "bicycle": {
+    "model": "https://s3.sonorancad.com/default/models/bicycle.glb",
+    "zOffset": 9,
+    "sizeOffset": 1.0,
+    "headingOffset": 90,
+    "lights": false
+  },
+  "motorcycle": {
+    "model": "https://s3.sonorancad.com/default/models/motorcycle.glb",
+    "zOffset": 9,
+    "sizeOffset": 1.0,
+    "headingOffset": 0,
+    "lights": false
+  },
+  "boat": {
+    "model": "https://s3.sonorancad.com/default/models/boat.glb",
+    "zOffset": 9,
+    "sizeOffset": 1.0,
+    "headingOffset": 0,
+    "lights": false
+  },
+  "boat": {
+    "model": "https://s3.sonorancad.com/default/models/boat.glb",
+    "zOffset": 9,
+    "sizeOffset": 0,
+    "headingOffset": 0,
+    "lights": false
+  }
+}
