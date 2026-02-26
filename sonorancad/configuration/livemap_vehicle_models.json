@@ -70,5 +70,12 @@
     "sizeOffset": 1.0,
     "headingOffset": 0,
     "lights": false
+  },
+  "boat": {
+    "model": "https://s3.sonorancad.com/default/models/boat.glb",
+    "zOffset": 9,
+    "sizeOffset": 0,
+    "headingOffset": 0,
+    "lights": false
   }
 }
