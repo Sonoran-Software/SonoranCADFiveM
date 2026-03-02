@@ -277,9 +277,9 @@ $(function () {
 			if (event.data.module == "cad") {
                 let date = Date.now()
 				if (event.data.comId) {
-					document.getElementById("cadFrame").src = event.data.url + "&cachebuster=" + date;
+					document.getElementById("cadFrame").src = event.data.url + "&cachebuster=" + date + '&fivem=true';
 				} else {
-					document.getElementById("cadFrame").src = event.data.url + "?cachebuster=" + date;
+					document.getElementById("cadFrame").src = event.data.url + "?cachebuster=" + date + '&fivem=true';
 				}
 				document.getElementById('cadFrame').setAttribute("name", Date.now())
 			}
