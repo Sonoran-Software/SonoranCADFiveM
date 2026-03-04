@@ -10,12 +10,15 @@ local config = {
     enabled = true,
     pluginName = "bodycam", -- name your plugin here
     pluginAuthor = "digitalfire", -- author
-    configVersion = "1.2",
+    configVersion = "1.3",
 
     -- The command name to toggle your body camera on or off.
     command="bodycam",
 
     requireUnitDuty = true, -- if true, the player must be onduty in CAD to use the bodycam
+
+    -- Ace permission required for /bodycam forceoff (leave blank to disable ace check).
+    forceOffAce = "sonorancad.bodycam.forceoff",
 
     -- Enables or disables animations on start up
     enableAnimation = true,
@@ -54,9 +57,6 @@ local config = {
 
     -- Enables or disables controller vibration during bodycam beeps.
     enablePadShake = true,
-
-    -- Adjusts the frequency at which unit body cameras update (in milliseconds).
-    screenshotFrequency=2000,
 
     -- Streams the bodycam video to PeerJS using a WebGL canvas capture in NUI.
     peerStream = {

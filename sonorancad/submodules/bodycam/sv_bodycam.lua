@@ -235,6 +235,9 @@ CreateThread(function()
                     })
                     return
                 end
+                if pluginConfig.forceOffAce == nil then
+                    pluginConfig.forceOffAce = "sonorancad.bodycam.forceoff"
+                end
                 local unit = GetUnitByPlayerId(source)
                 if unit == nil then
                     TriggerClientEvent('chat:addMessage', source, {
@@ -247,15 +250,25 @@ CreateThread(function()
                 end
                 if #args == 0 then
                     TriggerClientEvent('SonoranCAD::bodycam::CommandToggle', source)
-                end
-                if args[1] == 'freq' then
-                    TriggerClientEvent('SonoranCAD::bodycam::SetScreenshotFrequency', source, args[2])
                 elseif args[1] == 'sound' then
                     TriggerClientEvent('SonoranCAD::bodycam::SetSoundLevel', source, args[2])
                 elseif args[1] == 'anim' then
                     TriggerClientEvent('SonoranCAD::bodycam::ToggleAnimation', source)
                 elseif args[1] == 'overlay' then
                     TriggerClientEvent('SonoranCAD::bodycam::ToggleOverlay', source)
+                elseif args[1] == 'forceoff' then
+                    if source ~= 0 and pluginConfig.forceOffAce ~= "" then
+                        if not IsPlayerAceAllowed(source, pluginConfig.forceOffAce) then
+                            TriggerClientEvent('chat:addMessage', source, {
+                                args = {
+                                    'Sonoran Bodycam',
+                                    'You do not have permission to use forceoff.'
+                                }
+                            })
+                            return
+                        end
+                    end
+                    TriggerClientEvent('SonoranCAD::bodycam::Toggle', source, true, false, true)
                 end
             end, false)
 
