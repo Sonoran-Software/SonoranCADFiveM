@@ -12,11 +12,36 @@ CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfi
 
 if pluginConfig.enabled then
 
-    if pluginConfig.unitStatusNotifyMethod == nil then
-        pluginConfig.unitStatusNotifyMethod = "auto"
-    end
     if pluginConfig.dispatchDisablesUnitNotify == nil then
         pluginConfig.dispatchDisablesUnitNotify = false
+    end
+
+    local function resolveLegacyNotifyMethod(cfg)
+        local legacyKeys = {"callerNotifyMethod", "unitNotifyMethod", "unitStatusNotifyMethod", "noteNotifyMethod"}
+        local values = {}
+        for _, key in ipairs(legacyKeys) do
+            local value = cfg[key]
+            if value ~= nil then
+                table.insert(values, value)
+            end
+        end
+        if #values == 0 then
+            return nil
+        end
+        local first = values[1]
+        for i = 2, #values do
+            if values[i] ~= first then
+                warnLog(
+                    "dispatchnotify: multiple legacy notify method settings detected; please migrate to notifyMethod. Using \"" ..
+                        tostring(first) .. "\".")
+                break
+            end
+        end
+        return first
+    end
+
+    if pluginConfig.notifyMethod == nil then
+        pluginConfig.notifyMethod = resolveLegacyNotifyMethod(pluginConfig) or "auto"
     end
 
     local DISPATCH_TYPE = {"CALL_NEW", "CALL_EDIT", "CALL_CLOSE", "CALL_NOTE", "CALL_SELF_CLEAR"}
@@ -30,7 +55,7 @@ if pluginConfig.enabled then
     local MappedCalls = {} -- eCallId -> call object
 
     local AutoSelectedNotifyMethod = "chat"
-    if pluginConfig.callerNotifyMethod == "auto" or pluginConfig.noteNotifyMethod == "auto" or pluginConfig.unitNotifyMethod == "auto" or pluginConfig.unitStatusNotifyMethod == "auto" then
+    if pluginConfig.notifyMethod == "auto" then
         if GetResourceState("lation_ui") == "started" then
             AutoSelectedNotifyMethod = "lation_ui"
         elseif GetResourceState("ox_lib") == "started" then
@@ -42,11 +67,11 @@ if pluginConfig.enabled then
         end
     end
 
-    local function ResolveNotifyMethod(cfgValue)
-        if cfgValue == "auto" then
+    local function ResolveNotifyMethod()
+        if pluginConfig.notifyMethod == "auto" then
             return AutoSelectedNotifyMethod
         end
-        return cfgValue
+        return pluginConfig.notifyMethod
     end
 
     local function findCall(id)
@@ -266,9 +291,11 @@ if pluginConfig.enabled then
                 local player = GetPlayerFromIndex(i)
                 local unit = GetUnitByPlayerId(player)
                 if IsPlayerOnDuty(player) then
-                    local unitMethod = ResolveNotifyMethod(pluginConfig.unitNotifyMethod)
+                    local unitMethod = ResolveNotifyMethod()
 
-                    if unitMethod == "chat" then
+                    if unitMethod == "none" then
+                        -- notifications disabled
+                    elseif unitMethod == "chat" then
                         SendMessage(type, player, message)
                     elseif unitMethod == "pnotify" then
                         TriggerClientEvent("pNotify:SendNotification", player, {
@@ -450,7 +477,7 @@ if pluginConfig.enabled then
         end
         local officerId = GetSourceByApiId(unit.data.apiIds)
         if officerId ~= nil then
-            local statusMethod = ResolveNotifyMethod(pluginConfig.unitStatusNotifyMethod)
+            local statusMethod = ResolveNotifyMethod()
 
             local msgTemplate = pluginConfig.unitStatusAttachedMessage
                 or "You are now attached to call ^4{callId}^0. Description: ^4{description}^0"
@@ -459,7 +486,9 @@ if pluginConfig.enabled then
                 :gsub("{callId}", tostring(call.dispatch.callId))
                 :gsub("{description}", tostring(call.dispatch.description or ""))
 
-            if statusMethod == "chat" then
+            if statusMethod == "none" then
+                -- notifications disabled
+            elseif statusMethod == "chat" then
                 SendMessage("dispatch", officerId, msg)
             elseif statusMethod == "pnotify" then
                 TriggerClientEvent("pNotify:SendNotification", officerId, {
@@ -481,6 +510,13 @@ if pluginConfig.enabled then
                     message = stripColorCodes(msg),
                     duration = "10000",
                     type = "info"
+                })
+            elseif statusMethod == "custom" then
+                TriggerClientEvent("SonoranCAD::dispatchnotify:UnitStatusNotify", officerId, {
+                    type = "attach",
+                    callId = call.dispatch.callId,
+                    description = call.dispatch.description or "",
+                    message = stripColorCodes(msg)
                 })
             end
 
@@ -515,9 +551,11 @@ if pluginConfig.enabled then
             debugLog("failed to find unit "..json.encode(unit))
         end
         if pluginConfig.enableCallerNotify and callerId ~= nil and call.dispatch.metaData.silentAlert == "false" then
-            local callerMethod = ResolveNotifyMethod(pluginConfig.callerNotifyMethod)
+            local callerMethod = ResolveNotifyMethod()
 
-            if callerMethod == "chat" then
+            if callerMethod == "none" then
+                -- notifications disabled
+            elseif callerMethod == "chat" then
                 SendMessage("dispatch", callerId, pluginConfig.notifyMessage:gsub("{officer}", unit.data.name))
             elseif callerMethod == "pnotify" then
                 TriggerClientEvent("pNotify:SendNotification", callerId, {
@@ -645,14 +683,16 @@ if pluginConfig.enabled then
             end
             TriggerClientEvent("SonoranCAD::dispatchnotify:CallDetach", officerId, call.dispatch.callId)
 
-            local statusMethod = ResolveNotifyMethod(pluginConfig.unitStatusNotifyMethod)
+            local statusMethod = ResolveNotifyMethod()
 
             local msgTemplate = pluginConfig.unitStatusDetachedMessage
                 or "You were detached from call ^4{callId}^0."
 
             local msg = msgTemplate:gsub("{callId}", tostring(call.dispatch.callId))
 
-            if statusMethod == "chat" then
+            if statusMethod == "none" then
+                -- notifications disabled
+            elseif statusMethod == "chat" then
                 SendMessage("dispatch", officerId, msg)
 
             elseif statusMethod == "pnotify" then
@@ -677,6 +717,12 @@ if pluginConfig.enabled then
                     message = stripColorCodes(msg),
                     duration = "10000",
                     type = "info"
+                })
+            elseif statusMethod == "custom" then
+                TriggerClientEvent("SonoranCAD::dispatchnotify:UnitStatusNotify", officerId, {
+                    type = "detach",
+                    callId = call.dispatch.callId,
+                    message = stripColorCodes(msg)
                 })
             end
         end
@@ -737,9 +783,11 @@ if pluginConfig.enabled then
                         message = message:gsub(k, v)
                     end
 
-                    local noteMethod = ResolveNotifyMethod(pluginConfig.noteNotifyMethod)
+                    local noteMethod = ResolveNotifyMethod()
 
-                    if noteMethod == "chat" then
+                    if noteMethod == "none" then
+                        -- notifications disabled
+                    elseif noteMethod == "chat" then
                         SendMessage("dispatch", officerId, message)
                     elseif noteMethod == "pnotify" then
                         TriggerClientEvent("pNotify:SendNotification", officerId, {
@@ -762,7 +810,7 @@ if pluginConfig.enabled then
                             duration = "10000",
                             type = 'info'
                         })
-                    else
+                    elseif noteMethod == "custom" then
                         TriggerClientEvent("SonoranCAD::dispatchnotify:NewCallNote", officerId, data)
                     end
                 else
