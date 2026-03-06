@@ -1,5 +1,13 @@
 local pendingRestart = false
 
+local function getMajorVersion(version)
+    if version == nil then
+        return nil
+    end
+    local major = tostring(version):match("(%d+)")
+    return tonumber(major)
+end
+
 local function doUnzip(path)
     local unzipPath = GetResourcePath(GetCurrentResourceName()).."/../../"
     exports[GetCurrentResourceName()]:UnzipFile(path, unzipPath, updaterIgnore)
@@ -73,6 +81,21 @@ function RunAutoUpdater(manualRun)
                 Config.latestVersion = remote.resource
                 local compare = compareVersions(remote.resource, myVersion)
                 if compare.result then
+                    local remoteMajor = getMajorVersion(remote.resource)
+                    local localMajor = getMajorVersion(myVersion)
+                    if remoteMajor ~= nil and localMajor ~= nil and remoteMajor > localMajor then
+                        print("^1|===========================================================================|")
+                        print("^1|                    ^8MAJOR VERSION UPDATE AVAILABLE                         ^1|")
+                        print("^1|                             ^8Current : " .. compare.version2 .. "                              ^1|")
+                        print("^1|                             ^2Latest  : " .. compare.version1 .. "                               ^1|")
+                        print("^1|---------------------------------------------------------------------------|")
+                        print("^1|^7 Auto-update has been disabled for major version changes.                  ^1|")
+                        print("^1|^7 This update requires manual migration.                                    ^1|")
+                        print("^1|^7 See: ^4https://sonoran.link/cadupdate^7                                       ^1|")
+                        print("^1|===========================================================================|^7")
+                        warnLog("Major version update detected. Auto-update disabled. Manual migration required. See https://sonoran.link/cadupdate")
+                        return
+                    end
                     if not Config.allowAutoUpdate then
                         print("^3|===========================================================================|")
                         print("^3|                        ^5SonoranCAD Update Available                        ^3|")

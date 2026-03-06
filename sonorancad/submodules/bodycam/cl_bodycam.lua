@@ -3,9 +3,9 @@ local bodyCamDisplayOn = false
 local manualDisplayOn = false
 local autoDisplayOn = false
 local watchingDisplayOn = false
+local forceDisplayOff = false
 local showOverlay = true
 local doAnimation = true
-screenshotFrequency = 2000
 local soundLevel = 0.2
 local peerStreamEnabled = false
 local peerStreamRemotePeerId = nil
@@ -81,7 +81,6 @@ CreateThread(function()
         if pluginConfig.enabled then
             doAnimation = pluginConfig.enableAnimation
             showOverlay = pluginConfig.enableOverlay
-            screenshotFrequency = pluginConfig.screenshotFrequency
             local peerStreamConfig = pluginConfig.peerStream or {}
             peerStreamEnabled = peerStreamConfig.enabled == true
             local function GenerateRemotePeerId()
@@ -148,6 +147,9 @@ CreateThread(function()
             end
 
             local function shouldDisplayBodycam()
+                if forceDisplayOff then
+                    return false
+                end
                 return manualDisplayOn or autoDisplayOn or watchingDisplayOn
             end
 
@@ -299,7 +301,7 @@ CreateThread(function()
             end)
 
             TriggerEvent('chat:addSuggestion', '/' .. pluginConfig.command, '',
-                { { name = "[freq|sound|anim|overlay]", help = "Subcommand" } })
+                { { name = "[sound|anim|overlay|forceoff]", help = "Subcommand" } })
             RegisterCommand('SonoranCAD::bodycam::Keybind', function()
                 local turnOn = not bodyCamDisplayOn
                 TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', true, turnOn)
@@ -313,7 +315,9 @@ CreateThread(function()
                     if not autoDisplayOn and pluginConfig.weapons then
                         for _, weaponName in ipairs(pluginConfig.weapons) do
                             if weapon == GetHashKey(weaponName) then
-                                TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', false, true)
+                                if not forceDisplayOff then
+                                    TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', false, true)
+                                end
                                 break
                             end
                         end
@@ -330,7 +334,9 @@ CreateThread(function()
                     if veh ~= 0 and GetPedInVehicleSeat(veh, -1) == ped and GetVehicleClass(veh) == 18 then
                         if IsVehicleSirenOn(veh) then
                             if not autoDisplayOn then
-                                TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', false, true)
+                                if not forceDisplayOff then
+                                    TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', false, true)
+                                end
                             end
                         end
                     end
@@ -377,7 +383,10 @@ CreateThread(function()
                 StartPeerStream()
                 applyDisplayState()
 
-                RegisterNetEvent('SonoranCAD::bodycam::Toggle', function(manualActivation, toggle)
+                RegisterNetEvent('SonoranCAD::bodycam::Toggle', function(manualActivation, toggle, forceOff)
+                    if forceDisplayOff and not manualActivation then
+                        return
+                    end
                     if not IsWearingBodycam() then
                         if manualActivation then
                             TriggerEvent('chat:addMessage',
@@ -386,10 +395,16 @@ CreateThread(function()
                         end
                     end
 
-                    if manualActivation and not toggle and watchingDisplayOn then
+                    if manualActivation and not toggle and watchingDisplayOn and not forceOff then
                         TriggerEvent('chat:addMessage',
                             { args = { 'Sonoran Bodycam', 'Bodycam is being watched and cannot be turned off.' } })
                         return
+                    end
+
+                    if forceOff then
+                        forceDisplayOff = true
+                    elseif manualActivation and toggle then
+                        forceDisplayOff = false
                     end
 
                     if manualActivation and doAnimation then
@@ -420,8 +435,10 @@ CreateThread(function()
                     end
 
                     applyDisplayState()
-                    if toggle then
+                    if toggle and not forceDisplayOff then
                         StartPeerStream()
+                    elseif forceOff then
+                        StopPeerStream()
                     end
 
                     if wasDisplayOn ~= bodyCamDisplayOn then
@@ -437,26 +454,6 @@ CreateThread(function()
                                 SetPadShake(0, 2000, 200)
                             end
                         end
-                    end
-                end)
-                RegisterNetEvent('SonoranCAD::bodycam::SetScreenshotFrequency', function(frequency)
-                    if frequency then
-                        frequency = tonumber(frequency)
-                        if not frequency or frequency <= 0 or frequency > 10 then
-                            errorLog('Screenshot Frequency must be a number greater than 0 and less then 10 seconds.')
-                            TriggerEvent('chat:addMessage', {
-                                args = { 'Sonoran Bodycam', 'Screenshot Frequency must be a number greater than 0 and less then 10 seconds.' }
-                            })
-                            return
-                        end
-
-                        screenshotFrequency = (tonumber(frequency) * 1000)
-                        TriggerEvent('chat:addMessage',
-                            { args = { 'Sonoran Bodycam', ('Screenshot Frequency set to %s'):format((screenshotFrequency / 1000)) } })
-                    else
-                        TriggerEvent('chat:addMessage', {
-                            args = { 'Sonoran Bodycam', ('Current screenshot frequency is %s'):format((screenshotFrequency / 1000)) }
-                        })
                     end
                 end)
                 RegisterNetEvent('SonoranCAD::bodycam::CommandToggle', function()

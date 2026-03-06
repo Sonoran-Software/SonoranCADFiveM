@@ -8,7 +8,7 @@
 ]]
 local config = {
     enabled = false,
-    configVersion = "3.3",
+    configVersion = "3.4",
     pluginName = "dispatchnotify", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author
     requiresPlugins = {
@@ -72,16 +72,22 @@ local config = {
     ]]
     enableCallerNotify = true,
     --[[
-        notifyMethod: how should the caller be notified?
-            none: disable notification
+        notifyMethod: how should notifications be shown?
+        Applies to: caller notify, unit notify, unit status notify, note notify
+
+            none: disable notifications
             auto: Will automatically detect the system to use
             chat: Sends a message in chat
             pnotify: Uses pNotify to show a notification
             ox_lib: Uses ox_lib to show a notification
             lation_ui: Uses lation_ui to show a notification
-            custom: Use the custom event instead (see docs)
+            custom: Use the custom events instead (see docs)
+                Incoming calls: SonoranCAD::dispatchnotify:IncomingCallNotify (client)
+                Unit status: SonoranCAD::dispatchnotify:UnitStatusNotify (client)
+                Call notes: SonoranCAD::dispatchnotify:NewCallNote (client)
+                Caller notify: SonoranCAD::dispatchnotify:UnitAttach (server)
     ]]
-    callerNotifyMethod = "auto",
+    notifyMethod = "auto",
     --[[
         notifyMessage: Message template to use when sending to the player
 
@@ -90,17 +96,7 @@ local config = {
     ]]
     notifyMessage = "Officer {officer} is responding to your call!",
 
-    --[[
-        unitNotifyMethod: how should units be notified?
-            none: disable notification
-            auto: Will automatically detect the system to use
-            chat: Sends a message in chat
-            pnotify: Uses pNotify to show a notification
-            ox_lib: Uses ox_lib to show a notification
-            lation_ui: Uses lation_ui to show a notification
-            custom: Use the custom event instead (see docs)
-    ]]
-    unitNotifyMethod = "auto",
+    --[[ Unit notifications use notifyMethod ]]
     --[[
         incomingCallMessage: how should officers be notified of a new 911 call?
 
@@ -130,17 +126,7 @@ local config = {
     ]]
     unitDutyMethod = "incad",
 
-    --[[
-        unitStatusNotifyMethod: how should units be notified for status?
-            none: disable notification
-            auto: Will automatically detect the system to use
-            chat: Sends a message in chat
-            pnotify: Uses pNotify to show a notification
-            ox_lib: Uses ox_lib to show a notification
-            lation_ui: Uses lation_ui to show a notification
-            custom: Use the custom event instead (see docs)
-    ]]
-    unitStatusNotifyMethod = "auto",
+    --[[ Unit status notifications use notifyMethod ]]
     unitStatusAttachedMessage = "You are now attached to call ^4{callId}^0. Description: ^4{description}^0",
     unitStatusDetachedMessage = "You were detached from call ^4{callId}^0.",
 
@@ -169,16 +155,7 @@ local config = {
         sendNotesToUnits: Whether the script will fire events related to call notes.
     ]]
     sendNotesToUnits = true,
-    --[[
-        noteNotifyMethod:
-            chat: send new notes via chat
-            auto: Will automatically detect the system to use
-            pnotify: send new notes via a pNotify popup (requires pNotify resource)
-            ox_lib: send new notes via a ox_lib notification (requires ox_lib resource)
-            lation_ui: send new notes via a lation_ui notification (requires lation_ui resource)
-            custom: fire a client-side event that your script will consume (each active unit gets SonoranCAD::dispatchnotify:NewCallNote with an object containing callId and note)
-    ]]
-    noteNotifyMethod = "auto",
+    --[[ Note notifications use notifyMethod ]]
     --[[
         noteMessage: Message to send to officers when a note is added, using the placeholders:
             {callid} - the call ID
