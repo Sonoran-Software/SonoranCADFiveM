@@ -312,11 +312,6 @@ CreateThread(function()
                     return
                 end
 
-                -- Auto-enable should only work when the player is in CAD.
-                if not manualActivation and unit == nil then
-                    return
-                end
-
                 if pluginConfig.requireUnitDuty and unit == nil then
                     if manualActivation then
                         TriggerClientEvent('chat:addMessage', source, {
