@@ -1,4 +1,13 @@
 local pendingRestart = false
+local helperSignalKey = "sonoran_updatehelper_action"
+
+local function signalUpdateHelper(action)
+    SetConvar(helperSignalKey, action or "core")
+end
+
+local function clearUpdateHelperSignal()
+    SetConvar(helperSignalKey, "")
+end
 
 local function getMajorVersion(version)
     if version == nil then
@@ -21,9 +30,7 @@ AddEventHandler("unzipCoreCompleted", function(success, error)
             return
         end
         warnLog("Auto-restarting...")
-        local f = assert(io.open(GetResourcePath("sonoran_updatehelper").."/run.lock", "w+"))
-        f:write("core")
-        f:close()
+        signalUpdateHelper("core")
         Wait(5000)
         ExecuteCommand("ensure sonoran_updatehelper")
     else
@@ -58,6 +65,8 @@ function RunAutoUpdater(manualRun)
         -- remove the update file and stop the helper
         ExecuteCommand("stop sonoran_updatehelper")
         os.remove(GetResourcePath(GetCurrentResourceName()).."/update.zip")
+        clearUpdateHelperSignal()
+        -- Legacy cleanup for mixed-version states still using run.lock signaling.
         os.remove(GetResourcePath("sonoran_updatehelper").."/run.lock")
     end
     local versionFile = Config.autoUpdateUrl
@@ -128,9 +137,7 @@ CreateThread(function()
                 warnLog("An update has been applied to SonoranCAD but requires a resource restart. Restart delayed until server is empty.")
             else
                 infoLog("Server is empty, restarting resources...")
-                local f = assert(io.open(GetResourcePath("sonoran_updatehelper").."/run.lock", "w+"))
-                f:write("core")
-                f:close()
+                signalUpdateHelper("core")
                 ExecuteCommand("ensure sonoran_updatehelper")
             end
         else

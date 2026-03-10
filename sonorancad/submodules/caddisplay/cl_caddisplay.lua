@@ -114,14 +114,14 @@ CreateThread(function()
                 end
             end
 
-            local function ResolveNotifyMethod(cfgValue)
+            function ResolveNotifyMethod(cfgValue)
                 if cfgValue == "auto" then
                     return AutoSelectedNotifyMethod
                 end
                 return cfgValue
             end
 
-            local function getVehNetIdOrNil(veh)
+            function getVehNetIdOrNil(veh)
                 if veh == nil or veh == 0 then
                     return nil
                 end
@@ -132,7 +132,7 @@ CreateThread(function()
                 return net
             end
 
-            local function notify(message)
+            function notify(message)
                 local notiType = ResolveNotifyMethod(pluginConfig.general.notificationType)
 
                 if notiType == "native" then
@@ -166,7 +166,7 @@ CreateThread(function()
                 end
             end
 
-            local function ensureModel(model)
+            function ensureModel(model)
                 local hash = type(model) == "number" and model or GetHashKey(model)
                 if not HasModelLoaded(hash) then
                     RequestModel(hash)
@@ -177,7 +177,7 @@ CreateThread(function()
                 return hash
             end
 
-            local function getVehNetId(veh)
+            function getVehNetId(veh)
                 if veh == nil or veh == 0 then
                     return nil
                 end
@@ -188,7 +188,7 @@ CreateThread(function()
                 return vehNet
             end
 
-            local function isPlayerInVeh(veh)
+            function isPlayerInVeh(veh)
                 for i = -1, GetVehicleMaxNumberOfPassengers(veh) + 1, 1 do
                     local ped = GetPedInVehicleSeat(veh, i)
                     if DoesEntityExist(ped) and IsPedAPlayer(ped) then
@@ -198,7 +198,7 @@ CreateThread(function()
                 return false
             end
 
-            local function isVehicleBlocked(veh)
+            function isVehicleBlocked(veh)
                 local modelHash = GetEntityModel(veh)
                 if builtinScreensByHash and builtinScreensByHash[modelHash] then
                     return false
@@ -213,15 +213,15 @@ CreateThread(function()
                 return not pluginConfig.general.useAllowlistAsBlacklist
             end
 
-            local function isWorldDisplayEnabled()
+            function isWorldDisplayEnabled()
                 return not (pluginConfig.worldDisplays and pluginConfig.worldDisplays.enabled == false)
             end
 
-            local function getWorldDisplayKey(id)
+            function getWorldDisplayKey(id)
                 return ("world:%s"):format(tostring(id))
             end
 
-            local function buildWorldPlacementLabels()
+            function buildWorldPlacementLabels()
                 worldPlacementLabels = {}
                 for _, entry in ipairs(worldPlacementDb) do
                     local label = entry.Label or entry.label or entry.name
@@ -238,14 +238,14 @@ CreateThread(function()
                 end
             end
 
-            local function getWorldPlacementByIndex(index)
+            function getWorldPlacementByIndex(index)
                 if index == nil or index < 1 or index > #worldPlacementDb then
                     return nil
                 end
                 return worldPlacementDb[index]
             end
 
-            local function hasTrackedVehicle(tab, veh)
+            function hasTrackedVehicle(tab, veh)
                 local targetVehNet = getVehNetId(veh)
                 for _, value in ipairs(tab) do
                     if (targetVehNet ~= nil and value.vehNet == targetVehNet) or value.veh == veh then
@@ -255,7 +255,7 @@ CreateThread(function()
                 return false
             end
 
-            local function getSpawnedDisplayIndex(displayProp)
+            function getSpawnedDisplayIndex(displayProp)
                 for idx, obj in ipairs(spawnedDisplays) do
                     if obj == displayProp then
                         return idx
@@ -264,7 +264,7 @@ CreateThread(function()
                 return nil
             end
 
-            local function findVehicleRecord(veh)
+            function findVehicleRecord(veh)
                 local vehNet = getVehNetIdOrNil(veh)
                 if vehNet == nil then
                     return nil
@@ -277,7 +277,7 @@ CreateThread(function()
                 return nil
             end
 
-            local function hasAnyOccupant(veh)
+            function hasAnyOccupant(veh)
                 if not DoesEntityExist(veh) then
                     return false
                 end
@@ -291,7 +291,7 @@ CreateThread(function()
                 return false
             end
 
-            local function getSeatIndexForPed(veh, ped)
+            function getSeatIndexForPed(veh, ped)
                 if veh == 0 or not DoesEntityExist(veh) then
                     return nil
                 end
@@ -304,7 +304,7 @@ CreateThread(function()
                 return nil
             end
 
-            local function getBuiltinScreenConfig(veh)
+            function getBuiltinScreenConfig(veh)
                 if not DoesEntityExist(veh) then
                     return nil
                 end
@@ -312,7 +312,7 @@ CreateThread(function()
                 return builtinScreensByHash[modelHash] or nil
             end
 
-            local function applyConfiguredScale(obj, scaleCfg)
+            function applyConfiguredScale(obj, scaleCfg)
                 if not scaleCfg or not DoesEntityExist(obj) then
                     return
                 end
@@ -327,7 +327,7 @@ CreateThread(function()
                     at.x, at.y, at.z)
             end
 
-            local function spawnWorldDisplay(placement)
+            function spawnWorldDisplay(placement)
                 if placement == nil then
                     return nil
                 end
@@ -346,7 +346,7 @@ CreateThread(function()
                 return obj
             end
 
-            local function applyWorldPlacement(obj, placement)
+            function applyWorldPlacement(obj, placement)
                 if obj == nil or not DoesEntityExist(obj) or placement == nil then
                     return
                 end
@@ -357,7 +357,7 @@ CreateThread(function()
                     true)
             end
 
-            local function drawWorldPrompt(pos, text)
+            function drawWorldPrompt(pos, text)
                 SetDrawOrigin(pos.x, pos.y, pos.z, 0)
                 SetTextScale(0.35, 0.35)
                 SetTextFont(4)
@@ -370,7 +370,7 @@ CreateThread(function()
                 ClearDrawOrigin()
             end
 
-            local function trackDisplayForVehicle(veh, displayProp)
+            function trackDisplayForVehicle(veh, displayProp)
                 local vehNet = getVehNetId(veh)
                 local index = getSpawnedDisplayIndex(displayProp)
                 if not index then
@@ -380,7 +380,7 @@ CreateThread(function()
                 table.insert(vehiclesWithDisplays, { index = index, prop = displayProp, veh = veh, vehNet = vehNet })
             end
 
-            local function findExistingDisplayForVehicle(veh)
+            function findExistingDisplayForVehicle(veh)
                 if not DoesEntityExist(veh) then
                     return nil
                 end
@@ -406,7 +406,7 @@ CreateThread(function()
                 return nil
             end
 
-            local function getPlacementForVehicle(veh)
+            function getPlacementForVehicle(veh)
                 local vehModel = GetDisplayNameFromVehicleModel(GetEntityModel(veh))
                 for _, entry in ipairs(placementDb) do
                     if string.upper(entry.Vehicle) == string.upper(vehModel) then
@@ -416,7 +416,7 @@ CreateThread(function()
                 return nil
             end
 
-            local function ensureDui()
+            function ensureDui()
                 if screenDui ~= nil then
                     return
                 end
@@ -433,7 +433,7 @@ CreateThread(function()
                 table.insert(duiObjs, screenDui)
             end
 
-            local function destroyDuiObjects()
+            function destroyDuiObjects()
                 for _, duiObj in ipairs(duiObjs) do
                     if IsDuiAvailable(duiObj) then
                         DestroyDui(duiObj)
@@ -443,13 +443,13 @@ CreateThread(function()
                 screenDui = nil
             end
 
-            local function updateDui(payload)
+            function updateDui(payload)
                 if screenDui and IsDuiAvailable(screenDui) then
                     SendDuiMessage(screenDui, json.encode(payload or {}))
                 end
             end
 
-            local function spawnDisplay(veh)
+            function spawnDisplay(veh)
                 ensureModel(displayModelHash)
                 local player = PlayerPedId()
                 local x, y, z = table.unpack(GetEntityCoords(player, true))
@@ -460,7 +460,7 @@ CreateThread(function()
                 return obj
             end
 
-            local function attachDisplayToVehicle(obj, veh, placement)
+            function attachDisplayToVehicle(obj, veh, placement)
                 if not DoesEntityExist(obj) or not DoesEntityExist(veh) then
                     return
                 end
@@ -471,13 +471,13 @@ CreateThread(function()
                 FreezeEntityPosition(obj, false)
             end
 
-            local function marker(pos)
+            function marker(pos)
                 DrawMarker(0, pos.x, pos.y, pos.z + 2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.3, 0.2, 255, 255, 0, 255,
                     true,
                     false, 0, false, nil, nil, false)
             end
 
-            local function setIndex(veh, index)
+            function setIndex(veh, index)
                 local vehNet = getVehNetId(veh)
                 for _, car in ipairs(vehiclesWithDisplays) do
                     if (vehNet ~= nil and car.vehNet == vehNet) or car.veh == veh then
@@ -487,7 +487,7 @@ CreateThread(function()
                 end
             end
 
-            local function removeDisplayAtIndex(index)
+            function removeDisplayAtIndex(index)
                 if not index then
                     return
                 end
@@ -513,7 +513,7 @@ CreateThread(function()
                 end
             end
 
-            local function clearWorldDisplays()
+            function clearWorldDisplays()
                 for _, obj in pairs(worldDisplayObjects) do
                     if obj and DoesEntityExist(obj) then
                         DeleteObject(obj)
@@ -523,7 +523,7 @@ CreateThread(function()
                 worldDisplayNextReq = {}
             end
 
-            local function syncWorldPlacements(serverDb)
+            function syncWorldPlacements(serverDb)
                 worldPlacementDb = serverDb or {}
                 if not isWorldDisplayEnabled() then
                     clearWorldDisplays()
@@ -559,7 +559,7 @@ CreateThread(function()
                 buildWorldPlacementLabels()
             end
 
-            local function getClosestWorldDisplay(pedCoords, range)
+            function getClosestWorldDisplay(pedCoords, range)
                 local closestId = nil
                 local closestObj = nil
                 local closestDist = range or interactRange
@@ -576,7 +576,7 @@ CreateThread(function()
                 return closestId, closestObj, closestDist
             end
 
-            local function beginWorldEdit(placement, isNew)
+            function beginWorldEdit(placement, isNew)
                 worldEditActive = true
                 worldEditIsNew = isNew
                 worldEditPlacementId = placement and placement.ID or nil
@@ -631,7 +631,7 @@ CreateThread(function()
                 end
             end
 
-            local function cancelWorldEdit()
+            function cancelWorldEdit()
                 if worldEditObject and DoesEntityExist(worldEditObject) then
                     if worldEditIsNew then
                         DeleteObject(worldEditObject)
@@ -652,7 +652,7 @@ CreateThread(function()
                 worldEditOriginal = nil
             end
 
-            local function saveWorldEdit()
+            function saveWorldEdit()
                 if worldEditObject == nil or not DoesEntityExist(worldEditObject) then
                     return
                 end
@@ -678,7 +678,7 @@ CreateThread(function()
                 worldEditOriginal = nil
             end
 
-            local function updateWorldEditControls()
+            function updateWorldEditControls()
                 if not worldEditActive or worldEditObject == nil or not DoesEntityExist(worldEditObject) then
                     return
                 end
@@ -786,7 +786,7 @@ CreateThread(function()
                 end
             end
 
-            local function refreshOffsetsForCurrentSelection()
+            function refreshOffsetsForCurrentSelection()
                 local veh = GetVehiclePedIsIn(PlayerPedId(), false)
                 local prop = spawnedDisplays[spawnedDisplayIndex]
                 if veh ~= 0 and DoesEntityExist(prop) then
@@ -804,7 +804,7 @@ CreateThread(function()
                 end
             end
 
-            local function spawningCadDisplay()
+            function spawningCadDisplay()
                 local modelNames = { pluginConfig.lang.objectName }
                 if WarMenu.ComboBox(pluginConfig.lang.modelComboBox, modelNames, miscDisplayIndex, miscDisplayIndex,
                         function(current) miscDisplayIndex = current end) then
@@ -823,7 +823,7 @@ CreateThread(function()
                 end
             end
 
-            local function attachingCadDisplay()
+            function attachingCadDisplay()
                 local attachType = pluginConfig.lang.vehicleBone
                 if WarMenu.ComboBox(pluginConfig.lang.object, spawnedDisplays, spawnedDisplayIndex, spawnedDisplayIndex,
                         function(current)
@@ -1342,7 +1342,7 @@ CreateThread(function()
                             if not drawInteractPrompt and prop ~= nil and DoesEntityExist(prop) and ownerId == nil and hasAnyOccupant(veh) then
                                 CreateThread(function()
                                     drawInteractPrompt = true
-                                    while drawInteractPrompt do 
+                                    while drawInteractPrompt do
                                         Wait(0)
                                         local distPrompt = #(GetEntityCoords(ped) - GetEntityCoords(prop))
                                         local promptKey = tostring(vehNet or prop)
