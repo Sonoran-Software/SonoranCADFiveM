@@ -12,6 +12,9 @@ const DEFAULT_HUBS = {
     production: "https://api.sonorancad.com/apiWsHub",
     development: "https://staging-api.dev.sonorancad.com/apiWsHub"
 };
+const DEFAULT_RECONNECT_DELAYS_MS = [0, 2000, 10000, 30000];
+const SEND_ERROR_LOG_INTERVAL_MS = 60 * 1000;
+const MAX_SILENT_RECONNECT_FAILURES = 2;
 
 let connection = null;
 let connectionConfig = null;
@@ -20,9 +23,67 @@ let authenticating = null;
 let authenticated = false;
 let warnedMissingConfig = false;
 let warnedApiSendDisabled = false;
+let reconnectFailureCount = 0;
+let reconnectEscalated = false;
+const serverIssueState = Object.create(null);
 
 function log(level, message) {
     emit("SonoranCAD::core:writeLog", level, "[apiws] " + message);
+}
+
+function getErrorMessage(err) {
+    if (!err) {
+        return "unknown error";
+    }
+    return err.message ? err.message : String(err);
+}
+
+function clearServerIssue(key) {
+    delete serverIssueState[key];
+}
+
+function reportServerIssue(key, message, intervalMs) {
+    const now = Date.now();
+    let state = serverIssueState[key];
+    if (!state) {
+        state = {
+            lastLoggedAt: 0,
+            suppressedCount: 0,
+            pendingMessage: message
+        };
+        serverIssueState[key] = state;
+    }
+
+    state.pendingMessage = message;
+    if (state.lastLoggedAt === 0 || (now - state.lastLoggedAt) >= intervalMs) {
+        const suffix = state.suppressedCount > 0
+            ? " (" + state.suppressedCount + " similar events suppressed)"
+            : "";
+        console.error("[apiws] " + state.pendingMessage + suffix);
+        state.lastLoggedAt = now;
+        state.suppressedCount = 0;
+        return;
+    }
+
+    state.suppressedCount++;
+    log("debug", "Suppressed server console error [" + key + "]: " + message);
+}
+
+function resetReconnectState() {
+    reconnectFailureCount = 0;
+    reconnectEscalated = false;
+}
+
+function reportReconnectFailure(failedAttempts, err) {
+    if (failedAttempts <= MAX_SILENT_RECONNECT_FAILURES || reconnectEscalated) {
+        return;
+    }
+
+    reconnectEscalated = true;
+    console.error(
+        "[apiws] API WS reconnect has failed " + failedAttempts
+        + " times. Latest error: " + getErrorMessage(err)
+    );
 }
 
 function parseBoolean(value, fallback) {
@@ -164,23 +225,43 @@ async function ensureConnection(config) {
             .withUrl(config.hubUrl, {
                 transport: signalR.HttpTransportType.WebSockets
             })
-            .withAutomaticReconnect()
+            .withAutomaticReconnect({
+                nextRetryDelayInMilliseconds: (retryContext) => {
+                    reconnectFailureCount = retryContext.previousRetryCount;
+                    if (retryContext.previousRetryCount > 0) {
+                        log(
+                            "debug",
+                            "Reconnect attempt " + retryContext.previousRetryCount
+                            + " failed: " + getErrorMessage(retryContext.retryReason)
+                        );
+                    }
+                    reportReconnectFailure(retryContext.previousRetryCount, retryContext.retryReason);
+                    return typeof DEFAULT_RECONNECT_DELAYS_MS[retryContext.previousRetryCount] === "number"
+                        ? DEFAULT_RECONNECT_DELAYS_MS[retryContext.previousRetryCount]
+                        : null;
+                }
+            })
             .build();
 
         connection.onreconnecting((err) => {
             authenticated = false;
+            resetReconnectState();
             const msg = err && err.message ? ": " + err.message : "";
-            log("warn", "Reconnecting to API WS hub" + msg + ".");
+            log("debug", "Reconnecting to API WS hub" + msg + ".");
         });
         connection.onreconnected(async () => {
             authenticated = false;
+            resetReconnectState();
+            clearServerIssue("ws-send");
             log("debug", "Reconnected: re-authenticating.");
             await authenticate();
         });
         connection.onclose((err) => {
             authenticated = false;
             const msg = err && err.message ? ": " + err.message : "";
-            log("warn", "Disconnected from API WS hub" + msg + ".");
+            reportReconnectFailure(reconnectFailureCount, err);
+            log("debug", "Disconnected from API WS hub" + msg + ".");
+            resetReconnectState();
         });
     }
 
@@ -189,11 +270,14 @@ async function ensureConnection(config) {
             log("debug", "ensureConnection: starting connection.");
             connecting = connection.start()
                 .then(() => {
+                    clearServerIssue("ws-send");
                     log("info", "Connected to API WS hub (" + connectionConfig.hubUrl + ").");
                     log("debug", "ensureConnection: connection start resolved.");
                 })
                 .catch((err) => {
-                    log("error", "Failed to connect to API WS hub: " + (err && err.message ? err.message : err));
+                    const errMsg = getErrorMessage(err);
+                    log("debug", "Failed to connect to API WS hub: " + errMsg);
+                    reportServerIssue("ws-send", "Unable to connect to API WS hub: " + errMsg, SEND_ERROR_LOG_INTERVAL_MS);
                     log("debug", "ensureConnection: connection start rejected.");
                     throw err;
                 })
@@ -230,11 +314,12 @@ exports("sendUnitLocations", async (updates) => {
         const config = buildConfig();
         const ok = await ensureConnection(config);
         if (!ok) {
-            console.error("[apiws] unitLocation skipped: connection not ready.");
+            reportServerIssue("ws-send", "unitLocation skipped: connection not ready.", SEND_ERROR_LOG_INTERVAL_MS);
             return false;
         }
-        log('debug', 'Sending location update with payload: ' + JSON.stringify(payload))
+        log("debug", "Sending location update with payload: " + JSON.stringify(payload));
         const result = await connection.invoke("unitLocation", payload);
+        clearServerIssue("ws-send");
         log("debug", "unitLocation response: " + JSON.stringify(result));
         if (result && result.success === false) {
             const errMsg = result.error || "unknown error";
@@ -243,7 +328,9 @@ exports("sendUnitLocations", async (updates) => {
         }
         return true;
     } catch (err) {
-        log("error", "unitLocation send failed: " + (err && err.message ? err.message : err));
+        const errMsg = getErrorMessage(err);
+        log("debug", "unitLocation send failed: " + errMsg);
+        reportServerIssue("ws-send", "unitLocation send failed: " + errMsg, SEND_ERROR_LOG_INTERVAL_MS);
         return false;
     }
 });
