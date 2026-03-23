@@ -13,6 +13,7 @@ const DEFAULT_HUBS = {
     development: "https://staging-api.dev.sonorancad.com/apiWsHub"
 };
 const DEFAULT_RECONNECT_DELAYS_MS = [0, 2000, 10000, 30000];
+const BACKGROUND_ENSURE_INTERVAL_MS = 30000;
 const SEND_ERROR_LOG_INTERVAL_MS = 60 * 1000;
 const MAX_SILENT_RECONNECT_FAILURES = 2;
 
@@ -25,6 +26,8 @@ let warnedMissingConfig = false;
 let warnedApiSendDisabled = false;
 let reconnectFailureCount = 0;
 let reconnectEscalated = false;
+let backgroundEnsureInterval = null;
+let backgroundEnsureInFlight = false;
 const serverIssueState = Object.create(null);
 
 function log(level, message) {
@@ -105,6 +108,52 @@ function parseBoolean(value, fallback) {
     return fallback;
 }
 
+function normalizeServerId(value) {
+    if (value === undefined || value === null) {
+        return null;
+    }
+    if (typeof value === "number") {
+        return value;
+    }
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (trimmed === "") {
+            return null;
+        }
+        if (/^\d+$/.test(trimmed)) {
+            return Number(trimmed);
+        }
+        return trimmed;
+    }
+    return value;
+}
+
+function parsePushEventPayload(payload) {
+    if (typeof payload === "string") {
+        return JSON.parse(payload);
+    }
+    return payload;
+}
+
+function handleIncomingPushEvent(payload) {
+    try {
+        const parsed = parsePushEventPayload(payload);
+        if (!parsed || typeof parsed !== "object") {
+            throw new Error("payload was not an object");
+        }
+        if (!parsed.type) {
+            throw new Error("payload missing event type");
+        }
+        emit("SonoranCAD::pushevents:shim", JSON.stringify(parsed));
+        clearServerIssue("ws-push");
+        log("debug", "Received pushEvent over WS: " + parsed.type);
+    } catch (err) {
+        const errMsg = getErrorMessage(err);
+        log("warn", "Failed to process pushEvent payload: " + errMsg);
+        reportServerIssue("ws-push", "pushEvent processing failed: " + errMsg, SEND_ERROR_LOG_INTERVAL_MS);
+    }
+}
+
 function readConfigFile() {
     try {
         const raw = LoadResourceFile(GetCurrentResourceName(), "configuration/config.json");
@@ -129,6 +178,7 @@ function buildConfig() {
     const fileConfig = readConfigFile();
     const communityID = getConvar("sonoran_communityID") || fileConfig.communityID;
     const apiKey = getConvar("sonoran_apiKey") || fileConfig.apiKey;
+    const serverId = normalizeServerId(getConvar("sonoran_serverId") || fileConfig.serverId);
     const mode = (getConvar("sonoran_mode") || fileConfig.mode || "production").toLowerCase();
     const apiSendEnabled = parseBoolean(
         getConvar("sonoran_apiSendEnabled"),
@@ -136,10 +186,12 @@ function buildConfig() {
     );
     const hubUrl = mode === "development" ? DEFAULT_HUBS.development : DEFAULT_HUBS.production;
     log("debug", "Config: mode=" + mode + ", hubUrl=" + hubUrl + ", apiSendEnabled=" + apiSendEnabled
-        + ", communityID=" + (communityID ? "set" : "missing") + ", apiKey=" + (apiKey ? "set" : "missing"));
+        + ", communityID=" + (communityID ? "set" : "missing") + ", apiKey=" + (apiKey ? "set" : "missing")
+        + ", serverId=" + (serverId !== null ? String(serverId) : "missing"));
     return {
         communityID,
         apiKey,
+        serverId,
         mode,
         hubUrl,
         apiSendEnabled
@@ -150,6 +202,7 @@ function configsEqual(a, b) {
     return !!a && !!b &&
         a.communityID === b.communityID &&
         a.apiKey === b.apiKey &&
+        a.serverId === b.serverId &&
         a.hubUrl === b.hubUrl;
 }
 
@@ -159,7 +212,7 @@ async function authenticate() {
         return authenticating;
     }
     log("debug", "Authenticate: invoking authenticate().");
-    authenticating = connection.invoke("authenticate", connectionConfig.communityID, connectionConfig.apiKey)
+    authenticating = connection.invoke("authenticate", connectionConfig.communityID, connectionConfig.apiKey, connectionConfig.serverId)
         .then((auth) => {
             if (auth && auth.success) {
                 authenticated = true;
@@ -200,12 +253,12 @@ async function ensureConnection(config) {
         return false;
     }
     warnedApiSendDisabled = false;
-    if (!config.communityID || !config.apiKey) {
+    if (!config.communityID || !config.apiKey || config.serverId === null) {
         if (!warnedMissingConfig) {
-            log("error", "Missing communityID or apiKey for WS authentication. Check config.json or convars.");
+            log("error", "Missing communityID, apiKey, or serverId for WS authentication. Check config.json or convars.");
             warnedMissingConfig = true;
         }
-        log("debug", "ensureConnection: missing communityID/apiKey.");
+        log("debug", "ensureConnection: missing communityID/apiKey/serverId.");
         return false;
     }
     warnedMissingConfig = false;
@@ -242,6 +295,8 @@ async function ensureConnection(config) {
                 }
             })
             .build();
+
+        connection.on("pushEvent", handleIncomingPushEvent);
 
         connection.onreconnecting((err) => {
             authenticated = false;
@@ -301,6 +356,56 @@ async function ensureConnection(config) {
     log("debug", "ensureConnection: ready.");
     return true;
 }
+
+async function runBackgroundEnsure() {
+    if (backgroundEnsureInFlight) {
+        return;
+    }
+    backgroundEnsureInFlight = true;
+    try {
+        await ensureConnection(buildConfig());
+    } catch (_) {
+    } finally {
+        backgroundEnsureInFlight = false;
+    }
+}
+
+function startBackgroundEnsureLoop() {
+    if (!signalR || backgroundEnsureInterval) {
+        return;
+    }
+    runBackgroundEnsure();
+    backgroundEnsureInterval = setInterval(runBackgroundEnsure, BACKGROUND_ENSURE_INTERVAL_MS);
+}
+
+async function stopConnection() {
+    authenticated = false;
+    connecting = null;
+    authenticating = null;
+    if (!connection) {
+        return;
+    }
+    const activeConnection = connection;
+    connection = null;
+    connectionConfig = null;
+    try {
+        await activeConnection.stop();
+    } catch (_) {
+    }
+}
+
+startBackgroundEnsureLoop();
+
+on("onResourceStop", (resourceName) => {
+    if (resourceName !== GetCurrentResourceName()) {
+        return;
+    }
+    if (backgroundEnsureInterval) {
+        clearInterval(backgroundEnsureInterval);
+        backgroundEnsureInterval = null;
+    }
+    stopConnection();
+});
 
 exports("sendUnitLocations", async (updates) => {
     try {

@@ -267,6 +267,7 @@ local PushEventHandler = {
 
 ---@type { [string]: function[] }
 local CustomPushEventHandlers = {}
+local warnedLegacyHttpPushEvent = false
 
 RegisterNetEvent('SonoranCAD::RegisterPushEvent', function(eventName, eventHandler)
 	if not eventName or not eventHandler then return end
@@ -276,6 +277,86 @@ RegisterNetEvent('SonoranCAD::RegisterPushEvent', function(eventName, eventHandl
 	debugLog(('Registered custom push event %s'):format(eventName))
 	table.insert(CustomPushEventHandlers[eventName], eventHandler)
 end)
+
+local function handlePushEventPayload(body, rawData, res, source)
+	source = source or 'unknown'
+	if type(body) ~= 'table' then
+		if res then
+			res.send(json.encode({
+				['error'] = 'bad request'
+			}))
+		end
+		debugLog('Invalid event: ' .. tostring(rawData))
+		return false, 'bad request'
+	end
+
+	if not body.key or type(body.key) ~= 'string' or body.key:upper() ~= Config.apiKey:upper() then
+		if res then
+			res.send('error')
+		end
+		debugLog(('Rejected %s push event due to invalid key.'):format(source))
+		return false, 'invalid key'
+	end
+
+	local eventType = body.type and body.type:upper() or nil
+	if eventType == nil then
+		if res then
+			res.send(json.encode({
+				['error'] = 'bad request'
+			}))
+		end
+		debugLog(('Rejected %s push event with missing type.'):format(source))
+		return false, 'missing type'
+	end
+
+	local encodedBody = rawData
+	if encodedBody == nil then
+		encodedBody = json.encode(body)
+	end
+
+	debugLog(('EVENT[%s]: %s - %s'):format(source, eventType, encodedBody))
+	if Config.enablePushEventForwarding then
+		PerformHttpRequest(Config.pushEventForwardUrl, function(statusCode, forwardRes, headers)
+			debugLog('Forward Response: ' .. tostring(forwardRes))
+		end, 'POST', encodedBody, {
+			['Content-Type'] = 'application/json'
+		})
+	end
+
+	local success = true
+	local result = 'ok'
+	if PushEventHandler[eventType] then
+		success, result = PushEventHandler[eventType](body)
+		if not success and not result then
+			result = 'error'
+		end
+	else
+		TriggerEvent('SonoranCAD::pushevents:OtherEvent', eventType, body.data)
+		result = 'ok - custom'
+	end
+
+	if CustomPushEventHandlers[eventType] then
+		for index, customEvent in ipairs(CustomPushEventHandlers[eventType]) do
+			local customSuccess, customResult = pcall(customEvent, body)
+			if customSuccess then
+				debugLog(('Custom event handler %s (%s) succeeded!'):format(eventType, index))
+			else
+				if not customResult then
+					customResult = 'error'
+				end
+				debugLog(('Custom event handler %s (%s) failed with result: %s'):format(eventType, index, customResult))
+			end
+		end
+	else
+		debugLog('No custom push event handlers for push event: ' .. eventType)
+	end
+
+	if res then
+		res.send(success and (result or 'ok') or result)
+	end
+
+	return success, result
+end
 
 SetHttpHandler(function(req, res)
 	local path = req.path
@@ -392,49 +473,13 @@ SetHttpHandler(function(req, res)
 				debugLog('Invalid event: ' .. tostring(body))
 				return
 			end
-			if body.key and body.key:upper() == Config.apiKey:upper() then
-				debugLog(('EVENT: %s - %s'):format(body.type, json.encode(body)))
-				if Config.enablePushEventForwarding then
-					PerformHttpRequest(Config.pushEventForwardUrl, function(statusCode, res, headers)
-						debugLog('Forward Response: ' .. tostring(res))
-					end, 'POST', data, {
-						['Content-Type'] = 'application/json'
-					})
-				end
-				if PushEventHandler[body.type:upper()] then
-					CreateThread(function()
-						body.res = res
-						local success, result = PushEventHandler[body.type:upper()](body)
-						if success then
-							res.send('ok')
-						else
-							if not result then
-								result = 'error'
-							end
-							res.send(result);
-						end
-					end)
-				else
-					TriggerEvent('SonoranCAD::pushevents:OtherEvent', body.type:upper(), body.data)
-					res.send('ok - custom')
-				end
-
-				if CustomPushEventHandlers[body.type:upper()] then
-					for index, customEvent in ipairs(CustomPushEventHandlers[body.type:upper()]) do
-						local success, result = pcall(customEvent, body)
-						if success then
-							debugLog(('Custom event handler %s (%s) succeeded!'):format(body.type:upper(), index))
-						else
-							if not result then
-								result = 'error'
-							end
-							debugLog(('Custom event handler %s (%s) failed with result: %s'):format(body.type:upper(), index, result))
-						end
-					end
-				else
-					debugLog('No custom push event handlers for push event: ' .. body.type:upper())
-				end
+			if not warnedLegacyHttpPushEvent then
+				warnLog('Received legacy HTTP push event on /event. Websocket pushEvent delivery is preferred when API WS is connected.')
+				warnedLegacyHttpPushEvent = true
 			end
+			CreateThread(function()
+				handlePushEventPayload(body, data, res, 'http')
+			end)
 		end)
 	elseif method == 'POST' and path == '/pluginevent' then
 		req.setDataHandler(function(data)
@@ -539,14 +584,9 @@ AddEventHandler('SonoranCAD::pushevents:shim', function(chunk)
 		debugLog('Invalid event: ' .. tostring(chunk))
 		return
 	end
-	if body.key and body.key:upper() == Config.apiKey:upper() then
-		if PushEventHandler[body.type:upper()] then
-			CreateThread(function()
-				body.res = res
-				local success, result = PushEventHandler[body.type:upper()](body)
-			end)
-		end
-	end
+	CreateThread(function()
+		handlePushEventPayload(body, chunk, nil, 'ws')
+	end)
 end)
 
 -- AddPluginFilePath('images', function(path)
