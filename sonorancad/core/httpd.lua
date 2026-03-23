@@ -330,6 +330,7 @@ local function handlePushEventPayload(body, rawData, res, source)
 		if not success and not result then
 			result = 'error'
 		end
+		return
 	else
 		TriggerEvent('SonoranCAD::pushevents:OtherEvent', eventType, body.data)
 		result = 'ok - custom'
@@ -347,6 +348,7 @@ local function handlePushEventPayload(body, rawData, res, source)
 				debugLog(('Custom event handler %s (%s) failed with result: %s'):format(eventType, index, customResult))
 			end
 		end
+		return
 	else
 		debugLog('No custom push event handlers for push event: ' .. eventType)
 	end
