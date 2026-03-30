@@ -68,6 +68,52 @@ local config = {
     -- The default keybind for toggling the bodycam.
     defaultKeybind="",
 
+    -- Additive local recording configuration layered on top of the existing bodycam stream.
+    recording = {
+        -- Rolling local shadow buffer duration. Valid range: 0-60 seconds.
+        shadowBufferSeconds = 30,
+
+        -- Live segment duration recorded after a trigger starts a clip.
+        liveClipSeconds = 30,
+
+        -- Hard max upload duration. Sonoran upload rejects clips over 120 seconds.
+        maxClipSeconds = 120,
+
+        -- Recording/export targets. These only apply to clip export/upload, not the live stream renderer.
+        width = 960,
+        height = 540,
+        fps = 10,
+        videoBitrate = 300000,
+        audioBitrate = 64000,
+        mimeType = "video/webm;codecs=vp8,opus",
+        maxFileSizeBytes = 6000000,
+
+        -- Recording SFX.
+        enableRecordingSfx = true,
+        recordingStartSfx = "sounds/recording_start.mp3",
+        recordingStopSfx = "sounds/recording_stop.mp3",
+
+        -- Automatic recording triggers and debounce protection.
+        autoRecordEvents = {
+            "panic",
+            "weapon_draw",
+        },
+        autoRecordCooldownMs = 5000,
+
+        -- Privacy precedence:
+        -- forceoff blocks remote/export/automatic control, but local manual recording can still be requested.
+        allowManualRecordingDuringPrivacyOverride = true,
+        blockRemoteRecordingDuringPrivacyOverride = true,
+
+        -- Optional standalone recording toggle command/keybind. Leave blank to disable.
+        commands = {
+            toggleRecording = "bodycamrecordtoggle",
+        },
+        keybinds = {
+            toggleRecording = "",
+        },
+    },
+
     -- Automaticlly enable bodycam when lights are enabled / disabled
     autoEnableWithLights = true,
 

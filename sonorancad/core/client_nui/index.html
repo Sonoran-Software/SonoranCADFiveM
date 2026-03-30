@@ -64,6 +64,7 @@
 		<script src="https://unpkg.com/@citizenfx/three/build/three.js" type="text/javascript"></script>
 		<script src="js/bodycam_canvas.js" type="text/javascript"></script>
 		<script src="js/canvas_recorder.js" type="text/javascript"></script>
+		<script src="js/bodycam_recorder.js" type="text/javascript"></script>
 		<script>
 			// CRED: https://stackoverflow.com/questions/6150289/how-can-i-convert-an-image-into-base64-string-using-javascript/20285053#20285053
 			function toDataUrl(url, callback) {
@@ -676,6 +677,9 @@
 				peerStream.videoStream = videoStream;
 				peerStream.mediaStream = new MediaStream(tracks);
 				peerStream.remotePeerId = remotePeerId;
+				if (window.BodycamRecordingManager) {
+					window.BodycamRecordingManager.setSourceStream(peerStream.mediaStream);
+				}
 
 				tracks.forEach((track) => {
 					track.onended = function () {
@@ -721,6 +725,9 @@
 						track.stop();
 					});
 					peerStream.mediaStream = null;
+				}
+				if (window.BodycamRecordingManager) {
+					window.BodycamRecordingManager.setSourceStream(null);
 				}
 				if (peerStream.videoStream) {
 					peerStream.videoStream.getTracks().forEach(function (track) {
@@ -791,6 +798,10 @@
 						startBodycamStream(event.data);
 					} else {
 						stopBodycamStream();
+					}
+				} else if (event.data.type === "bodycamRecordingControl") {
+					if (window.BodycamRecordingManager) {
+						window.BodycamRecordingManager.control(event.data);
 					}
 				} else if (event.data.type === "bodycamOverlay") {
 					setOverlayVisibility(event.data.visible, event.data.location);
