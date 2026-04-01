@@ -96,8 +96,8 @@ jobs:
       - name: Upload archive to QA server
         shell: bash
         env:
-          QA_PTERO_USER: ${{ secrets.QA_PTERO_USER }}
-          QA_PTERO_PASS: ${{ secrets.QA_PTERO_PASS }}
+          QA_PTERO_USER: ${{ secrets.FiveM01_Ptero_User }}
+          QA_PTERO_PASS: ${{ secrets.FiveM01_Ptero_Pass }}
           ARCHIVE_NAME: ${{ steps.metadata.outputs.archive_name }}
         run: |
           lftp -e "open sftp://${QA_SFTP_HOST}:${QA_SFTP_PORT}; user $QA_PTERO_USER $QA_PTERO_PASS; cd ${QA_DEPLOY_ROOT}; put $ARCHIVE_NAME; bye"
@@ -105,7 +105,7 @@ jobs:
       - name: Decompress archive on QA server
         shell: bash
         env:
-          QA_SERVER_ID: ${{ secrets.QA_SERVER_ID }}
+          QA_SERVER_ID: ${{ secrets.FIVEM01_ID }}
           PTERO_API_KEY: ${{ secrets.PTERO_API_KEY }}
           ARCHIVE_NAME: ${{ steps.metadata.outputs.archive_name }}
         run: |
@@ -118,7 +118,7 @@ jobs:
       - name: Remove uploaded archive from QA server
         shell: bash
         env:
-          QA_SERVER_ID: ${{ secrets.QA_SERVER_ID }}
+          QA_SERVER_ID: ${{ secrets.FIVEM01_ID }}
           PTERO_API_KEY: ${{ secrets.PTERO_API_KEY }}
           ARCHIVE_NAME: ${{ steps.metadata.outputs.archive_name }}
         run: |
