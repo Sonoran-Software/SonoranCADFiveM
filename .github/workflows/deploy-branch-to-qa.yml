@@ -1,14 +1,8 @@
 name: Deploy Branch to QA
-run-name: Deploy QA from ${{ inputs.branch }}
+run-name: Deploy QA from ${{ github.ref_name }}
 
 on:
   workflow_dispatch:
-    inputs:
-      branch:
-        description: Branch to deploy to QA (for example - staging or feat/my-change)
-        required: true
-        default: staging
-        type: string
 
 env:
   QA_SFTP_HOST: ${{ secrets.QA_SFTP_HOST }}
@@ -30,14 +24,13 @@ jobs:
       - name: Checkout selected branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.branch }}
           fetch-depth: 0
 
       - name: Extract version metadata
         id: metadata
         shell: bash
         env:
-          DEPLOY_BRANCH: ${{ inputs.branch }}
+          DEPLOY_BRANCH: ${{ github.ref_name }}
         run: |
           VERSION=$(grep -oP "version '\K\d+\.\d+\.\d+" sonorancad/fxmanifest.lua)
           SAFE_BRANCH=$(printf '%s' "$DEPLOY_BRANCH" | tr '/\\' '-' | tr -cd '[:alnum:]._-' )
@@ -141,7 +134,7 @@ jobs:
           {
             echo "## QA deployment complete"
             echo ""
-            echo "- Branch: \`${{ inputs.branch }}\`"
+            echo "- Branch: \`${{ github.ref_name }}\`"
             echo "- Commit: \`${{ steps.metadata.outputs.short_sha }}\`"
             echo "- Version: \`${{ steps.metadata.outputs.version }}\`"
             echo "- Archive: \`${{ steps.metadata.outputs.archive_name }}\`"
