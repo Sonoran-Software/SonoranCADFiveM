@@ -1,0 +1,144 @@
+name: Deploy Branch to QA
+run-name: Deploy QA from ${{ github.ref_name }}
+
+on:
+  workflow_dispatch:
+
+env:
+  QA_SFTP_HOST: ${{ secrets.QA_SFTP_HOST }}
+  QA_SFTP_PORT: ${{ secrets.QA_SFTP_PORT }}
+  QA_DEPLOY_ROOT: ${{ secrets.QA_DEPLOY_ROOT }}
+  QA_PTERO_API_BASE: ${{ secrets.QA_PTERO_API_BASE }}
+
+concurrency:
+  group: deploy-branch-to-qa
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout selected branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version metadata
+        id: metadata
+        shell: bash
+        env:
+          DEPLOY_BRANCH: ${{ github.ref_name }}
+        run: |
+          VERSION=$(grep -oP "version '\K\d+\.\d+\.\d+" sonorancad/fxmanifest.lua)
+          SAFE_BRANCH=$(printf '%s' "$DEPLOY_BRANCH" | tr '/\\' '-' | tr -cd '[:alnum:]._-' )
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          ARCHIVE_NAME="sonorancad-${SAFE_BRANCH}-${SHORT_SHA}.zip"
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "archive_name=$ARCHIVE_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Clone included submodules
+        shell: bash
+        run: |
+          git submodule deinit -f --all
+          git submodule sync
+          git submodule update --init --recursive
+          git submodule update --remote --merge
+
+      - name: Move external submodule config.dist.lua files
+        shell: bash
+        run: |
+          find sonorancad/submodules/ -type f -name '*_config.dist.lua' -exec mv -f {} sonorancad/configuration/ \;
+
+      - name: Build QA archive
+        id: build
+        shell: bash
+        env:
+          ARCHIVE_NAME: ${{ steps.metadata.outputs.archive_name }}
+        run: |
+          if [ -d sonorancad/plugins ]; then
+            find sonorancad/plugins -mindepth 1 -maxdepth 1 -type d ! -name template -exec rm -rf {} +
+          fi
+
+          rm -rf "./[sonorancad]"
+          rsync -a \
+            --exclude="[sonorancad]" \
+            --exclude=".git" \
+            --exclude=".vscode" \
+            --exclude=".github" \
+            ./ "./[sonorancad]"
+
+          zip -r "$ARCHIVE_NAME" "[sonorancad]/"
+
+      - name: Upload QA build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-${{ steps.metadata.outputs.short_sha }}
+          path: ${{ steps.metadata.outputs.archive_name }}
+          retention-days: 1
+
+      - name: Install deploy tools
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lftp
+
+      - name: Trust SFTP host key
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$QA_SFTP_PORT" "$QA_SFTP_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload archive to QA server
+        shell: bash
+        env:
+          QA_PTERO_USER: ${{ secrets.FiveM01_Ptero_User }}
+          QA_PTERO_PASS: ${{ secrets.FiveM01_Ptero_Pass }}
+          ARCHIVE_NAME: ${{ steps.metadata.outputs.archive_name }}
+        run: |
+          lftp -e "open sftp://${QA_SFTP_HOST}:${QA_SFTP_PORT}; user $QA_PTERO_USER $QA_PTERO_PASS; cd ${QA_DEPLOY_ROOT}; put $ARCHIVE_NAME; bye"
+
+      - name: Decompress archive on QA server
+        shell: bash
+        env:
+          QA_SERVER_ID: ${{ secrets.FIVEM01_ID }}
+          PTERO_API_KEY: ${{ secrets.PTERO_API_KEY }}
+          ARCHIVE_NAME: ${{ steps.metadata.outputs.archive_name }}
+        run: |
+          curl --fail --show-error "${QA_PTERO_API_BASE}/servers/${QA_SERVER_ID}/files/decompress" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $PTERO_API_KEY" \
+            -X POST \
+            -d "{\"root\": \"${QA_DEPLOY_ROOT}/\", \"file\": \"${ARCHIVE_NAME}\"}"
+
+      - name: Remove uploaded archive from QA server
+        shell: bash
+        env:
+          QA_SERVER_ID: ${{ secrets.FIVEM01_ID }}
+          PTERO_API_KEY: ${{ secrets.PTERO_API_KEY }}
+          ARCHIVE_NAME: ${{ steps.metadata.outputs.archive_name }}
+        run: |
+          curl --fail --show-error "${QA_PTERO_API_BASE}/servers/${QA_SERVER_ID}/files/delete" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $PTERO_API_KEY" \
+            -X POST \
+            -d "{\"root\": \"${QA_DEPLOY_ROOT}/\", \"files\": [\"${ARCHIVE_NAME}\"]}"
+
+      - name: Publish job summary
+        shell: bash
+        run: |
+          {
+            echo "## QA deployment complete"
+            echo ""
+            echo "- Branch: \`${{ github.ref_name }}\`"
+            echo "- Commit: \`${{ steps.metadata.outputs.short_sha }}\`"
+            echo "- Version: \`${{ steps.metadata.outputs.version }}\`"
+            echo "- Archive: \`${{ steps.metadata.outputs.archive_name }}\`"
+            echo "- Remote root: \`${QA_DEPLOY_ROOT}\`"
+            echo ""
+            echo "The archive was decompressed in place so existing files that are not present in the build were left alone."
+          } >> "$GITHUB_STEP_SUMMARY"
