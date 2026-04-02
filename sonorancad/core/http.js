@@ -9,12 +9,14 @@ exports('HandleHttpRequest', (dest, callback, method, data, headers) => {
     const urlObj = url.parse(dest)
     const options = {
         hostname: urlObj.hostname,
-        path: urlObj.pathname,
+        path: urlObj.path || urlObj.pathname,
         method: method,
-        headers: headers
+        headers: headers || {}
     }
     if (method == "POST") {
-        options.headers['Content-Type'] = 'application/json'
+        if (!options.headers['Content-Type']) {
+            options.headers['Content-Type'] = 'application/json'
+        }
     }
     else if (method != "GET") {
         console.error("Invalid request. Only GET/POST supported. Method: " + method);

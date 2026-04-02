@@ -304,6 +304,17 @@ CreateThread(function()
                 local source = source
                 TriggerClientEvent('SonoranCAD::bodycam::GiveSound', -1, source, GetEntityCoords(GetPlayerPed(source)))
             end)
+
+            AddEventHandler('SonoranCAD::pushevents:UnitPanic', function(unit, identId, isPanic)
+                if not isPanic or not unit or not unit.data or not unit.data.apiIds then
+                    return
+                end
+                local player = GetSourceByApiId(unit.data.apiIds)
+                if player then
+                    TriggerClientEvent('SonoranCAD::bodycam::AutoRecordTrigger', player, 'panic')
+                end
+            end)
+
             RegisterNetEvent('SonoranCAD::bodycam::RequestToggle', function(manualActivation, toggle)
                 local unit = GetUnitByPlayerId(source)
 

@@ -29,6 +29,46 @@ local turnCache = {
 local turnRequestSeq = 0
 local pendingTurnRequests = {}
 local pendingPeerStart = nil
+local recordingActive = false
+local recordingConfig = {}
+local recordingCooldowns = {}
+local pendingRecordingStart = nil
+
+local function nowMs()
+    return GetGameTimer()
+end
+
+local function normalizeTriggerName(triggerName)
+    if not triggerName then
+        return nil
+    end
+    local normalized = tostring(triggerName):lower()
+    normalized = normalized:gsub("%s+", "_")
+    return normalized
+end
+
+local function isRecordingAutoTriggerEnabled(triggerName)
+    local normalized = normalizeTriggerName(triggerName)
+    if not normalized or type(recordingConfig.autoRecordEvents) ~= "table" then
+        return false
+    end
+    for _, configured in ipairs(recordingConfig.autoRecordEvents) do
+        if normalizeTriggerName(configured) == normalized then
+            return true
+        end
+    end
+    return false
+end
+
+local function logRecordingEvent(level, eventName, sourceType, triggerName, reason)
+    TriggerServerEvent("SonoranCAD::bodycam::LogRecordingEvent", {
+        level = level or "info",
+        event = eventName,
+        sourceType = sourceType,
+        trigger = triggerName,
+        reason = reason
+    })
+end
 
 local function cloneTable(orig)
     if type(orig) ~= "table" then
@@ -85,6 +125,13 @@ CreateThread(function()
             showOverlay = pluginConfig.enableOverlay
             local peerStreamConfig = pluginConfig.peerStream or {}
             peerStreamEnabled = peerStreamConfig.enabled == true
+            recordingConfig = pluginConfig.recording or {}
+            if type(recordingConfig.autoRecordEvents) ~= "table" then
+                recordingConfig.autoRecordEvents = {}
+            end
+            if recordingConfig.autoRecordCooldownMs == nil then
+                recordingConfig.autoRecordCooldownMs = 5000
+            end
             local function GenerateRemotePeerId()
                 local serverId = GetPlayerServerId(PlayerId())
                 local seed = GetGameTimer() + (serverId * 1000)
@@ -178,6 +225,105 @@ CreateThread(function()
                 end
             end
 
+            local function getRecordingMetadata()
+                return {}
+            end
+
+            local function canExternalRecordingControl(sourceType)
+                if not forceDisplayOff then
+                    return true
+                end
+                if sourceType == 'manual' and recordingConfig.allowManualRecordingDuringPrivacyOverride ~= false then
+                    return true
+                end
+                if recordingConfig.blockRemoteRecordingDuringPrivacyOverride == false and sourceType == 'remote' then
+                    return true
+                end
+                return false
+            end
+
+            local function sendRecordingControl(action, sourceType, triggerName, reason)
+                sourceType = sourceType or 'manual'
+                local normalizedTrigger = normalizeTriggerName(triggerName)
+                if action == 'start' then
+                    if recordingActive then
+                        if sourceType == 'manual' then
+                            TriggerEvent('chat:addMessage', {
+                                args = { 'Sonoran Bodycam', 'Recording is already active.' }
+                            })
+                        end
+                        return
+                    end
+                    if not canExternalRecordingControl(sourceType) then
+                        logRecordingEvent('warn', 'recording_blocked', sourceType, normalizedTrigger, 'privacy_override')
+                        if sourceType == 'manual' then
+                            TriggerEvent('chat:addMessage', {
+                                args = { 'Sonoran Bodycam', 'Recording blocked by privacy override.' }
+                            })
+                        end
+                        return
+                    end
+                    if not bodyCamOn then
+                        if sourceType == 'manual' then
+                            pendingRecordingStart = {
+                                action = action,
+                                sourceType = sourceType,
+                                trigger = normalizedTrigger,
+                                reason = reason
+                            }
+                            if not bodyCamDisplayOn then
+                                TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', true, true)
+                            else
+                                StartPeerStream()
+                            end
+                        end
+                        return
+                    end
+                    logRecordingEvent('info', 'recording_start', sourceType, normalizedTrigger, reason)
+                else
+                    if not recordingActive then
+                        if sourceType == 'manual' then
+                            TriggerEvent('chat:addMessage', {
+                                args = { 'Sonoran Bodycam', 'No recording is currently active.' }
+                            })
+                        end
+                        return
+                    end
+                end
+
+                SendNUIMessage({
+                    type = 'bodycamRecordingControl',
+                    action = action,
+                    sourceType = sourceType,
+                    trigger = normalizedTrigger,
+                    reason = reason,
+                    config = recordingConfig,
+                    metadata = getRecordingMetadata()
+                })
+            end
+
+            local function triggerAutoRecording(triggerName)
+                local normalizedTrigger = normalizeTriggerName(triggerName)
+                if not isRecordingAutoTriggerEnabled(normalizedTrigger) then
+                    return
+                end
+                local cooldownMs = tonumber(recordingConfig.autoRecordCooldownMs) or 5000
+                local currentTime = nowMs()
+                if recordingCooldowns[normalizedTrigger] and currentTime - recordingCooldowns[normalizedTrigger] < cooldownMs then
+                    return
+                end
+                recordingCooldowns[normalizedTrigger] = currentTime
+                sendRecordingControl('start', 'auto', normalizedTrigger, 'auto_trigger')
+            end
+
+            local function toggleManualRecording()
+                if recordingActive then
+                    sendRecordingControl('stop', 'manual', 'manual', 'manual_toggle')
+                else
+                    sendRecordingControl('start', 'manual', 'manual', 'manual_toggle')
+                end
+            end
+
             local function buildPeerConfig(iceServers)
                 local config = nil
                 if type(peerStreamPeerConfig) == "table" then
@@ -234,6 +380,15 @@ CreateThread(function()
                     local iceServers = cache and cache.iceServers or nil
                     startPayload.peerConfig = buildPeerConfig(iceServers)
                     SendNUIMessage(startPayload)
+                    if pendingRecordingStart and pendingRecordingStart.action == 'start' then
+                        local pending = pendingRecordingStart
+                        pendingRecordingStart = nil
+                        SetTimeout(750, function()
+                            if bodyCamOn then
+                                sendRecordingControl('start', pending.sourceType, pending.trigger, pending.reason)
+                            end
+                        end)
+                    end
                 end)
             end
 
@@ -243,6 +398,7 @@ CreateThread(function()
                 end
                 peerStreamActive = false
                 bodyCamOn = false
+                pendingRecordingStart = nil
                 pendingPeerStart = nil
                 lastPeerId = nil
                 BodycamPeerId = nil
@@ -267,6 +423,47 @@ CreateThread(function()
                     watchingDisplayOn = watching
                     applyDisplayState()
                 end
+                cb({ ok = true })
+            end)
+
+            RegisterNUICallback('bodycamRecordingState', function(data, cb)
+                local state = data and data.state or nil
+                if state == 'started' then
+                    recordingActive = true
+                    if recordingConfig.enableRecordingSfx ~= false then
+                        SendNUIMessage({
+                            type = 'playSound',
+                            transactionFile = recordingConfig.recordingStartSfx or 'sounds/beeps.mp3',
+                            transactionVolume = soundLevel
+                        })
+                    end
+                    TriggerEvent('chat:addMessage', {
+                        args = { 'Sonoran Bodycam', 'Recording started.' }
+                    })
+                elseif state == 'stopped' then
+                    recordingActive = false
+                    if recordingConfig.enableRecordingSfx ~= false then
+                        SendNUIMessage({
+                            type = 'playSound',
+                            transactionFile = recordingConfig.recordingStopSfx or 'sounds/beep_off.mp3',
+                            transactionVolume = soundLevel
+                        })
+                    end
+                    TriggerEvent('chat:addMessage', {
+                        args = { 'Sonoran Bodycam', 'Recording stopped. Uploading clip...' }
+                    })
+                elseif state == 'failed' then
+                    recordingActive = false
+                    TriggerEvent('chat:addMessage', {
+                        args = { 'Sonoran Bodycam', ('Recording failed: %s'):format(tostring(data.reason or 'unknown')) }
+                    })
+                    logRecordingEvent('warn', 'recording_failed', data.sourceType, data.trigger, data.reason)
+                end
+                cb({ ok = true })
+            end)
+
+            RegisterNUICallback('bodycamRecordingUpload', function(data, cb)
+                TriggerServerEvent('SonoranCAD::bodycam::UploadRecording', data)
                 cb({ ok = true })
             end)
 
@@ -309,6 +506,19 @@ CreateThread(function()
                 TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', true, turnOn)
             end, false)
             RegisterKeyMapping('SonoranCAD::bodycam::Keybind', "Toggle BodyCam", "keyboard", pluginConfig.defaultKeybind)
+            if recordingConfig.commands and recordingConfig.commands.toggleRecording and
+                recordingConfig.commands.toggleRecording ~= '' then
+                RegisterCommand(recordingConfig.commands.toggleRecording, function()
+                    toggleManualRecording()
+                end, false)
+                TriggerEvent('chat:addSuggestion', '/' .. recordingConfig.commands.toggleRecording,
+                    'Toggle local bodycam recording')
+            end
+            RegisterCommand('SonoranCAD::bodycam::RecordingKeybind', function()
+                toggleManualRecording()
+            end, false)
+            RegisterKeyMapping('SonoranCAD::bodycam::RecordingKeybind', "Toggle BodyCam Recording", "keyboard",
+                (recordingConfig.keybinds and recordingConfig.keybinds.toggleRecording) or '')
             CreateThread(function()
                 while pluginConfig.autoEnableWithWeapons do
                     Wait(200)
@@ -320,6 +530,7 @@ CreateThread(function()
                                 if not forceDisplayOff then
                                     TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', false, true)
                                 end
+                                triggerAutoRecording('weapon_draw')
                                 break
                             end
                         end
@@ -366,6 +577,22 @@ CreateThread(function()
             RegisterNetEvent('SonoranCAD::bodycam::GiveSound', function(serverId, serverCoords)
                 if GetPlayerFromServerId(serverId) ~= PlayerId() and GetDistanceBetweenCoords(GetEntityCoords(GetPlayerPed(PlayerId())), serverCoords, true) < pluginConfig.beepRange then
                     PlayBeepSound()
+                end
+            end)
+
+            RegisterNetEvent('SonoranCAD::bodycam::AutoRecordTrigger', function(triggerName)
+                triggerAutoRecording(triggerName)
+            end)
+
+            RegisterNetEvent('SonoranCAD::bodycam::UploadResult', function(result)
+                if result and result.ok then
+                    TriggerEvent('chat:addMessage', {
+                        args = { 'Sonoran Bodycam', 'Recording uploaded to CAD.' }
+                    })
+                else
+                    TriggerEvent('chat:addMessage', {
+                        args = { 'Sonoran Bodycam', ('Recording upload failed: %s'):format(tostring(result and result.reason or 'unknown')) }
+                    })
                 end
             end)
 
@@ -448,6 +675,16 @@ CreateThread(function()
                             TriggerEvent('chat:addMessage',
                                 { args = { 'Sonoran Bodycam', 'Bodycam enabled' } })
                             PlayBeepSound()
+                            if pendingRecordingStart and pendingRecordingStart.action == 'start' then
+                                local pending = pendingRecordingStart
+                                pendingRecordingStart = nil
+                                SetTimeout(750, function()
+                                    if bodyCamOn then
+                                        sendRecordingControl('start', pending.sourceType, pending.trigger,
+                                            pending.reason)
+                                    end
+                                end)
+                            end
                         else
                             TriggerEvent('chat:addMessage',
                                 { args = { 'Sonoran Bodycam', 'Bodycam disabled' } })
