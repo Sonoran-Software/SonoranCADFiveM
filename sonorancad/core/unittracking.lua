@@ -3,6 +3,46 @@ local CallCache = {}
 local EmergencyCache = {}
 local PlayerUnitMapping = {}
 
+ActiveDispatchers = ActiveDispatchers or {}
+dispatchOnline = dispatchOnline or false
+
+local function syncDispatchOnline()
+    dispatchOnline = #ActiveDispatchers > 0
+end
+
+local function addActiveDispatcher(id)
+    if id == nil or has_value(ActiveDispatchers, id) then
+        syncDispatchOnline()
+        return
+    end
+    table.insert(ActiveDispatchers, id)
+    syncDispatchOnline()
+end
+
+local function removeActiveDispatcher(id)
+    local idx = nil
+    for i, dispatcherId in pairs(ActiveDispatchers) do
+        if id == dispatcherId then
+            idx = i
+            break
+        end
+    end
+    if idx ~= nil then
+        table.remove(ActiveDispatchers, idx)
+    end
+    syncDispatchOnline()
+end
+
+local function rebuildActiveDispatchers(units)
+    ActiveDispatchers = {}
+    for _, unit in pairs(units) do
+        if unit ~= nil and unit.isDispatch then
+            table.insert(ActiveDispatchers, unit.id)
+        end
+    end
+    syncDispatchOnline()
+end
+
 local function findUnitById(identIds)
     if identIds == nil then
         return nil
@@ -47,7 +87,12 @@ function GetSourceByApiId(apiIds)
     return nil
 end
 
-function GetUnitCache() return UnitCache end
+function GetUnitCache(includeDispatchers)
+    if includeDispatchers then
+        return UnitCache, ActiveDispatchers
+    end
+    return UnitCache
+end
 function GetCallCache() return CallCache end
 function GetEmergencyCache() return EmergencyCache end
 function SetUnitCache(k, v)
@@ -109,6 +154,9 @@ AddEventHandler("playerDropped", function()
 end)
 
 AddEventHandler("SonoranCAD::pushevents:UnitLogin", function(unit)
+    if unit.isDispatch then
+        addActiveDispatcher(unit.id)
+    end
     local playerId = GetSourceByApiId(unit.data.apiIds)
     if playerId then
         PlayerUnitMapping[playerId] = unit.id
@@ -120,6 +168,7 @@ AddEventHandler("SonoranCAD::pushevents:UnitLogin", function(unit)
 end)
 
 AddEventHandler("SonoranCAD::pushevents:UnitLogout", function(id)
+    removeActiveDispatcher(id)
     if Config.noUnitTimer then
         local key = findUnitById(id)
         debugLog(("unitlogout key %s"):format(key))
@@ -191,6 +240,7 @@ Citizen.CreateThread(function()
                     debugLog("Insert unit "..json.encode(v))
                     table.insert(UnitCache, v)
                 end
+                rebuildActiveDispatchers(UnitCache)
             end)
         end
         Citizen.Wait(60000)
@@ -267,6 +317,7 @@ function manuallySetUnitCache()
                 debugLog("Insert unit "..json.encode(v))
                 table.insert(UnitCache, v)
             end
+            rebuildActiveDispatchers(UnitCache)
         end)
     end
 end
