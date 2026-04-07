@@ -10,23 +10,38 @@ local function syncDispatchOnline()
     dispatchOnline = #ActiveDispatchers > 0
 end
 
-local function addActiveDispatcher(id)
-    if id == nil or has_value(ActiveDispatchers, id) then
+local function findActiveDispatcherIndex(id)
+    if id == nil then
+        return nil
+    end
+    for i, dispatcher in pairs(ActiveDispatchers) do
+        if dispatcher ~= nil and dispatcher.id == id then
+            return i
+        end
+    end
+    return nil
+end
+
+local function addActiveDispatcher(id, isInGame)
+    if id == nil then
         syncDispatchOnline()
         return
     end
-    table.insert(ActiveDispatchers, id)
+    local idx = findActiveDispatcherIndex(id)
+    if idx ~= nil then
+        ActiveDispatchers[idx].isInGame = isInGame == true
+        syncDispatchOnline()
+        return
+    end
+    table.insert(ActiveDispatchers, {
+        id = id,
+        isInGame = isInGame == true
+    })
     syncDispatchOnline()
 end
 
 local function removeActiveDispatcher(id)
-    local idx = nil
-    for i, dispatcherId in pairs(ActiveDispatchers) do
-        if id == dispatcherId then
-            idx = i
-            break
-        end
-    end
+    local idx = findActiveDispatcherIndex(id)
     if idx ~= nil then
         table.remove(ActiveDispatchers, idx)
     end
@@ -37,7 +52,14 @@ local function rebuildActiveDispatchers(units)
     ActiveDispatchers = {}
     for _, unit in pairs(units) do
         if unit ~= nil and unit.isDispatch then
-            table.insert(ActiveDispatchers, unit.id)
+            local playerId = nil
+            if unit.data ~= nil and unit.data.apiIds ~= nil then
+                playerId = GetSourceByApiId(unit.data.apiIds)
+            end
+            table.insert(ActiveDispatchers, {
+                id = unit.id,
+                isInGame = playerId ~= nil
+            })
         end
     end
     syncDispatchOnline()
@@ -148,16 +170,19 @@ AddEventHandler("playerDropped", function()
     local id = GetUnitByPlayerId(source)
     local unit = findUnitById(id)
     if unit then
+        if UnitCache[unit].isDispatch then
+            addActiveDispatcher(UnitCache[unit].id, false)
+        end
         TriggerEvent("SonoranCAD::core:RemovePlayer", source, UnitCache[unit])
         UnitCache[unit] = nil
     end
 end)
 
 AddEventHandler("SonoranCAD::pushevents:UnitLogin", function(unit)
-    if unit.isDispatch then
-        addActiveDispatcher(unit.id)
-    end
     local playerId = GetSourceByApiId(unit.data.apiIds)
+    if unit.isDispatch then
+        addActiveDispatcher(unit.id, playerId ~= nil)
+    end
     if playerId then
         PlayerUnitMapping[playerId] = unit.id
         TriggerEvent("SonoranCAD::core:AddPlayer", playerId, unit)
@@ -210,6 +235,7 @@ Citizen.CreateThread(function()
             performApiRequest({payload}, "GET_ACTIVE_UNITS", function(runits)
                 local allUnits = json.decode(runits)
                 if allUnits ~= nil then
+                    rebuildActiveDispatchers(allUnits)
                     for k, v in pairs(allUnits) do
                         local playerId = GetSourceByApiId(v.data.apiIds)
                         if playerId then
@@ -240,7 +266,9 @@ Citizen.CreateThread(function()
                     debugLog("Insert unit "..json.encode(v))
                     table.insert(UnitCache, v)
                 end
-                rebuildActiveDispatchers(UnitCache)
+                if allUnits == nil then
+                    rebuildActiveDispatchers({})
+                end
             end)
         end
         Citizen.Wait(60000)
@@ -287,6 +315,7 @@ function manuallySetUnitCache()
         performApiRequest({payload}, "GET_ACTIVE_UNITS", function(runits)
             local allUnits = json.decode(runits)
             if allUnits ~= nil then
+                rebuildActiveDispatchers(allUnits)
                 for _, v in pairs(allUnits) do
                     local playerId = GetSourceByApiId(v.data.apiIds)
                     if playerId then
@@ -317,7 +346,9 @@ function manuallySetUnitCache()
                 debugLog("Insert unit "..json.encode(v))
                 table.insert(UnitCache, v)
             end
-            rebuildActiveDispatchers(UnitCache)
+            if allUnits == nil then
+                rebuildActiveDispatchers({})
+            end
         end)
     end
 end
