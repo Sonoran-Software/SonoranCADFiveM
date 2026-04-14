@@ -3,6 +3,68 @@ local CallCache = {}
 local EmergencyCache = {}
 local PlayerUnitMapping = {}
 
+ActiveDispatchers = ActiveDispatchers or {}
+dispatchOnline = dispatchOnline or false
+
+local function syncDispatchOnline()
+    dispatchOnline = #ActiveDispatchers > 0
+end
+
+local function findActiveDispatcherIndex(id)
+    if id == nil then
+        return nil
+    end
+    for i, dispatcher in pairs(ActiveDispatchers) do
+        if dispatcher ~= nil and dispatcher.id == id then
+            return i
+        end
+    end
+    return nil
+end
+
+local function addActiveDispatcher(id, isInGame)
+    if id == nil then
+        syncDispatchOnline()
+        return
+    end
+    local idx = findActiveDispatcherIndex(id)
+    if idx ~= nil then
+        ActiveDispatchers[idx].isInGame = isInGame == true
+        syncDispatchOnline()
+        return
+    end
+    table.insert(ActiveDispatchers, {
+        id = id,
+        isInGame = isInGame == true
+    })
+    syncDispatchOnline()
+end
+
+local function removeActiveDispatcher(id)
+    local idx = findActiveDispatcherIndex(id)
+    if idx ~= nil then
+        table.remove(ActiveDispatchers, idx)
+    end
+    syncDispatchOnline()
+end
+
+local function rebuildActiveDispatchers(units)
+    ActiveDispatchers = {}
+    for _, unit in pairs(units) do
+        if unit ~= nil and unit.isDispatch then
+            local playerId = nil
+            if unit.data ~= nil and unit.data.apiIds ~= nil then
+                playerId = GetSourceByApiId(unit.data.apiIds)
+            end
+            table.insert(ActiveDispatchers, {
+                id = unit.id,
+                isInGame = playerId ~= nil
+            })
+        end
+    end
+    syncDispatchOnline()
+end
+
 local function findUnitById(identIds)
     if identIds == nil then
         return nil
@@ -47,7 +109,12 @@ function GetSourceByApiId(apiIds)
     return nil
 end
 
-function GetUnitCache() return UnitCache end
+function GetUnitCache(includeDispatchers)
+    if includeDispatchers then
+        return UnitCache, ActiveDispatchers
+    end
+    return UnitCache
+end
 function GetCallCache() return CallCache end
 function GetEmergencyCache() return EmergencyCache end
 function SetUnitCache(k, v)
@@ -103,6 +170,9 @@ AddEventHandler("playerDropped", function()
     local id = GetUnitByPlayerId(source)
     local unit = findUnitById(id)
     if unit then
+        if UnitCache[unit].isDispatch then
+            addActiveDispatcher(UnitCache[unit].id, false)
+        end
         TriggerEvent("SonoranCAD::core:RemovePlayer", source, UnitCache[unit])
         UnitCache[unit] = nil
     end
@@ -110,6 +180,9 @@ end)
 
 AddEventHandler("SonoranCAD::pushevents:UnitLogin", function(unit)
     local playerId = GetSourceByApiId(unit.data.apiIds)
+    if unit.isDispatch then
+        addActiveDispatcher(unit.id, playerId ~= nil)
+    end
     if playerId then
         PlayerUnitMapping[playerId] = unit.id
         TriggerEvent("SonoranCAD::core:AddPlayer", playerId, unit)
@@ -120,6 +193,7 @@ AddEventHandler("SonoranCAD::pushevents:UnitLogin", function(unit)
 end)
 
 AddEventHandler("SonoranCAD::pushevents:UnitLogout", function(id)
+    removeActiveDispatcher(id)
     if Config.noUnitTimer then
         local key = findUnitById(id)
         debugLog(("unitlogout key %s"):format(key))
@@ -161,6 +235,7 @@ Citizen.CreateThread(function()
             performApiRequest({payload}, "GET_ACTIVE_UNITS", function(runits)
                 local allUnits = json.decode(runits)
                 if allUnits ~= nil then
+                    rebuildActiveDispatchers(allUnits)
                     for k, v in pairs(allUnits) do
                         local playerId = GetSourceByApiId(v.data.apiIds)
                         if playerId then
@@ -190,6 +265,9 @@ Citizen.CreateThread(function()
                 for k, v in pairs(NewUnits) do
                     debugLog("Insert unit "..json.encode(v))
                     table.insert(UnitCache, v)
+                end
+                if allUnits == nil then
+                    rebuildActiveDispatchers({})
                 end
             end)
         end
@@ -237,6 +315,7 @@ function manuallySetUnitCache()
         performApiRequest({payload}, "GET_ACTIVE_UNITS", function(runits)
             local allUnits = json.decode(runits)
             if allUnits ~= nil then
+                rebuildActiveDispatchers(allUnits)
                 for _, v in pairs(allUnits) do
                     local playerId = GetSourceByApiId(v.data.apiIds)
                     if playerId then
@@ -266,6 +345,9 @@ function manuallySetUnitCache()
             for _, v in pairs(NewUnits) do
                 debugLog("Insert unit "..json.encode(v))
                 table.insert(UnitCache, v)
+            end
+            if allUnits == nil then
+                rebuildActiveDispatchers({})
             end
         end)
     end

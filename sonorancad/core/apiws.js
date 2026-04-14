@@ -16,6 +16,12 @@
     const BACKGROUND_ENSURE_INTERVAL_MS = 30000;
     const SEND_ERROR_LOG_INTERVAL_MS = 60 * 1000;
     const MAX_SILENT_RECONNECT_FAILURES = 2;
+    const SIGNALR_DEBUG_ONLY_PATTERNS = [
+        "(WebSockets transport) There was an error with the transport.",
+        "Failed to start the transport 'WebSockets'",
+        "Failed to start the connection: Error: Unable to connect to the server with any of the available transports.",
+        "WebSocket failed to connect. The connection could not be found on the server"
+    ];
 
     let connection = null;
     let connectionConfig = null;
@@ -32,6 +38,36 @@
 
     function log(level, message) {
         emit("SonoranCAD::core:writeLog", level, "[apiws] " + message);
+    }
+
+    function isSignalRDebugOnlyMessage(message) {
+        if (!message || typeof message !== "string") {
+            return false;
+        }
+        return SIGNALR_DEBUG_ONLY_PATTERNS.some((pattern) => message.indexOf(pattern) !== -1);
+    }
+
+    function createSignalRLogger() {
+        return {
+            log: (level, message) => {
+                if (!message) {
+                    return;
+                }
+                if (isSignalRDebugOnlyMessage(message)) {
+                    log("debug", "[signalr] " + message);
+                    return;
+                }
+                if (level === signalR.LogLevel.Critical || level === signalR.LogLevel.Error) {
+                    log("error", "[signalr] " + message);
+                    return;
+                }
+                if (level === signalR.LogLevel.Warning) {
+                    log("warn", "[signalr] " + message);
+                    return;
+                }
+                log("debug", "[signalr] " + message);
+            }
+        };
     }
 
     function getErrorMessage(err) {
@@ -83,8 +119,9 @@
         }
 
         reconnectEscalated = true;
-        console.error(
-            "[apiws] API WS reconnect has failed " + failedAttempts
+        log(
+            "debug",
+            "API WS reconnect has failed " + failedAttempts
             + " times. Latest error: " + getErrorMessage(err)
         );
     }
@@ -275,6 +312,7 @@
             connectionConfig = config;
             log("debug", "ensureConnection: withUrl(" + config.hubUrl + "), transport=WebSockets, skipNegotiation=false");
             connection = new signalR.HubConnectionBuilder()
+                .configureLogging(createSignalRLogger())
                 .withUrl(config.hubUrl, {
                     transport: signalR.HttpTransportType.WebSockets
                 })
