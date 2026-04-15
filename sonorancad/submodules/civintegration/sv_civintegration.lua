@@ -36,12 +36,12 @@ if pluginConfig.enabled then
     end)
 
     local function getCharactersApi(player, callback)
-        local apiId = GetIdentifiers(player)[Config.primaryIdentifier]
-        if not apiId or apiId == nil then
+        local communityUserId = GetPlayerCommunityUserId(player)
+        if not communityUserId then
             callback(nil)
             return
         end
-        local payload = { ['apiId'] = apiId }
+        local payload = { ['communityUserId'] = communityUserId }
         performApiRequest({payload}, "GET_CHARACTERS", function(result)
             if result ~= nil then
                 local characters = {}

@@ -17,6 +17,90 @@
 				z-index: 10;
 			}
 
+			#cadLinkOverlay {
+				position: absolute;
+				inset: 0;
+				display: none;
+				align-items: center;
+				justify-content: center;
+				background: rgba(6, 10, 16, 0.72);
+				z-index: 1200;
+			}
+
+			#cadLinkPanel {
+				width: min(520px, calc(100vw - 48px));
+				padding: 28px;
+				border-radius: 18px;
+				border: 1px solid rgba(255, 255, 255, 0.08);
+				background: linear-gradient(180deg, rgba(18, 27, 39, 0.96), rgba(8, 13, 21, 0.98));
+				box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+				color: #f4f7fb;
+				font-family: "Segoe UI", system-ui, sans-serif;
+				text-align: center;
+			}
+
+			#cadLinkPanel h2 {
+				margin: 0 0 14px;
+				font-size: 28px;
+				font-weight: 700;
+			}
+
+			#cadLinkPanel p {
+				margin: 0 0 18px;
+				font-size: 16px;
+				line-height: 1.5;
+				color: rgba(244, 247, 251, 0.86);
+			}
+
+			#cadLinkCode {
+				margin: 0 0 18px;
+				font-size: 14px;
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
+				color: rgba(160, 202, 255, 0.92);
+			}
+
+			#cadLinkStatus {
+				margin-top: 18px;
+				font-size: 14px;
+				color: rgba(244, 247, 251, 0.72);
+			}
+
+			.cadLinkActions {
+				display: flex;
+				gap: 12px;
+				justify-content: center;
+			}
+
+			.cadLinkButton {
+				appearance: none;
+				border: 0;
+				border-radius: 12px;
+				padding: 13px 20px;
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				font-size: 15px;
+				font-weight: 700;
+				text-decoration: none;
+				cursor: pointer;
+				transition: transform 120ms ease, opacity 120ms ease;
+			}
+
+			.cadLinkButton:hover {
+				transform: translateY(-1px);
+			}
+
+			#cadLinkLaunch {
+				background: #7ec8ff;
+				color: #08131f;
+			}
+
+			#cadLinkClose {
+				background: rgba(255, 255, 255, 0.08);
+				color: #f4f7fb;
+			}
+
 			#app {
 				position: absolute;
 				left: -10000px;
@@ -70,6 +154,18 @@
 	</head>
 	<body>
 		<div id="recordPrinterContainer"></div>
+		<div id="cadLinkOverlay">
+			<div id="cadLinkPanel">
+				<h2>CAD Link</h2>
+				<p id="cadLinkTitleText">Press the button to link your CAD account to this FiveM server</p>
+				<div id="cadLinkCode"></div>
+				<div class="cadLinkActions">
+					<a id="cadLinkLaunch" class="cadLinkButton" href="#" target="_blank" rel="noopener noreferrer">Link CAD</a>
+					<button id="cadLinkClose" class="cadLinkButton" type="button">Close</button>
+				</div>
+				<div id="cadLinkStatus">Checking link status every 10 seconds while this window is open.</div>
+			</div>
+		</div>
 		<div id="app"></div>
 		<div id="bodycamOverlayContainer">
 			<div id="bodycamOverlayFrame" aria-hidden="true">
@@ -130,11 +226,28 @@
 			var audioPlayer = null;
 			var bodycamOverlayVisible = false;
 			const recordPrinterContainer = document.getElementById("recordPrinterContainer");
+			const cadLinkOverlay = document.getElementById("cadLinkOverlay");
+			const cadLinkTitleText = document.getElementById("cadLinkTitleText");
+			const cadLinkCode = document.getElementById("cadLinkCode");
+			const cadLinkStatus = document.getElementById("cadLinkStatus");
+			const cadLinkLaunch = document.getElementById("cadLinkLaunch");
+			const cadLinkClose = document.getElementById("cadLinkClose");
 			const overlayContainer = document.getElementById("bodycamOverlayContainer");
 			const overlayFrame = document.getElementById("bodycamOverlayFrame");
 			const bodycamScreenFrame = document.getElementById("bodycamScreenFrame");
 			const bodycamLightFrame = document.getElementById("bodycamLightFrame");
 			const recordPrinterFrame = document.createElement("iframe");
+			const cadLinkState = {
+				visible: false,
+				forceOpen: false,
+				url: "",
+				code: "",
+				linked: false,
+				titleText: "Press the button to link your CAD account to this FiveM server",
+				buttonText: "Link CAD",
+				statusText: "Waiting for account link...",
+				allowClose: true,
+			};
 			bodycamScreenFrame.src = `https://cfx-nui-${GetParentResourceName()}/core/client_nui/bodycam_screen.html`;
 			bodycamLightFrame.src = `https://cfx-nui-${GetParentResourceName()}/core/client_nui/bodycam_light.html`;
 			recordPrinterFrame.src = `https://cfx-nui-${GetParentResourceName()}/submodules/recordPrinter/html/ui.html`;
@@ -148,6 +261,54 @@
 			recordPrinterFrame.style.border = "0px";
 			recordPrinterFrame.style.zIndex = "10";
 			recordPrinterContainer.appendChild(recordPrinterFrame);
+
+			function renderCadLink() {
+				cadLinkOverlay.style.display = cadLinkState.visible ? "flex" : "none";
+				cadLinkTitleText.textContent = cadLinkState.titleText || "Press the button to link your CAD account to this FiveM server";
+				cadLinkCode.textContent = cadLinkState.code ? `Link Code: ${cadLinkState.code}` : "";
+				cadLinkClose.style.display = cadLinkState.forceOpen || cadLinkState.allowClose === false ? "none" : "inline-flex";
+				cadLinkLaunch.href = cadLinkState.url || "#";
+				cadLinkLaunch.textContent = cadLinkState.buttonText || "Link CAD";
+				cadLinkLaunch.style.pointerEvents = cadLinkState.url ? "auto" : "none";
+				cadLinkLaunch.style.opacity = cadLinkState.url ? "1" : "0.65";
+				cadLinkStatus.textContent = cadLinkState.statusText || "Waiting for account link...";
+			}
+
+			function openCadExternal(url) {
+				if (!url) {
+					return;
+				}
+				try {
+					if (typeof window.invokeNative === "function") {
+						window.invokeNative("openUrl", url);
+						return;
+					}
+				} catch (err) {}
+				try {
+					const popup = window.open(url, "_blank", "noopener,noreferrer");
+					if (popup) {
+						popup.focus();
+						return;
+					}
+				} catch (err) {}
+			}
+
+			cadLinkLaunch.addEventListener("click", function (event) {
+				event.preventDefault();
+				fetch(`https://${GetParentResourceName()}/cadLinkOpenExternal`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json; charset=UTF-8" },
+					body: JSON.stringify({}),
+				}).catch(function () {});
+			});
+
+			cadLinkClose.addEventListener("click", function () {
+				fetch(`https://${GetParentResourceName()}/cadLinkClose`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json; charset=UTF-8" },
+					body: JSON.stringify({}),
+				}).catch(function () {});
+			});
 
 			// Hidden iframe to make CAD Display DUI assets available via NUI
 			const cadDisplayFrame = document.createElement("iframe");
@@ -830,6 +991,35 @@
 					} else {
 						stopBodycamStream();
 					}
+				} else if (event.data.type === "openLinkMenu" || event.data.type === "cad_link_visibility") {
+					cadLinkState.visible = !!event.data.visible;
+					if (event.data.type === "openLinkMenu") {
+						cadLinkState.visible = true;
+					}
+					cadLinkState.forceOpen = !!event.data.forceOpen;
+					cadLinkState.allowClose = event.data.allowClose !== false;
+					cadLinkState.url = event.data.url || cadLinkState.url;
+					cadLinkState.code = event.data.code || cadLinkState.code;
+					cadLinkState.titleText = event.data.titleText || cadLinkState.titleText;
+					cadLinkState.buttonText = event.data.buttonText || cadLinkState.buttonText;
+					cadLinkState.linked = false;
+					cadLinkState.statusText = event.data.statusText || "Waiting for account link...";
+					renderCadLink();
+				} else if (event.data.type === "closeLinkMenu") {
+					cadLinkState.visible = false;
+					renderCadLink();
+				} else if (event.data.type === "updateLinkStatus" || event.data.type === "cad_link_status") {
+					cadLinkState.url = event.data.url || cadLinkState.url;
+					cadLinkState.code = event.data.code || cadLinkState.code;
+					cadLinkState.linked = !!event.data.linked;
+					cadLinkState.forceOpen = !!event.data.forceOpen;
+					cadLinkState.allowClose = event.data.allowClose !== false;
+					cadLinkState.titleText = event.data.titleText || cadLinkState.titleText;
+					cadLinkState.buttonText = event.data.buttonText || cadLinkState.buttonText;
+					cadLinkState.statusText = event.data.statusText || (cadLinkState.linked ? "Linked successfully." : "Waiting for account link...");
+					renderCadLink();
+				} else if (event.data.type === "openExternalLink" || event.data.type === "cad_link_open_external") {
+					openCadExternal(event.data.url || cadLinkState.url);
 				} else if (event.data.type === "bodycamRecordingControl") {
 					if (window.BodycamRecordingManager) {
 						window.BodycamRecordingManager.control(event.data);

@@ -69,143 +69,6 @@ AddEventHandler("cadToggleApi", function()
     end
 end)
 
---[[
-    Sonoran CAD API Handler - Core Wrapper
-]]
-
-ApiEndpoints = {
-    ["UNIT_LOCATION"] = "emergency",
-    ["CALL_911"] = "emergency",
-    ["UNIT_PANIC"] = "emergency",
-    ["GET_VERSION"] = "general",
-    ["GET_SERVERS"] = "general",
-    ["ATTACH_UNIT"] = "emergency",
-    ["DETACH_UNIT"] = "emergency",
-    ["ADD_CALL_NOTE"] = "emergency",
-    ["RECORD_ADD"] = "general",
-    ["RECORD_UPDATE"] = "general",
-    ["SET_SERVERS"] = "general",
-    ["GET_CHARACTERS"] = "civilian",
-	["EDIT_CHARACTER"] = "civilian",
-	["NEW_RECORD"] = "general",
-	["EDIT_RECORD"] = "general",
-	["REMOVE_RECORD"] = "general",
-	["GET_TEMPLATES"] = "general",
-	["LOOKUP_INT"] = "general",
-	["SET_STATIONS"] = "emergency",
-    ["LOOKUP_VALUE"] = "general"
-}
-
-EndpointsRequireId = {
-    ["UNIT_STATUS"] = true,
-    ["KICK_UNIT"] = true,
-    ["UNIT_PANIC"] = true,
-    ["UNIT_LOCATION"] = true,
-    ["NEW_CHARACTER"] = true,
-    ["REMOVE_CHARACTER"] = true,
-    ["EDIT_CHARACTER"] = true,
-    ["GET_CHARACTERS"] = true,
-    ["CHECK_APIID"] = true,
-    ["APPLY_PERMISSION_KEY"] = true,
-    ["BAN_USER"] = true,
-    ["KICK_USER"] = true
-}
-
-
-
-function registerApiType(type, endpoint)
-    ApiEndpoints[type] = endpoint
-end
-exports("registerApiType", registerApiType)
-
-local rateLimitedEndpoints = {}
-
-function performApiRequest(postData, type, cb)
-    -- apply required headers
-    local payload = {}
-    payload["id"] = Config.communityID
-    payload["key"] = Config.apiKey
-    payload["data"] = postData
-    payload["type"] = type
-    local endpoint = nil
-    if ApiEndpoints[type] ~= nil then
-        endpoint = ApiEndpoints[type]
-    else
-        return warnLog(("API request failed: endpoint %s is not registered. Use the registerApiType function to register this endpoint with the appropriate type."):format(type))
-    end
-	if not cb then
-		cb = function() end
-	end
-    local url = ""
-    if endpoint == "support" then
-        apiUrl = "https://api.sonoransoftware.com/"
-        url = apiUrl..tostring(endpoint).."/"
-    else
-        apiUrl = getApiUrl()
-        url = apiUrl..tostring(endpoint).."/"..tostring(type:lower())
-    end
-    assert(type ~= nil, "No type specified, invalid request.")
-    if Config.critError then
-        return
-    elseif not Config.apiSendEnabled then
-        errorLog("Config.apiSendEnabled disabled via convar or config, skipping API request. Check your config if this is unintentional.")
-        return
-    end
-    if rateLimitedEndpoints[type] == nil then
-        PerformHttpRequestS(url, function(statusCode, res, headers)
-            debugLog(("type %s called with post data %s to url %s"):format(type, json.encode(payload), url))
-            if statusCode == 200 and res ~= nil then
-                debugLog("result: "..tostring(res))
-                if res == "Sonoran CAD: Backend Service Reached" or res == "Backend Service Reached" then
-                    errorLog(("API ERROR: Invalid endpoint (URL: %s). Ensure you're using a valid endpoint."):format(url))
-                else
-                    if res == nil then
-                        res = {}
-                        debugLog("Warning: Response had no result, setting to empty table.")
-                    end
-                    cb(res, true)
-                end
-            elseif statusCode == 400 then
-                warnLog("Bad request was sent to the API. Enable debug mode and retry your request. Response: "..tostring(res))
-                -- additional safeguards
-                if res == "INVALID COMMUNITY ID"
-                        or res == "API IS NOT ENABLED FOR THIS COMMUNITY"
-                        or string.find(res, "IS NOT ENABLED FOR THIS COMMUNITY")
-                        or res == "INVALID API KEY" then
-                    errorLog("Fatal: Disabling API - an error was encountered that must be resolved. Please restart the resource after resolving: "..tostring(res))
-                    Config.apiSendEnabled = false
-                end
-                cb(res, false)
-            elseif statusCode == 404 then -- handle 404 requests, like from CHECK_APIID
-                debugLog("404 response found")
-                cb(res, false)
-            elseif statusCode == 429 then -- rate limited :(
-                if rateLimitedEndpoints[type] then
-                    -- don't warn again, it's spammy. Instead, just print a debug
-                    debugLog(("Endpoint %s ratelimited. Dropping request."))
-                    return
-                end
-                rateLimitedEndpoints[type] = true
-                warnLog(("WARN_RATELIMIT: You are being ratelimited (last request made to %s) - Ignoring all API requests to this endpoint for 60 seconds. If this is happening frequently, please review your configuration to ensure you're not sending data too quickly."):format(type))
-                SetTimeout(60000, function()
-                    rateLimitedEndpoints[type] = nil
-                    infoLog(("Endpoint %s no longer ignored."):format(type))
-                end)
-            elseif string.match(tostring(statusCode), "50") then
-                errorLog(("API error returned (%s). Check status.sonoransoftware.com or our Discord to see if there's an outage."):format(statusCode))
-                debugLog(("API_ERROR Error returned: %s %s"):format(statusCode, res))
-            else
-                errorLog(("CAD API ERROR (from %s): %s %s"):format(url, statusCode, res))
-            end
-        end, "POST", json.encode(payload), {["Content-Type"]="application/json"})
-    else
-        debugLog(("Endpoint %s is ratelimited. Dropped request: %s"):format(type, json.encode(payload)))
-    end
-
-end
-
-exports("performApiRequest", performApiRequest)
-
 -- Metrics
 CreateThread(function()
     registerApiType("HEARTBEAT", "general")
@@ -423,9 +286,6 @@ end
 createDispatchCall = function(origin, status, priority, block, address, postal, title, code, primary, trackPrimary, description, notes, metaData, units, cb)
     exports['sonorancad']:performApiRequest({
         {
-            id = GetConvar("sonoran_community_id", "YOUR_COMMUNITY_ID"),
-            key = GetConvar("sonoran_api_key", "YOUR_API_KEY"),
-            type = "NEW_DISPATCH",
             serverId = GetConvar('sonoran_serverId', 1),
             origin = origin or 0,
             status = status or 0,
@@ -440,7 +300,7 @@ createDispatchCall = function(origin, status, priority, block, address, postal, 
             description = description or "",
             notes = notes or {},         -- expects array of note objects if any
             metaData = metaData or {},   -- optional extra metadata
-            units = units or {}          -- expects array of unit Steam IDs or similar
+            units = units or {}          -- expects array of linked CAD community user IDs
         }
     }, "NEW_DISPATCH", cb)
 end

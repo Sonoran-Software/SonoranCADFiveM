@@ -4,6 +4,14 @@ Config = {
     apiUrl = nil,
     postTime = nil,
     serverId = nil,
+    linkCommand = "link",
+    requireLink = true,
+    autoOpenLinkPopup = true,
+    freezeUntilLinked = false,
+    allowPopupCloseWhenUnlinked = true,
+    linkPollIntervalMs = 10000,
+    linkPopupTitleText = "Press the button to link your CAD account to this FiveM server",
+    linkButtonText = "Link CAD",
     primaryIdentifier = nil,
     apiSendEnabled = nil,
     debugMode = nil,
@@ -383,6 +391,58 @@ for k, v in pairs(json.decode(conf)) do
     end
 end
 
+if type(Config.linkCommand) ~= "string" or Config.linkCommand == "" then
+    Config.linkCommand = "link"
+end
+
+if type(Config.requireLink) ~= "boolean" then
+    Config.requireLink = true
+end
+
+if type(Config.autoOpenLinkPopup) ~= "boolean" then
+    Config.autoOpenLinkPopup = true
+end
+
+if type(Config.freezeUntilLinked) ~= "boolean" then
+    Config.freezeUntilLinked = false
+end
+
+if type(Config.allowPopupCloseWhenUnlinked) ~= "boolean" then
+    Config.allowPopupCloseWhenUnlinked = true
+end
+
+Config.linkPollIntervalMs = tonumber(Config.linkPollIntervalMs) or 10000
+if Config.linkPollIntervalMs < 1000 then
+    Config.linkPollIntervalMs = 1000
+end
+
+if type(Config.linkPopupTitleText) ~= "string" or Config.linkPopupTitleText == "" then
+    Config.linkPopupTitleText = "Press the button to link your CAD account to this FiveM server"
+end
+
+if type(Config.linkButtonText) ~= "string" or Config.linkButtonText == "" then
+    Config.linkButtonText = "Link CAD"
+end
+
+local function applyFrameworkConvar(key, value)
+    if key == "apiKey" or value == nil then
+        return
+    end
+    SetConvar('sonoran_' .. key, tostring(value))
+    if GetConvar('sonoran_' .. key .. '_setter', 'NONE') == 'NONE' then
+        SetConvar('sonoran_' .. key .. '_setter', 'framework')
+    end
+end
+
+applyFrameworkConvar('linkCommand', Config.linkCommand)
+applyFrameworkConvar('requireLink', Config.requireLink)
+applyFrameworkConvar('autoOpenLinkPopup', Config.autoOpenLinkPopup)
+applyFrameworkConvar('freezeUntilLinked', Config.freezeUntilLinked)
+applyFrameworkConvar('allowPopupCloseWhenUnlinked', Config.allowPopupCloseWhenUnlinked)
+applyFrameworkConvar('linkPollIntervalMs', Config.linkPollIntervalMs)
+applyFrameworkConvar('linkPopupTitleText', Config.linkPopupTitleText)
+applyFrameworkConvar('linkButtonText', Config.linkButtonText)
+
 if Config.updateBranch == nil then Config.updateBranch = 'master' end
 
 RegisterNetEvent('SonoranCAD::core:sendClientConfig')
@@ -391,6 +451,14 @@ AddEventHandler('SonoranCAD::core:sendClientConfig', function()
         communityID = Config.communityID,
         postTime = Config.postTime,
         serverId = Config.serverId,
+        linkCommand = Config.linkCommand,
+        requireLink = Config.requireLink,
+        autoOpenLinkPopup = Config.autoOpenLinkPopup,
+        freezeUntilLinked = Config.freezeUntilLinked,
+        allowPopupCloseWhenUnlinked = Config.allowPopupCloseWhenUnlinked,
+        linkPollIntervalMs = Config.linkPollIntervalMs,
+        linkPopupTitleText = Config.linkPopupTitleText,
+        linkButtonText = Config.linkButtonText,
         primaryIdentifier = Config.primaryIdentifier,
         apiSendEnabled = Config.apiSendEnabled,
         debugMode = Config.debugMode,

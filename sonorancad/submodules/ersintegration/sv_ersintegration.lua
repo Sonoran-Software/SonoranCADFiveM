@@ -264,7 +264,11 @@ if pluginConfig.enabled then
                             debugLog("Unit not found for player ID: " .. source)
                             return
                         end
-                        local unitId = unit.data.apiIds[1]
+                        local unitId = GetPlayerCommunityUserId(source)
+                        if unitId == nil then
+                            debugLog("Unit is not linked to CAD for player ID: " .. source)
+                            return
+                        end
                         local data = {
                             ['serverId'] = Config.serverId,
                             ['callId'] = callId,
@@ -282,7 +286,7 @@ if pluginConfig.enabled then
                     if unit == nil then
                         debugLog("Unit not found for player ID: " .. source)
                     else
-                        unitId = unit.data.apiIds[1]
+                        unitId = GetPlayerCommunityUserId(source) or ""
                     end
                     local postal = ''
                     if calloutData.Postal == 'Unknown postal' then

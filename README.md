@@ -14,6 +14,14 @@ See our documentation [here](https://info.sonorancad.com/integration-plugins/in-
 
 Sonoran CAD's API offers direct access to your CAD data, making it very useful to use for integration with various scripts. Detailed API and push event information can be found [here](https://info.sonorancad.com/sonoran-cad/api-integration/api-endpoints/).
 
+## FiveM Linking v2
+
+The FiveM resource now uses the CAD link flow on API v2.
+
+- Players link with `/link`.
+- Third-party resources can read the CAD community ID, server ID, and linked `communityUserId` through exports documented in [sonorancad/LINKING_V2.md](sonorancad/LINKING_V2.md).
+- Tablet/iframe integrations can forward SSO data through the server events documented in [sonorancad/LINKING_V2.md](sonorancad/LINKING_V2.md).
+
 ## Development Bounties
 Get PAID to contribute to the open source project!!!
 

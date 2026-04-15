@@ -44,7 +44,6 @@
             -- 911/311 Handler
             function HandleCivilianCall(type, typeObj, source, args, rawCommand)
                 local isEmergency = typeObj.isEmergency
-                local identifier = GetIdentifiers(source)[Config.primaryIdentifier]
                 local callLocation = LocationCache[source] ~= nil and LocationCache[source].location or 'Unknown'
                 -- Checking if there are any description arguments.
                 if args[1] then
@@ -146,7 +145,7 @@
                 isEmergency = (true/false) whether this is a 911 call, default true
                 notes = array of notes to add to the call when created
                 metaData = key/value pair of metadata to attach to the call
-                units = array of unit API IDs to auto-attach
+                units = array of linked CAD community user IDs to auto-attach
         ]]
             AddEventHandler("SonoranCAD::callcommands:CreateCall", function(data)
                 local payload = {
@@ -178,13 +177,13 @@
             end)
 
             AddEventHandler("SonoranCAD::callcommands:SendPanic", function(playerId)
-                local id = GetIdentifiers(playerId)[Config.primaryIdentifier]
-                if id then
+                local communityUserId = GetPlayerCommunityUserId(playerId)
+                if communityUserId then
                     performApiRequest({{
                         ['isPanic'] = true,
-                        ['apiId'] = id
+                        ['communityUserId'] = communityUserId
                     }}, 'UNIT_PANIC', function()
-                        debugLog(("Sent panic event for %s"):format(id))
+                        debugLog(("Sent panic event for %s"):format(communityUserId))
                         TriggerEvent("SonoranCAD::callcommands:PanicSent", playerId)
                     end)
                 end
@@ -226,7 +225,7 @@
                             ['description'] = description,
                             ['metaData'] = {
                                 ['callerPlayerId'] = source,
-                                ['callerApiId'] = GetIdentifiers(source)[Config.primaryIdentifier],
+                                ['callerCommunityUserId'] = GetPlayerCommunityUserId(source),
                                 ['uuid'] = uid,
                                 ['silentAlert'] = silenceAlert,
                                 ['useCallLocation'] = useCallLocation,
@@ -269,7 +268,7 @@
                 end
                 local unit = GetUnitCache()[GetUnitById(ident)]
                 if unit then
-                    local player = GetSourceByApiId(unit.data.apiIds)
+                    local player = GetSourceByCadIdentity(GetUnitIdentityValues(unit))
                     if player then
                         sendPanic(player)
                     end
@@ -278,7 +277,7 @@
             function sendPanic(source, ispanicrequest)
                 -- Determine identifier
                 local source = tostring(source)
-                local identifier = GetIdentifiers(source)[Config.primaryIdentifier]
+                local communityUserId = GetPlayerCommunityUserId(source)
                 -- Process panic POST request
                 if pluginConfig.addPanicCall and not ispanicrequest then
                     local unit = GetUnitByPlayerId(source)
@@ -300,7 +299,7 @@
                         ['description'] = ("Unit %s has pressed their panic button!"):format(unit.data.unitNum),
                         ['metaData'] = {
                             ['callerPlayerId'] = source,
-                            ['callerApiId'] = GetIdentifiers(source)[Config.primaryIdentifier],
+                            ['callerCommunityUserId'] = GetPlayerCommunityUserId(source),
                             ['uuid'] = uuid(),
                             ['silentAlert'] = false,
                             ['useCallLocation'] = false,
@@ -319,10 +318,10 @@
                         debugLog(resp)
                     end)
                 end
-                if ispanicrequest then
+                if ispanicrequest and communityUserId ~= nil then
                     performApiRequest({{
                         ['isPanic'] = true,
-                        ['apiId'] = identifier
+                        ['communityUserId'] = communityUserId
                     }}, 'UNIT_PANIC', function()
                     end)
                 end

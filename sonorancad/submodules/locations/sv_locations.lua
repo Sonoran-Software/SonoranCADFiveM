@@ -100,12 +100,12 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
             return nil
         end
 
-        local function findPendingIndex(apiId)
-            if apiId == nil then
+        local function findPendingIndex(communityUserId)
+            if communityUserId == nil then
                 return nil
             end
             for i, entry in ipairs(PendingQueue) do
-                if entry.apiId == apiId then
+                if entry.communityUserId == communityUserId then
                     return i
                 end
             end
@@ -113,13 +113,13 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
         end
 
         local function enqueueUpdate(payload)
-            local existingIndex = findPendingIndex(payload.apiId)
+            local existingIndex = findPendingIndex(payload.communityUserId)
             if existingIndex ~= nil then
                 PendingQueue[existingIndex] = payload
-                debugLog(("UNIT_LOCATION: Updated pending entry for %s (queue size: %s)"):format(payload.apiId, #PendingQueue))
+                debugLog(("UNIT_LOCATION: Updated pending entry for %s (queue size: %s)"):format(payload.communityUserId, #PendingQueue))
             else
                 table.insert(PendingQueue, payload)
-                debugLog(("UNIT_LOCATION: Enqueued update for %s (queue size: %s)"):format(payload.apiId, #PendingQueue))
+                debugLog(("UNIT_LOCATION: Enqueued update for %s (queue size: %s)"):format(payload.communityUserId, #PendingQueue))
             end
         end
 
@@ -142,12 +142,12 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
                     debugLog(("UNIT_LOCATION: Sending WS batch of %s (pending remaining: %s)"):format(#batch, #PendingQueue))
                     exports['sonorancad']:sendUnitLocations(batch)
                     for _, entry in ipairs(batch) do
-                        if entry and entry.apiId then
+                        if entry and entry.communityUserId then
                             local peerId = entry.peerId
                             if peerId == "" then
                                 peerId = nil
                             end
-                            LastSent[entry.apiId] = {
+                            LastSent[entry.communityUserId] = {
                                 coordinates = entry.coordinates,
                                 heading = entry.coordinates and entry.coordinates.w or nil,
                                 peerId = peerId,
@@ -179,18 +179,18 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
         RegisterServerEvent('SonoranCAD::locations:SendLocation')
         AddEventHandler('SonoranCAD::locations:SendLocation', function(currentLocation, position, vehicleType, lightsOn, bodycamPeerId)
             local source = source
-            local identifier = GetIdentifiers(source)[Config.primaryIdentifier]
-            if identifier == nil then
-                debugLog(("user %s has no identifier for %s, skipped."):format(source, Config.primaryIdentifier))
+            local communityUserId = GetPlayerCommunityUserId(source)
+            if communityUserId == nil then
+                debugLog(("user %s has no linked CAD account, skipped location update."):format(source))
                 return
             end
             local normalizedPosition = normalizeCoords(position)
             if normalizedPosition == nil then
-                debugLog(("UNIT_LOCATION: Skipped %s (invalid coordinates payload: %s)"):format(identifier, tostring(position)))
+                debugLog(("UNIT_LOCATION: Skipped %s (invalid coordinates payload: %s)"):format(communityUserId, tostring(position)))
                 return
             end
             local vehiclePayload = buildVehiclePayload(vehicleType, lightsOn)
-            local lastSent = LastSent[identifier]
+            local lastSent = LastSent[communityUserId]
             local lastCoords = lastSent and lastSent.coordinates or nil
             local lastHeading = lastSent and lastSent.heading or nil
             local lastPeerId = lastSent and lastSent.peerId or nil
@@ -205,7 +205,7 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
             end
 
             local payload = {
-                ['apiId'] = identifier,
+                ['communityUserId'] = communityUserId,
                 ['location'] = currentLocation,
                 ['coordinates'] = normalizedPosition,
                 ['vehicle'] = vehiclePayload
