@@ -1,113 +1,28 @@
-registerApiType("CHECK_APIID", "general")
-
-function cadApiIdExists(apiId, callback)
-    if apiId == "" or apiId == nil then
-        debugLog("cadApiIdExists: No API ID specified, assuming false.")
-        callback(false)
-    else
-        performApiRequest({{["apiId"] = apiId}}, "CHECK_APIID", function(res, exists)
-            callback(exists)
-        end)
+function cadLinkExists(identifier, callback)
+    local exists = IsIdentifierLinkedToCad(identifier)
+    if callback ~= nil then
+        callback(exists)
     end
+    return exists
 end
 
-RegisterCommand("forcecheck", function(source, args, rawCommand)
-    performApiRequest({{["apiId"] = args[1]}}, "CHECK_APIID", function(res, exists)
-        print("exists: "..tostring(exists))
-    end)
-end)
+RegisterCommand("forcecheck", function(source, args)
+    local identifier = args[1]
+    if not identifier then
+        print("Usage: forcecheck <identifier>")
+        return
+    end
+    print(("linked: %s"):format(tostring(cadLinkExists(identifier))))
+end, true)
 
 RegisterServerEvent("SonoranCAD::apicheck:CheckPlayerLinked")
 AddEventHandler("SonoranCAD::apicheck:CheckPlayerLinked", function(player)
     local identifier = GetIdentifiers(player)[Config.primaryIdentifier]
-    cadApiIdExists(identifier, function(exists)
-        TriggerEvent("SonoranCAD::apicheck:CheckPlayerLinkedResponse", player, identifier, exists)
-    end)
+    if GetPlayerLinkIdentifier ~= nil then
+        identifier = GetPlayerLinkIdentifier(player)
+    end
+    local exists = IsPlayerLinkedToCad(player)
+    TriggerEvent("SonoranCAD::apicheck:CheckPlayerLinkedResponse", player, identifier, exists)
 end)
 
-exports('CadIsPlayerLinked', cadApiIdExists)
-
-RegisterCommand("apiid", function(source, args, rawCommand)
-    local identifiers = GetIdentifiers(source)
-    local pid = nil
-    if isPluginLoaded("esxsupport") then
-        local type = Config.plugins["esxsupport"].identityType
-        if identifiers[type] ~= nil then
-            if Config.plugins["esxsupport"].usePrefix then
-                pid = ("%s:%s"):format(type, identifiers[type])
-            else
-                pid = identifiers[type]
-            end
-        end
-    elseif isPluginLoaded("frameworksupport") then
-        local type = Config.plugins["frameworksupport"].identityType
-        if identifiers[type] ~= nil then
-            if Config.plugins["frameworksupport"].usePrefix then
-                pid = ("%s:%s"):format(type, identifiers[type])
-            else
-                pid = identifiers[type]
-            end
-        end
-    else
-        if identifiers[Config.primaryIdentifier] ~= nil then
-            pid = identifiers[Config.primaryIdentifier]
-        end
-    end
-    if pid ~= nil then
-        print("Your API ID: "..tostring(pid))
-    else
-        print("API ID not found")
-    end
-end)
-
-if Config.forceSetApiId == nil then Config.forceSetApiId = false end
-
-if Config.forceSetApiId then
-    debugLog("forceSetApiId enabled")
-    RegisterNetEvent("sonoran:tablet:forceCheckApiId")
-    AddEventHandler("sonoran:tablet:forceCheckApiId", function()
-        local identifier=GetIdentifiers(source)[Config.primaryIdentifier]
-        local plid=source
-
-        cadApiIdExists(identifier, function(exists)
-            if not exists then
-                TriggerClientEvent("SonoranCAD::Tablet::ApiIdNotLinked", plid)
-            else
-                TriggerClientEvent("sonoran:tablet:apiIdFound", plid)
-            end
-        end)
-    end)
-
-    RegisterNetEvent("SonoranCAD::Tablet::SetApiData")
-    AddEventHandler("SonoranCAD::Tablet::SetApiData", function(session,username)
-        local identifier=GetIdentifiers(source)[Config.primaryIdentifier]
-        local source = source
-        if session == nil or username == nil then
-            warnLog('Failed to set API ID for ' .. tostring(identifier) .. '. Missing session ID or username')
-            TriggerClientEvent("sonoran:tablet:failed", source, 'Failed to set API ID for ' .. tostring(identifier) .. '. Missing session ID or username')
-            return
-        end
-        cadApiIdExists(identifier, function(exists)
-            if not exists then
-
-                registerApiType("SET_API_ID", "general")
-
-                local data = {{
-                        ["apiIds"] = { identifier },
-                        ["sessionId"] = session,
-                        ["username"] = username
-                }}
-
-                performApiRequest(data, "SET_API_ID", function(res, flag)
-                    if (not flag) then
-                        TriggerClientEvent("sonoran:tablet:failed", source, res)
-                    end
-                end)
-
-            end
-        end)
-
-
-    end)
-
-end
+exports("CadIsPlayerLinked", cadLinkExists)

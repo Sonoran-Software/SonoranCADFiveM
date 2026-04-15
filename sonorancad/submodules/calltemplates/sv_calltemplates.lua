@@ -105,9 +105,9 @@ CreateThread(function()
                 return
             end
 
-            local identifier = GetIdentifiers(source)[Config.primaryIdentifier]
-            if identifier == nil then
-                TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^1Error ^0] ", "Unable to resolve your CAD identifier."}})
+            local communityUserId = GetPlayerCommunityUserId(source)
+            if communityUserId == nil then
+                TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^1Error ^0] ", "You must link your CAD account before sending this dispatch."}})
                 return
             end
 
@@ -131,7 +131,7 @@ CreateThread(function()
             end
 
             if cmdConfig.includePlayerUnit ~= false then
-                units[#units + 1] = identifier
+                units[#units + 1] = communityUserId
             end
 
             local extraNotes = {}

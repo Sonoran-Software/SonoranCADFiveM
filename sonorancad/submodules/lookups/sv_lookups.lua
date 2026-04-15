@@ -86,7 +86,7 @@ if pluginConfig.enabled then
             return
         end
         if autoLookup ~= nil then
-            data["apiId"] = autoLookup
+            data["communityUserId"] = autoLookup
         else
             for k, v in pairs(LookupCache) do
                 if v:IsMatch(data.first, data.last, data.mi, data.plate, data.types) then
@@ -123,7 +123,7 @@ if pluginConfig.enabled then
         data.last = last
         data.mi = mi
         if autoLookup ~= nil then
-            data["apiId"] = autoLookup
+            data["communityUserId"] = autoLookup
         end
         cadLookup(data, callback, autoLookup)
     end
@@ -133,13 +133,13 @@ if pluginConfig.enabled then
             plate: plate number
             basicFlag: deprecated
             callback: the function called with the return data
-            autoLookup: when populated with an API ID, pops open a search window on the officer's CAD (optional)
+            autoLookup: when populated with a linked CAD user ID, pops open a search window on the officer's CAD (optional)
     ]]
     function cadPlateLookup(plate, basicFlag, callback, autoLookup)
         local data = {}
         data["plate"] = plate
         if autoLookup ~= nil then
-            data["apiId"] = autoLookup
+            data["communityUserId"] = autoLookup
         end
         cadLookup(data, callback, autoLookup)
 
@@ -149,7 +149,7 @@ if pluginConfig.enabled then
         local data = {}
         data["plate"] = plate
         if autoLookup ~= nil then
-            data["apiId"] = autoLookup
+            data["communityUserId"] = autoLookup
         end
         cadLookup(data, function(result)
             local regData = {}

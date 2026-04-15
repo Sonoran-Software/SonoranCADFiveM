@@ -273,9 +273,9 @@ if pluginConfig.enabled then
         end)
     end
 
-    --EVENT_911 TriggerEvent('SonoranCAD::pushevents:IncomingCadCall', body.data.call, body.data.apiIds, body.data.metaData)
+    --EVENT_911 TriggerEvent('SonoranCAD::pushevents:IncomingCadCall', body.data.call, body.data.call.metaData, body.data.identities)
     RegisterServerEvent("SonoranCAD::pushevents:IncomingCadCall")
-    AddEventHandler("SonoranCAD::pushevents:IncomingCadCall", function(call, metadata, apiIds)
+    AddEventHandler("SonoranCAD::pushevents:IncomingCadCall", function(call, metadata, unitIdentities)
         if metadata ~= nil and metadata.callerPlayerId ~= nil then
             CallOriginMapping[call.callId] = metadata.callerPlayerId
         end
@@ -384,7 +384,11 @@ if pluginConfig.enabled then
         if call.metaData ~= nil and callerPlayerId == nil then
             debugLog("failed to find caller info")
         end
-        local identifiers = GetIdentifiers(source)[Config.primaryIdentifier]
+        local communityUserId = GetPlayerCommunityUserId(source)
+        if communityUserId == nil then
+            SendMessage("error", source, "You must link your CAD account before self attaching.")
+            return
+        end
         if originCall == nil then
             -- no mapped call, create a new one
             debugLog(("Creating new call request...(no mapped call for %s)"):format(callId))
@@ -440,7 +444,7 @@ if pluginConfig.enabled then
                                     {time = '00:00:00', label = 'Dispatch', type = 'text', content = 'Officer Responding'}
                                 },
                                 metaData = metaData,
-                                units = { identifiers }
+                                units = { communityUserId }
             }
             performApiRequest({payload}, "NEW_DISPATCH", function(response)
                 debugLog("Call creation OK")
@@ -457,7 +461,7 @@ if pluginConfig.enabled then
         else
             -- Call already exists
             debugLog("Found Call. Attaching!")
-            local data = {callId = call.callId, units = {identifiers}, serverId = Config.serverId}
+            local data = {callId = call.callId, units = {communityUserId}, serverId = Config.serverId}
             performApiRequest({data}, "ATTACH_UNIT", function(res)
                 debugLog("Attach OK: "..tostring(res))
                 SendMessage("debug", source, "You have been attached to the call.")
@@ -475,7 +479,7 @@ if pluginConfig.enabled then
             debugLog("set caller ID "..call.dispatch.metaData.callerPlayerId)
             callerId = call.dispatch.metaData.callerPlayerId
         end
-        local officerId = GetSourceByApiId(unit.data.apiIds)
+        local officerId = GetSourceByCadIdentity(GetUnitIdentityValues(unit))
         if officerId ~= nil then
             local statusMethod = ResolveNotifyMethod()
 
@@ -535,7 +539,7 @@ if pluginConfig.enabled then
                 if call.dispatch.postal ~= nil and call.dispatch.postal ~= "" then
                     TriggerClientEvent("SonoranCAD::dispatchnotify:SetGps", officerId, call.dispatch.postal)
                     if call.dispatch.metaData ~= nil and call.dispatch.metaData.trackPrimary == "True" then
-                        if GetSourceByApiId(GetUnitCache()[call.dispatch.idents[1]].data.apiIds) == officerId then
+                        if GetSourceByCadIdentity(GetUnitIdentityValues(GetUnitCache()[call.dispatch.idents[1]])) == officerId then
                             TriggerClientEvent("SonoranCAD::dispatchnotify:BeginTracking", officerId, call.dispatch.callId)
                         end
                     end
@@ -604,7 +608,7 @@ if pluginConfig.enabled then
                     if not unit then
                         debugLog("Not sending attach, unit not online")
                     else
-                        local officerId = GetSourceByApiId(unit.data.apiIds)
+                        local officerId = GetSourceByCadIdentity(GetUnitIdentityValues(unit))
                         TriggerEvent("SonoranCAD::pushevents:UnitAttach", data, unit)
                     end
                 end
@@ -643,7 +647,7 @@ if pluginConfig.enabled then
             -- Primary Unit Updated, remove tracking from old unit.
             local unit = GetUnitCache()[GetUnitById(before.dispatch.primary)]
             if unit ~= nil then
-                local officerId = GetSourceByApiId(unit.data.apiIds)
+                local officerId = GetSourceByCadIdentity(GetUnitIdentityValues(unit))
                 TriggerClientEvent("SonoranCAD::dispatchnotify:StopTracking", officerId)
             end
         end
@@ -662,7 +666,7 @@ if pluginConfig.enabled then
         local call = GetCallCache()[callId]
         assert(call ~= nil, "Call not found, failed to process.")
         local unit = GetUnitCache()[GetUnitById(primary)]
-        local officerId = GetSourceByApiId(unit.data.apiIds)
+        local officerId = GetSourceByCadIdentity(GetUnitIdentityValues(unit))
         if tracking then
             TriggerClientEvent("SonoranCAD::dispatchnotify:BeginTracking", officerId, callId)
         else
@@ -672,7 +676,7 @@ if pluginConfig.enabled then
 
 
     AddEventHandler("SonoranCAD::pushevents:UnitDetach", function(call, unit)
-        local officerId = GetSourceByApiId(unit.data.apiIds)
+        local officerId = GetSourceByCadIdentity(GetUnitIdentityValues(unit))
         if GetCallCache()[call.dispatch.callId] == nil then
             debugLog("Ignore unit detach, call doesn't exist")
             return
@@ -741,7 +745,7 @@ if pluginConfig.enabled then
                 debugLog(("Unit was nil, requested %s, cache is: %s"):format(id, GetUnitCache()))
                 return
             end
-            local officerId = GetSourceByApiId(unit.data.apiIds)
+            local officerId = GetSourceByCadIdentity(GetUnitIdentityValues(unit))
             if officerId ~= nil then
                 TriggerClientEvent("SonoranCAD::dispatchnotify:SetGps", officerId, postal)
             else
@@ -847,7 +851,7 @@ if pluginConfig.enabled then
     AddEventHandler("SonoranCAD::pushevents:UnitUpdate", function(unit, status)
         local u = GetUnitCache()[unit]
         if u then
-            local player = GetSourceByApiId(u.data.apiIds)
+            local player = GetSourceByCadIdentity(GetUnitIdentityValues(u))
             if player then
                 TriggerClientEvent("SonoranCAD::dispatchnotify:UnsetGps", player)
             end

@@ -13,8 +13,12 @@ CreateThread(function()
 
             -- New Callout Handler
             function CreateNewCallout(src, callName, callDesc, callResponse, callLocation, callCoord)
-                local identifier = GetIdentifiers(src)[Config.primaryIdentifier]
-                local units = {identifier}
+                local communityUserId = GetPlayerCommunityUserId(src)
+                if communityUserId == nil then
+                    debugLog(("Skipping FivePD callout for %s because the player is not linked to CAD."):format(tostring(src)))
+                    return
+                end
+                local units = {communityUserId}
                 local notes = ""
                 local postal = ""
                 if postalsConfig and postalsConfig.enabled then

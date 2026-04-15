@@ -182,7 +182,7 @@ local PushEventHandler = {
 	end,
 	EVENT_911 = function(body)
 		SetEmergencyCache(body.data.call.callId, body.data.call)
-		TriggerEvent('SonoranCAD::pushevents:IncomingCadCall', body.data.call, body.data.call.metaData, body.data.apiIds)
+		TriggerEvent('SonoranCAD::pushevents:IncomingCadCall', body.data.call, body.data.call.metaData, body.data.identities or body.data.communityUserIds or body.data.apiIds)
 		return true
 	end,
 	EVENT_REMOVE_911 = function(body)

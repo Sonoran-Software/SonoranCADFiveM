@@ -52,10 +52,7 @@ local function rebuildActiveDispatchers(units)
     ActiveDispatchers = {}
     for _, unit in pairs(units) do
         if unit ~= nil and unit.isDispatch then
-            local playerId = nil
-            if unit.data ~= nil and unit.data.apiIds ~= nil then
-                playerId = GetSourceByApiId(unit.data.apiIds)
-            end
+            local playerId = GetSourceByCadIdentity(GetUnitIdentityValues(unit))
             table.insert(ActiveDispatchers, {
                 id = unit.id,
                 isInGame = playerId ~= nil
@@ -63,6 +60,25 @@ local function rebuildActiveDispatchers(units)
         end
     end
     syncDispatchOnline()
+end
+
+function GetUnitIdentityValues(unit)
+    if unit == nil then
+        return {}
+    end
+
+    local data = unit.data or unit
+    if type(data.communityUserIds) == "table" and #data.communityUserIds > 0 then
+        return data.communityUserIds
+    end
+    if type(data.communityUserId) == "string" and data.communityUserId ~= "" then
+        return {data.communityUserId}
+    end
+    if type(data.apiIds) == "table" and #data.apiIds > 0 then
+        return data.apiIds
+    end
+
+    return {}
 end
 
 local function findUnitById(identIds)
@@ -75,12 +91,7 @@ local function findUnitById(identIds)
                 return k
             end
         else
-            local ids = nil
-            if v.data ~= nil then
-                ids = v.data.apiIds
-            else
-                ids = v.apiIds
-            end
+            local ids = GetUnitIdentityValues(v)
             for _, id in pairs(ids) do
                 if has_value(identIds, id) then
                     return k
@@ -91,17 +102,21 @@ local function findUnitById(identIds)
     return nil
 end
 
-function GetSourceByApiId(apiIds)
-    if apiIds == nil then return nil end
-    for x=1, #apiIds do
+function GetSourceByCadIdentity(identities)
+    if identities == nil then return nil end
+    for x=1, #identities do
         for i=0, GetNumPlayerIndices()-1 do
             local player = GetPlayerFromIndex(i)
             if player then
                 local identifiers = GetIdentifiers(player)
                 for type, id in pairs(identifiers) do
-                    if id == apiIds[x] then
+                    if id == identities[x] then
                         return player
                     end
+                end
+                local communityUserId = GetPlayerCommunityUserId ~= nil and GetPlayerCommunityUserId(player) or nil
+                if communityUserId ~= nil and communityUserId == identities[x] then
+                    return player
                 end
             end
         end
@@ -152,6 +167,10 @@ function GetUnitByPlayerId(player)
     for k, v in pairs(identifiers) do
         table.insert(ids, v)
     end
+    local communityUserId = GetPlayerCommunityUserId ~= nil and GetPlayerCommunityUserId(player) or nil
+    if communityUserId ~= nil then
+        table.insert(ids, communityUserId)
+    end
     local index = findUnitById(ids)
     if index then
         return UnitCache[index]
@@ -179,7 +198,7 @@ AddEventHandler("playerDropped", function()
 end)
 
 AddEventHandler("SonoranCAD::pushevents:UnitLogin", function(unit)
-    local playerId = GetSourceByApiId(unit.data.apiIds)
+    local playerId = GetSourceByCadIdentity(GetUnitIdentityValues(unit))
     if unit.isDispatch then
         addActiveDispatcher(unit.id, playerId ~= nil)
     end
@@ -198,7 +217,7 @@ AddEventHandler("SonoranCAD::pushevents:UnitLogout", function(id)
         local key = findUnitById(id)
         debugLog(("unitlogout key %s"):format(key))
         if key then
-            local playerId = GetSourceByApiId(UnitCache[key].data.apiIds)
+            local playerId = GetSourceByCadIdentity(GetUnitIdentityValues(UnitCache[key]))
             if playerId then
                 debugLog(("Triggering RemovePlayer on ID %s"):format(playerId))
                 TriggerEvent("SonoranCAD::core:RemovePlayer", playerId, UnitCache[key])
@@ -237,13 +256,13 @@ Citizen.CreateThread(function()
                 if allUnits ~= nil then
                     rebuildActiveDispatchers(allUnits)
                     for k, v in pairs(allUnits) do
-                        local playerId = GetSourceByApiId(v.data.apiIds)
+                        local playerId = GetSourceByCadIdentity(GetUnitIdentityValues(v))
                         if playerId then
                             PlayerUnitMapping[playerId] = v.id
                             table.insert(NewUnits, v)
                             TriggerEvent("SonoranCAD::core:AddPlayer", playerId, v)
                         else
-                            debugLog(("Couldn't find unit, not adding %s (%s)"):format(playerId, json.encode(v.data.apiIds)))
+                            debugLog(("Couldn't find unit, not adding %s (%s)"):format(playerId, json.encode(GetUnitIdentityValues(v))))
                         end
                     end
                 end
@@ -317,13 +336,13 @@ function manuallySetUnitCache()
             if allUnits ~= nil then
                 rebuildActiveDispatchers(allUnits)
                 for _, v in pairs(allUnits) do
-                    local playerId = GetSourceByApiId(v.data.apiIds)
+                    local playerId = GetSourceByCadIdentity(GetUnitIdentityValues(v))
                     if playerId then
                         PlayerUnitMapping[playerId] = v.id
                         table.insert(NewUnits, v)
                         TriggerEvent("SonoranCAD::core:AddPlayer", playerId, v)
                     else
-                        debugLog(("Couldn't find unit, not adding %s (%s)"):format(playerId, json.encode(v.data.apiIds)))
+                        debugLog(("Couldn't find unit, not adding %s (%s)"):format(playerId, json.encode(GetUnitIdentityValues(v))))
                     end
                 end
             end

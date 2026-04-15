@@ -11,11 +11,27 @@ CreateThread(function()
 			end
 			RegisterNetEvent(GetCurrentResourceName() .. '::registerVeh', function(primary, plate, class, realName)
 				local source = source
+				local communityUserId = GetPlayerCommunityUserId(source)
 				exports['sonorancad']:registerApiType('NEW_RECORD', 'general')
 				exports['sonorancad']:registerApiType('GET_CHARACTERS', 'civilian')
+				if not communityUserId then
+					TriggerClientEvent('chat:addMessage', source, {
+						color = {
+							255,
+							0,
+							0
+						},
+						multiline = true,
+						args = {
+							'[CAD - ERROR] ',
+							pluginConfig.language.noCadLink or pluginConfig.language.noApiId or "Your CAD account is not linked."
+						}
+					})
+					return
+				end
 				exports['sonorancad']:performApiRequest({
 					{
-						['apiId'] = GetIdentifiers(source)[Config.primaryIdentifier]
+						['communityUserId'] = communityUserId
 					}
 				}, 'GET_CHARACTERS', function(res, err)
 					if err == 404 then
@@ -28,7 +44,7 @@ CreateThread(function()
 							multiline = true,
 							args = {
 								'[CAD - ERROR] ',
-								pluginConfig.language.noApiId
+								pluginConfig.language.noCadLink or pluginConfig.language.noApiId or "Your CAD account is not linked."
 							}
 						})
 						return;
@@ -102,7 +118,7 @@ CreateThread(function()
 				end
 				exports['sonorancad']:performApiRequest({
 					{
-						['user'] = GetIdentifiers(source)[Config.primaryIdentifier],
+						['user'] = communityUserId,
 						['useDictionary'] = true,
 						['recordTypeId'] = 5,
 						['replaceValues'] = replaceValues

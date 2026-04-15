@@ -79,11 +79,11 @@ if (unusedConfig?.enabled) {
 
 
     on('SonoranCAD::pushevents:UnitLogin', function (unit) {
-        for (let apiId of unit.data.apiIds) {
-            if (apiId.includes("=")) {
-                clientsToAdd.push(apiId);
-                UnitCache.set(unit.id, apiId);
-                let i = clientsToRemove.indexOf(apiId);
+        for (let unitIdentity of unit.data.apiIds) {
+            if (unitIdentity.includes("=")) {
+                clientsToAdd.push(unitIdentity);
+                UnitCache.set(unit.id, unitIdentity);
+                let i = clientsToRemove.indexOf(unitIdentity);
                 if (i > -1) {
                     clientsToRemove.splice(i, 1);
                 }
@@ -93,9 +93,9 @@ if (unusedConfig?.enabled) {
     });
 
     on('SonoranCAD::pushevents:UnitLogout', function (id) {
-        let apiid = UnitCache.get(id);
-        if (apiid != undefined) {
-            clientsToRemove.push(apiid);
+        let unitIdentity = UnitCache.get(id);
+        if (unitIdentity != undefined) {
+            clientsToRemove.push(unitIdentity);
             UnitCache.delete(id);
         } else {
             emit("SonoranCAD::core:writeLog", "debug", `TS3 Integration Error: Could not find matching unit: ${id} not found`);

@@ -26,13 +26,13 @@ local config = {
     nagDrawTextLocation = "Top",
 
     -- What message to show with the above options? Nag, Freeze, and Captive can use colors.
-    captiveMessage = "You must ~r~register~s~ with our CAD before playing! Visit ~r~http://yourwebsite.here~s~ to do so.",
+    captiveMessage = "You must ~r~link~s~ your CAD account before playing.",
 
-    -- What message to show the /verifycad command? This displays under the notice.
-    verifyMessage = "Type ~r~/verifycad~s~ in chat when finished.",
+    -- What message to show under the notice. This should tell players how to reopen the CAD link popup.
+    verifyMessage = "Type ~r~/link~s~ to open the CAD link window.",
 
-    -- What does the user do once they log in?
-    instructionalMessage = "Head over to settings once logged in, and enter the ~g~API ID~w~ given below in the API ID field.",
+    -- What does the user do once they link?
+    instructionalMessage = "Press the link button, finish the link in your browser, and this server will re-check automatically.",
 
     -- Would you like to only show this message to players who are whitelisted?
     whitelist = {

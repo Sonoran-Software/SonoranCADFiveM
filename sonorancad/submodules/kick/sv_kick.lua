@@ -14,16 +14,16 @@ if pluginConfig.enabled then
     registerApiType("KICK_UNIT", "emergency")
     AddEventHandler("playerDropped", function()
         local source = source
-        local identifier = GetIdentifiers(source)[Config.primaryIdentifier]
-        if not identifier then
-            debugLog("kick: no API ID, skip")
+        local communityUserId = GetPlayerCommunityUserId(source)
+        if not communityUserId then
+            debugLog("kick: no CAD link, skip")
         else
             local unit = GetUnitByPlayerId(source)
             if unit then
-                table.insert(PendingKicks, identifier)
-                debugLog(("kick: pending kick %s"):format(identifier))
+                table.insert(PendingKicks, communityUserId)
+                debugLog(("kick: pending kick %s"):format(communityUserId))
             else
-                debugLog(("kick: no unit found for %s, skip"):format(identifier))
+                debugLog(("kick: no unit found for %s, skip"):format(communityUserId))
             end
         end
     end)
@@ -35,7 +35,7 @@ if pluginConfig.enabled then
                 while true do
                     local pendingKick = table.remove(PendingKicks)
                     if pendingKick ~= nil then
-                        table.insert(kicks, {["apiId"] = pendingKick, ["reason"] = "You have exited the server", ["serverId"] = Config.serverId})
+                        table.insert(kicks, {["communityUserId"] = pendingKick, ["reason"] = "You have exited the server", ["serverId"] = Config.serverId})
                     else
                         break
                     end
