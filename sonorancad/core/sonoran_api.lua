@@ -200,6 +200,36 @@ local function perform_support_request(post_data, request_type, cb)
     end, "POST", json.encode(payload), {["Content-Type"] = "application/json"})
 end
 
+local function call_registered_legacy_api(request_type, post_data)
+    local endpoint = ApiEndpoints[request_type]
+    if type(endpoint) ~= "string" or endpoint == "" or endpoint == "support" then
+        return nil, ("Unsupported v2 API request type: %s"):format(tostring(request_type))
+    end
+
+    local payload = {
+        id = Config.communityID,
+        key = Config.apiKey,
+        data = post_data,
+        type = request_type
+    }
+    local url = resolve_api_url():gsub("/+$", "") .. "/" .. tostring(endpoint) .. "/"
+    local response_body = nil
+    local response_ok = false
+    local response_status = nil
+
+    PerformHttpRequestS(url, function(status_code, res)
+        response_status = status_code
+        response_body = res
+        response_ok = tonumber(status_code) == 200 and res ~= nil
+    end, "POST", json.encode(payload), {["Content-Type"] = "application/json"})
+
+    if response_ok then
+        return response_body, true
+    end
+
+    return nil, ("HTTP %s: %s"):format(tostring(response_status), tostring(response_body))
+end
+
 local function call_v2_api(request_type, post_data)
     local client = get_cad_client()
     local data = unwrap_legacy_payload(post_data)
@@ -575,7 +605,7 @@ local function call_v2_api(request_type, post_data)
         return to_json_string(response.data or {ok = true}), true
     end
 
-    return nil, ("Unsupported v2 API request type: %s"):format(tostring(request_type))
+    return call_registered_legacy_api(request_type, post_data)
 end
 
 function performApiRequest(postData, request_type, cb)
