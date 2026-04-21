@@ -1,5 +1,10 @@
-function cadLinkExists(identifier, callback)
-    local exists = IsIdentifierLinkedToCad(identifier)
+function cadLinkExists(identifier, identifier_type, callback)
+    if type(identifier_type) == "function" and callback == nil then
+        callback = identifier_type
+        identifier_type = nil
+    end
+
+    local exists = IsIdentifierLinkedToCad(identifier, identifier_type)
     if callback ~= nil then
         callback(exists)
     end

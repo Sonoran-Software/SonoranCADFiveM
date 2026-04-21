@@ -32,7 +32,7 @@ if pluginConfig.enabled and Config.requireLink ~= false then
     )
 
     local function checkCadLink(identifier, identifier_type, deferral, cb)
-        local exists = cadLinkExists(identifier, function(result)
+        local exists = cadLinkExists(identifier, identifier_type, function(result)
             debugLog(("Forcereg link check for %s (%s): %s"):format(
                 tostring(identifier),
                 tostring(identifier_type),

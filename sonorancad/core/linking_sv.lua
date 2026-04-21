@@ -186,6 +186,19 @@ local function update_link_cache(identifier, identifier_type, parsed)
     return CadLinkCache[identifier]
 end
 
+local function should_use_cached_negative_link(cached)
+    if type(cached) ~= "table" or cached.linked == true then
+        return false
+    end
+
+    local updated_at = cached.updatedAt
+    if type(updated_at) ~= "number" then
+        return false
+    end
+
+    return (GetGameTimer() - updated_at) < get_link_poll_interval_ms()
+end
+
 local function refresh_link_status_by_identifier(identifier, identifier_type, code)
     if not is_non_empty_string(identifier) then
         return {
@@ -386,6 +399,9 @@ function GetCommunityUserIdFromIdentifier(identifier, identifier_type)
     local cached = CadLinkCache[identifier]
     if cached ~= nil and cached.linked and is_non_empty_string(cached.communityUserId) then
         return cached.communityUserId
+    end
+    if should_use_cached_negative_link(cached) then
+        return nil
     end
 
     local refreshed = refresh_link_status_by_identifier(identifier, identifier_type)
