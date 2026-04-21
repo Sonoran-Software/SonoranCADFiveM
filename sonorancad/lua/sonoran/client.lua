@@ -117,6 +117,10 @@ function Client:_resolve_server_id(server_id)
     resolved = self._config.defaultServerId
   end
 
+  if type(resolved) == "string" then
+    resolved = tonumber(resolved)
+  end
+
   self:_assert_positive_integer(resolved, "serverId")
   return resolved
 end

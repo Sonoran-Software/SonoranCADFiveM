@@ -70,11 +70,11 @@ end
 
 local function get_player_link_identifier(player)
     local identifiers = GetIdentifiers(player)
-    if identifiers.license ~= nil then
-        return identifiers.license, "license"
-    end
     if Config.primaryIdentifier ~= nil and identifiers[Config.primaryIdentifier] ~= nil then
         return identifiers[Config.primaryIdentifier], tostring(Config.primaryIdentifier)
+    end
+    if identifiers.license ~= nil then
+        return identifiers.license, "license"
     end
 
     for id_type, identifier in pairs(identifiers) do

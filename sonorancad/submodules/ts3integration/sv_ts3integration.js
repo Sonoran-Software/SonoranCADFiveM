@@ -26,6 +26,20 @@ var clientsToRemove = [];
 // cache units - they might get removed before we process them
 var UnitCache = new Map();
 
+function getUnitIdentityList(unit) {
+    const data = unit && unit.data ? unit.data : {};
+    if (Array.isArray(data.apiIds) && data.apiIds.length > 0) {
+        return data.apiIds;
+    }
+    if (Array.isArray(data.communityUserIds) && data.communityUserIds.length > 0) {
+        return data.communityUserIds;
+    }
+    if (typeof data.communityUserId === "string" && data.communityUserId.length > 0) {
+        return [data.communityUserId];
+    }
+    return [];
+}
+
 // Load the configuration
 function loadConfig() {
     if (fs.existsSync(configFilePath)) {
@@ -79,7 +93,7 @@ if (unusedConfig?.enabled) {
 
 
     on('SonoranCAD::pushevents:UnitLogin', function (unit) {
-        for (let unitIdentity of unit.data.apiIds) {
+        for (let unitIdentity of getUnitIdentityList(unit)) {
             if (unitIdentity.includes("=")) {
                 clientsToAdd.push(unitIdentity);
                 UnitCache.set(unit.id, unitIdentity);
