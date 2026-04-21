@@ -6,8 +6,10 @@ This resource now uses Sonoran CAD API v2 and the bundled `Sonoran.lua` client f
 
 - Players run `/link` in-game.
 - The resource opens a NUI popup with a `Link CAD` button.
-- The button opens the player's external browser to the CAD link URL.
+- The server creates a 4-character Sonoran CAD community link code for the player's `communityUserId`.
+- The button opens the player's external browser to `sonorancad.com/id?code=...`.
 - While the popup is open, the resource checks link status every 10 seconds.
+- Link codes expire after 10 minutes.
 - ForceReg can keep the popup open until the player is linked.
 
 ## Config

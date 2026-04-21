@@ -311,10 +311,10 @@ CreateThread(function()
     while true do
         performApiRequest({payload},"GET_CALLS",function(response)
             local calls = json.decode(response)
-            for k, v in pairs(calls.activeCalls) do
+            for k, v in pairs(calls.ActiveCalls) do
                 CallCache[v.callId] = { dispatch = v }
             end
-            for k, v in pairs(calls.emergencyCalls) do
+            for k, v in pairs(calls.EmergencyCalls) do
                 EmergencyCache[v.callId] = v
             end
         end)

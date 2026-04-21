@@ -18,14 +18,16 @@ local config = {
 
         Nag: Simply nags the user with a big notification across the top of their screen.
         Freeze: Freezes the player at their spawn point with a big notification.
-        Whitelist: Prevents connection to the server entirely via deferrals (WARNING: NOT COMPATIBLE WITH ADAPTIVE CARD RESOURCES)
+        Whitelist: Prevents connection to the server entirely via deferrals.
+        Whitelist also blocks the in-game /link flow, so first-time linking must already be completed in CAD or via another external process.
+        WARNING: NOT COMPATIBLE WITH ADAPTIVE CARD RESOURCES
     ]]
     captiveOption = "Nag",
 
     -- If using Nag, should the text be centered in the users screen or at the top? ('Center' or 'Top')
     nagDrawTextLocation = "Top",
 
-    -- What message to show with the above options? Nag, Freeze, and Captive can use colors.
+    -- What message to show with the above options? Nag, Freeze, and Whitelist can use colors.
     captiveMessage = "You must ~r~link~s~ your CAD account before playing.",
 
     -- What message to show under the notice. This should tell players how to reopen the CAD link popup.

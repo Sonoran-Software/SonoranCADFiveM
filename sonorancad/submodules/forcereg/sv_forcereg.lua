@@ -28,7 +28,7 @@ if pluginConfig.enabled and Config.requireLink ~= false then
     local linkCommand = (type(Config.linkCommand) == "string" and Config.linkCommand ~= "" and Config.linkCommand) or "link"
     local captiveMessage = resolve_forcereg_text(
         pluginConfig.captiveMessage,
-        ("You must link your CAD account before joining this server. Use /%s when prompted."):format(linkCommand)
+        ("You must link your CAD account before joining this server. Whitelist mode blocks the in-game /%s flow, so link your identifier in CAD first or switch ForceReg to Nag/Freeze."):format(linkCommand)
     )
 
     local function checkCadLink(identifier, identifier_type, deferral, cb)
@@ -44,6 +44,7 @@ if pluginConfig.enabled and Config.requireLink ~= false then
     end
 
     if type(pluginConfig.captiveOption) == "string" and pluginConfig.captiveOption:lower() == "whitelist" then
+        warnLog(("Forcereg whitelist mode is enabled. This blocks players before they can use /%s in-game, so first-time linking must be done outside the server or by using Nag/Freeze instead."):format(linkCommand))
         AddEventHandler("playerConnecting", function(name, setMessage, deferrals)
             local player = source
             deferrals.defer()

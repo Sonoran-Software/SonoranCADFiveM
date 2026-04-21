@@ -4,12 +4,15 @@ local ApiEndpoints = {
     ["UNIT_PANIC"] = "emergency",
     ["GET_VERSION"] = "general",
     ["GET_SERVERS"] = "general",
+    ["GET_LOGIN_PAGE"] = "general",
+    ["GET_INFO"] = "general",
     ["ATTACH_UNIT"] = "emergency",
     ["DETACH_UNIT"] = "emergency",
     ["ADD_CALL_NOTE"] = "emergency",
     ["RECORD_ADD"] = "general",
     ["RECORD_UPDATE"] = "general",
     ["SET_SERVERS"] = "general",
+    ["SET_PENAL_CODES"] = "general",
     ["GET_CHARACTERS"] = "civilian",
     ["EDIT_CHARACTER"] = "civilian",
     ["NEW_RECORD"] = "general",
@@ -19,7 +22,16 @@ local ApiEndpoints = {
     ["LOOKUP_INT"] = "general",
     ["SET_STATIONS"] = "emergency",
     ["LOOKUP_VALUE"] = "general",
-    ["GET_ACCOUNT"] = "general"
+    ["GET_ACCOUNT"] = "general",
+    ["GET_ACCOUNTS"] = "general",
+    ["SET_ACCOUNT_PERMISSIONS"] = "general",
+    ["SET_API_IDS"] = "general",
+    ["VERIFY_SECRET"] = "general",
+    ["SEND_PHOTO"] = "general",
+    ["AUTH_STREET_SIGNS"] = "general",
+    ["GET_CURRENT_CALL"] = "emergency",
+    ["GET_IDENTIFIERS"] = "emergency",
+    ["GET_ACCOUNT_UNITS"] = "emergency"
 }
 
 local cadV2Client = nil
@@ -175,6 +187,23 @@ local function require_community_user_id(value)
     return resolved
 end
 
+local function resolve_account_selector(payload, community_user_id_value)
+    local query = {
+        accountUuid = payload.accountUuid or payload.accountId or payload.uuid,
+        username = payload.username
+    }
+
+    if community_user_id_value ~= nil then
+        local resolved, err = require_community_user_id(community_user_id_value)
+        if resolved == nil then
+            return nil, err
+        end
+        query.communityUserId = resolved
+    end
+
+    return query
+end
+
 local function perform_support_request(post_data, request_type, cb)
     local endpoint = ApiEndpoints[request_type]
     local payload = {
@@ -251,6 +280,22 @@ local function call_v2_api(request_type, post_data)
             return nil, stringify_reason(response.reason)
         end
         return to_json_string(normalize_server_collection(response.data)), true
+    elseif request_type == "GET_LOGIN_PAGE" then
+        local payload = list[1] or {}
+        local response = client:getLoginPageV2({
+            url = payload.url,
+            communityId = payload.communityId or payload.id or Config.communityID
+        })
+        if not response.success then
+            return nil, stringify_reason(response.reason)
+        end
+        return to_json_string(response.data or {}), true
+    elseif request_type == "GET_INFO" then
+        local response = client:getInfoV2()
+        if not response.success then
+            return nil, stringify_reason(response.reason)
+        end
+        return to_json_string(response.data or {}), true
     elseif request_type == "SET_SERVERS" then
         local payload = data
         if type(payload) == "table" and payload.servers ~= nil then
@@ -273,34 +318,107 @@ local function call_v2_api(request_type, post_data)
             return nil, stringify_reason(response.reason)
         end
         return "OK", true
+    elseif request_type == "SET_PENAL_CODES" then
+        local payload = data
+        if type(payload) == "table" and payload.codes ~= nil then
+            payload = payload.codes
+        end
+        local response = client:setPenalCodesV2(payload or {})
+        if not response.success then
+            return nil, stringify_reason(response.reason)
+        end
+        return to_json_string(response.data or {ok = true}), true
     elseif request_type == "GET_ACCOUNT" then
         local payload = list[1] or {}
-        local community_user_id = nil
-        local identity_value = payload.communityUserId
-        if identity_value ~= nil then
-            local err = nil
-            community_user_id, err = require_community_user_id(identity_value)
-            if community_user_id == nil then
-                return nil, err
-            end
+        local query, err = resolve_account_selector(payload, payload.communityUserId or payload.user)
+        if query == nil then
+            return nil, err
         end
-
-        local response = client:getAccountV2({
-            communityUserId = community_user_id,
+        local response = client:getAccountV2(query)
+        if not response.success then
+            return nil, stringify_reason(response.reason)
+        end
+        return to_json_string(response.data or {}), true
+    elseif request_type == "GET_ACCOUNTS" then
+        local payload = list[1] or {}
+        local response = client:getAccountsV2({
+            limit = payload.limit,
+            offset = payload.offset,
+            status = payload.status,
             username = payload.username
         })
         if not response.success then
             return nil, stringify_reason(response.reason)
         end
         return to_json_string(response.data or {}), true
-    elseif request_type == "GET_CHARACTERS" then
+    elseif request_type == "SET_ACCOUNT_PERMISSIONS" then
         local payload = list[1] or {}
-        local err = nil
-        payload.communityUserId, err = require_community_user_id(payload.communityUserId or payload.user)
-        if payload.communityUserId == nil then
+        local request_payload, err = resolve_account_selector(payload, payload.communityUserId or payload.user)
+        if request_payload == nil then
             return nil, err
         end
-        local response = client:getCharactersV2(payload)
+        request_payload.add = payload.add
+        request_payload.remove = payload.remove
+        request_payload.active = payload.active
+        local response = client:setAccountPermissionsV2(request_payload)
+        if not response.success then
+            return nil, stringify_reason(response.reason)
+        end
+        return to_json_string(response.data or {ok = true}), true
+    elseif request_type == "SET_API_IDS" then
+        local payload = list[1] or {}
+        local request_payload, err = resolve_account_selector(payload, payload.communityUserId or payload.user)
+        if request_payload == nil then
+            return nil, err
+        end
+        request_payload.apiIds = payload.apiIds
+        request_payload.pushNew = payload.pushNew
+        local response = client:setApiIdsV2(request_payload)
+        if not response.success then
+            return nil, stringify_reason(response.reason)
+        end
+        return to_json_string(response.data or {ok = true}), true
+    elseif request_type == "VERIFY_SECRET" then
+        local payload = list[1] or {}
+        local response = client:verifySecretV2(payload.secret)
+        if not response.success then
+            return nil, stringify_reason(response.reason)
+        end
+        return to_json_string(response.data or {ok = true}), true
+    elseif request_type == "SEND_PHOTO" then
+        local payload = list[1] or {}
+        local community_user_id, err = require_community_user_id(payload.communityUserId or payload.user or payload.apiId)
+        if community_user_id == nil then
+            return nil, err
+        end
+        local response = client:sendPhotoV2({
+            communityUserId = community_user_id,
+            url = payload.url
+        })
+        if not response.success then
+            return nil, stringify_reason(response.reason)
+        end
+        return to_json_string(response.data or {ok = true}), true
+    elseif request_type == "AUTH_STREET_SIGNS" then
+        local payload = list[1] or {}
+        local response = client:authorizeStreetSignsV2(payload.serverId or Config.serverId)
+        if not response.success then
+            return nil, stringify_reason(response.reason)
+        end
+        return to_json_string(response.data or {ok = true}), true
+    elseif request_type == "GET_CHARACTERS" then
+        local payload = list[1] or {}
+        local query = {
+            accountUuid = payload.accountUuid or payload.accountId or payload.uuid
+        }
+        if payload.communityUserId ~= nil or payload.user ~= nil then
+            local err = nil
+            query.communityUserId, err = require_community_user_id(payload.communityUserId or payload.user)
+            if query.communityUserId == nil then
+                return nil, err
+            end
+        end
+        local response = client:getCharactersV2(query)
         if not response.success then
             return nil, stringify_reason(response.reason)
         end
@@ -389,6 +507,14 @@ local function call_v2_api(request_type, post_data)
             return nil, stringify_reason(response.reason)
         end
         return to_json_string(response.data or {}), true
+    elseif request_type == "GET_CURRENT_CALL" then
+        local payload = list[1] or {}
+        local account_uuid = payload.accountUuid or payload.accountId or payload.uuid
+        local response = client:getCurrentCallV2(account_uuid)
+        if not response.success then
+            return nil, stringify_reason(response.reason)
+        end
+        return to_json_string(response.data or {}), true
     elseif request_type == "CALL_911" then
         local payload = list[1] or {}
         local response = client:createEmergencyCallV2(payload)
@@ -407,6 +533,28 @@ local function call_v2_api(request_type, post_data)
             return nil, stringify_reason(response.reason)
         end
         return "OK", true
+    elseif request_type == "GET_IDENTIFIERS" then
+        local payload = list[1] or {}
+        local account_uuid = payload.accountUuid or payload.accountId or payload.uuid
+        local response = client:getIdentifiersV2(account_uuid)
+        if not response.success then
+            return nil, stringify_reason(response.reason)
+        end
+        return to_json_string(unwrap_named_collection(response.data or {}, "identifiers") or {}), true
+    elseif request_type == "GET_ACCOUNT_UNITS" then
+        local payload = list[1] or {}
+        local response = client:getAccountUnitsV2({
+            serverId = payload.serverId or Config.serverId,
+            accountUuid = payload.accountUuid or payload.accountId or payload.uuid,
+            onlyOnline = payload.onlyOnline,
+            onlyUnits = payload.onlyUnits,
+            limit = payload.limit,
+            offset = payload.offset
+        })
+        if not response.success then
+            return nil, stringify_reason(response.reason)
+        end
+        return to_json_string(unwrap_named_collection(response.data or {}, "units") or {}), true
     elseif request_type == "NEW_DISPATCH" then
         local payload = list[1] or {}
         payload.units = resolve_community_user_ids(payload.units or {})

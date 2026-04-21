@@ -328,6 +328,9 @@ local function create_client(config, adapter)
   instance.setAccountPermissionsV2 = function(self, data)
     return self:_request("PATCH", "v2/general/accounts/permissions", { body = data })
   end
+  instance.setApiIdsV2 = function(self, data)
+    return self:_request("PUT", "v2/general/api-ids", { body = data })
+  end
   instance.heartbeatV2 = function(self, server_id, player_count)
     local resolved_server_id = self:_resolve_server_id(server_id)
     return self:_request("POST", "v2/general/servers/" .. tostring(resolved_server_id) .. "/heartbeat", {

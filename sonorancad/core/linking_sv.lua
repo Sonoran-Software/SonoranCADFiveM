@@ -91,29 +91,15 @@ function GetPlayerLinkIdentifier(player)
 end
 
 local function build_link_payload(identifier, identifier_type, code, community_user_id)
-    local payload = {
-        serverId = tonumber(Config.serverId) or tonumber(GetConvar("sonoran_serverId", "1")) or 1,
-        communityIdentifier = identifier,
-        identifier = identifier,
-        linkIdentifier = identifier,
-        identifierType = identifier_type,
-        communityIdentifierType = identifier_type,
-        platform = "fivem",
-        source = "fivem"
+    local resolved_community_user_id = community_user_id
+    if not is_non_empty_string(resolved_community_user_id) then
+        resolved_community_user_id = identifier
+    end
+
+    return {
+        -- Sonoran CAD v2 create/check link endpoints accept communityUserId only.
+        communityUserId = resolved_community_user_id
     }
-
-    if is_non_empty_string(code) then
-        payload.code = code
-        payload.linkCode = code
-    end
-
-    if is_non_empty_string(community_user_id) then
-        payload.communityUserId = community_user_id
-        payload.userId = community_user_id
-        payload.ssoId = community_user_id
-    end
-
-    return payload
 end
 
 local function coerce_link_data(data)
@@ -144,14 +130,15 @@ local function parse_link_response(data)
     local code = parsed.code or parsed.linkCode or parsed.link_code or parsed.idCode
     local url = parsed.url or parsed.linkUrl or parsed.linkURL or parsed.link or parsed.redirectUrl
     local community_user_id = parsed.communityUserId or parsed.userId or parsed.accountId or parsed.id
+    local account_uuid = parsed.accountUuid or parsed.accountUUID or parsed.uuid
     local linked = parsed.linked
 
     if linked == nil then
         if parsed.exists ~= nil then
             linked = parsed.exists == true
-        elseif parsed.success ~= nil and community_user_id ~= nil then
+        elseif parsed.success ~= nil and account_uuid ~= nil then
             linked = parsed.success == true
-        elseif community_user_id ~= nil then
+        elseif account_uuid ~= nil then
             linked = true
         else
             linked = false
