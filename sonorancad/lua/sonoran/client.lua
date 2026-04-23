@@ -48,6 +48,20 @@ local function strip_keys(value, keys)
   return copy
 end
 
+local function stringify_table_values(value)
+  if type(value) ~= "table" then
+    return value
+  end
+
+  local copy = {}
+  for key, entry in pairs(value) do
+    if entry ~= nil then
+      copy[key] = tostring(entry)
+    end
+  end
+  return copy
+end
+
 local function normalize_headers(headers)
   local normalized = {}
   for key, value in pairs(headers or {}) do
@@ -527,8 +541,10 @@ local function create_client(config, adapter)
   end
   instance.createEmergencyCallV2 = function(self, data)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
+    local body = strip_keys(data, { "serverId" })
+    body.metaData = stringify_table_values(body.metaData)
     return self:_request("POST", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/calls/911", {
-      body = strip_keys(data, { "serverId" })
+      body = body
     })
   end
   instance.deleteEmergencyCallV2 = function(self, call_id, server_id)

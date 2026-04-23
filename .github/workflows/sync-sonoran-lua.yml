@@ -1,0 +1,51 @@
+name: Sync Sonoran.lua
+
+on:
+  repository_dispatch:
+    types:
+      - sonoran-lua-updated
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-sonoran-lua-v4
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout SonoranCADFiveM v4
+        uses: actions/checkout@v4
+        with:
+          ref: v4
+          fetch-depth: 0
+
+      - name: Checkout Sonoran.lua
+        uses: actions/checkout@v4
+        with:
+          repository: Sonoran-Software/Sonoran.Lua
+          ref: master
+          path: _sonoran_lua
+
+      - name: Sync vendored Sonoran.lua files
+        run: |
+          rm -rf sonorancad/lua/sonoran
+          mkdir -p sonorancad/lua
+          cp -R _sonoran_lua/lua/sonoran sonorancad/lua/sonoran
+
+      - name: Commit synced files
+        run: |
+          if git diff --quiet -- sonorancad/lua/sonoran; then
+            echo "No Sonoran.lua changes to sync."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add sonorancad/lua/sonoran
+          git commit -m "chore: sync Sonoran.lua"
+          git push origin HEAD:v4
