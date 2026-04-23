@@ -450,7 +450,7 @@ AddEventHandler('SonoranCAD::core:sendClientConfig', function()
     local config = {
         communityID = Config.communityID,
         postTime = Config.postTime,
-        serverId = Config.serverId,
+        serverId = tonumber(Config.serverId),
         linkCommand = Config.linkCommand,
         requireLink = Config.requireLink,
         autoOpenLinkPopup = Config.autoOpenLinkPopup,
@@ -473,7 +473,7 @@ end)
 CreateThread(function()
     Wait(2000) -- wait for server to settle
     if Config.critError then return end
-    local serverId = Config.serverId
+    local serverId = tonumber(Config.serverId)
     while Config.apiVersion == -1 do Wait(10) end
     if Config.apiVersion < 3 then
         debugLog('Too low version or API disabled, ignore this')
@@ -482,97 +482,108 @@ CreateThread(function()
         errorLog('Config.apiSendEnabled disabled via convar or config, skipping server registration. Check your config if this is unintentional.')
         return
     end
-    performApiRequest({}, 'GET_SERVERS', function(response)
-        local info = json.decode(response)
-        for k, v in pairs(info.servers) do
-            if tostring(v.id) == tostring(serverId) then
-                ServerInfo = v
-                break
+    local serversResponse = CadApiGetServers()
+    if not serversResponse.success then
+        CadApiLogFailure('GET_SERVERS', serversResponse, {})
+        return
+    end
+    local info = serversResponse.data
+    for k, v in pairs(info.servers or {}) do
+        if tostring(v.id) == tostring(serverId) then
+            ServerInfo = v
+            break
+        end
+    end
+    local needSetup = false
+    local serverObj = {}
+    if ServerInfo == nil then
+        needSetup = true
+        serverObj = {
+            id = serverId,
+            name = 'Server ' .. serverId,
+            description = 'Server ' .. serverId,
+            signal = '',
+            listenerPort = GetConvar('netPort', '0'),
+            mapIp = '',
+            differingOutbound = false,
+            outboundIp = '',
+            enableMap = true,
+            mapType = 'NORMAL'
+        }
+    else
+        serverObj = ServerInfo
+    end
+    local existingServerInfo = ServerInfo or {
+        listenerPort = '',
+        mapIp = '',
+        differingOutbound = false,
+        outboundIp = ''
+    }
+    if serverObj.name == '' then
+        serverObj.name = 'Server ' .. tostring(serverId)
+    end
+    if existingServerInfo.listenerPort ~= GetConvar('netPort', '0') then
+        infoLog(
+            ('Configuration information doesn\'t match, will attempt to auto-correct game port from %s to %s.'):format(
+                existingServerInfo.listenerPort, GetConvar('netPort', '0')))
+        serverObj.listenerPort = GetConvar('netPort', '0')
+        needSetup = true
+    end
+    PerformHttpRequest('https://api.ipify.org?format=json',
+                       function(errorCode, resultData, resultHeaders)
+        local r = json.decode(resultData)
+        if r ~= nil and r.ip ~= nil then
+            debugLog(
+                ('IP DETECT - IP: %s - Detected: %s - Outbound set: %s - Outbound IP: %s'):format(
+                    existingServerInfo.mapIp, r.ip, existingServerInfo.differingOutbound,
+                    existingServerInfo.outboundIp))
+            if serverObj.mapIp == '' or serverObj.mapIp == nil then
+                serverObj.mapIp = r.ip
+                needSetup = true
             end
-        end
-        local needSetup = false
-        local serverObj = {}
-        if ServerInfo == nil then
-            needSetup = true
-            serverObj = {
-                id = serverId,
-                name = 'Server ' .. serverId,
-                description = 'Server ' .. serverId,
-                signal = '',
-                listenerPort = GetConvar('netPort', '0'),
-                mapIp = '',
-                differingOutbound = false,
-                outboundIp = '',
-                enableMap = true,
-                mapType = 'NORMAL'
-            }
-        else
-            serverObj = ServerInfo
-        end
-        if serverObj.name == '' then
-            serverObj.name = 'Server ' .. tostring(serverId)
-        end
-        if ServerInfo.listenerPort ~= GetConvar('netPort', '0') then
-            infoLog(
-                ('Configuration information doesn\'t match, will attempt to auto-correct game port from %s to %s.'):format(
-                    ServerInfo.listenerPort, GetConvar('netPort', '0')))
-            serverObj.listenerPort = GetConvar('netPort', '0')
-            needSetup = true
-        end
-        PerformHttpRequest('https://api.ipify.org?format=json',
-                           function(errorCode, resultData, resultHeaders)
-            local r = json.decode(resultData)
-            if r ~= nil and r.ip ~= nil then
-                debugLog(
-                    ('IP DETECT - IP: %s - Detected: %s - Outbound set: %s - Outbound IP: %s'):format(
-                        ServerInfo.mapIp, r.ip, ServerInfo.differingOutbound,
-                        ServerInfo.outboundIp))
-                if serverObj.mapIp == '' or serverObj.mapIp == nil then
-                    serverObj.mapIp = r.ip
-                    needSetup = true
-                end
-                if ServerInfo.mapIp ~= r.ip then
-                    if ServerInfo.differingOutbound and ServerInfo.outboundIp ==
-                        r.ip then
-                        infoLog(
-                            'Detected proper differing outbound IP configuration.')
-                    else
-                        if ServerInfo.differingOutbound then
-                            needSetup = true
-                            serverObj.outboundIp = r.ip
-                        else
-                            needSetup = true
-                            serverObj.outboundIp = r.ip
-                            serverObj.differingOutbound = true
-                        end
-                    end
-                end
-            end
-            local disableOverride = (Config.disableOverride ~= nil and
-                                        Config.disableOverride or false)
-            if needSetup and not disableOverride then
-                local payload = nil
-                if ServerInfo == nil then
-                    payload = {['servers'] = {serverObj}}
+            if existingServerInfo.mapIp ~= r.ip then
+                if existingServerInfo.differingOutbound and existingServerInfo.outboundIp ==
+                    r.ip then
+                    infoLog(
+                        'Detected proper differing outbound IP configuration.')
                 else
-                    payload = info
-                    for k, v in pairs(payload) do
-                        if v.id == serverId then
-                            payload[k] = serverObj
-                        end
+                    if existingServerInfo.differingOutbound then
+                        needSetup = true
+                        serverObj.outboundIp = r.ip
+                    else
+                        needSetup = true
+                        serverObj.outboundIp = r.ip
+                        serverObj.differingOutbound = true
                     end
                 end
-                debugLog(('Send payload: %s'):format(json.encode(payload)))
-                performApiRequest(json.encode(payload), 'SET_SERVERS', function(
-                    resp)
-                    debugLog('SET_SERVERS: ' .. tostring(resp))
-                end)
-            elseif disableOverride and not needSetup then
-                warnLog(
-                    'disableOverride is true or there is no additional setup required, skipping any potential auto-IP/port fixing')
             end
-        end, 'GET', nil, nil)
-    end)
+        end
+        local disableOverride = (Config.disableOverride ~= nil and
+                                    Config.disableOverride or false)
+        if needSetup and not disableOverride then
+            local payload = nil
+            if ServerInfo == nil then
+                payload = {['servers'] = {serverObj}}
+            else
+                payload = info
+                for k, v in pairs(payload) do
+                    if v.id == serverId then
+                        payload[k] = serverObj
+                    end
+                end
+            end
+            debugLog(('Send payload: %s'):format(json.encode(payload)))
+            local setServersResponse = CadApiSetServers(payload)
+            if not setServersResponse.success then
+                CadApiLogFailure('SET_SERVERS', setServersResponse, payload)
+            else
+                debugLog('SET_SERVERS: ' .. tostring(setServersResponse.data and json.encode(setServersResponse.data) or 'OK'))
+            end
+        elseif disableOverride and not needSetup then
+            warnLog(
+                'disableOverride is true or there is no additional setup required, skipping any potential auto-IP/port fixing')
+        end
+    end, 'GET', nil, nil)
 
     if isPluginLoaded('livemap') then
         warnLog(

@@ -12,8 +12,6 @@ CreateThread(function()
 			RegisterNetEvent(GetCurrentResourceName() .. '::registerVeh', function(primary, plate, class, realName)
 				local source = source
 				local communityUserId = GetPlayerCommunityUserId(source)
-				exports['sonorancad']:registerApiType('NEW_RECORD', 'general')
-				exports['sonorancad']:registerApiType('GET_CHARACTERS', 'civilian')
 				if not communityUserId then
 					TriggerClientEvent('chat:addMessage', source, {
 						color = {
@@ -29,67 +27,63 @@ CreateThread(function()
 					})
 					return
 				end
-				exports['sonorancad']:performApiRequest({
-					{
-						['communityUserId'] = communityUserId
-					}
-				}, 'GET_CHARACTERS', function(res, err)
-					if err == 404 then
-						TriggerClientEvent('chat:addMessage', source, {
-							color = {
-								255,
-								0,
-								0
-							},
-							multiline = true,
-							args = {
-								'[CAD - ERROR] ',
-								pluginConfig.language.noCadLink or pluginConfig.language.noApiId or "Your CAD account is not linked."
-							}
-						})
-						return;
-					else
-						res = json.decode(res)
-						if not res or type(res) ~= 'table' then
-							TriggerClientEvent('chat:addMessage', source, {
-								color = {
-									255,
-									0,
-									0
-								},
-								multiline = true,
-								args = {
-									'[CAD - ERROR] ',
-									pluginConfig.language.noCharFound or "No character found. Please ensure you are logged in to a character."
-								}
-							})
-							return;
-						end
-						if #res < 1 then
-							TriggerClientEvent('chat:addMessage', source, {
-								color = {
-									255,
-									0,
-									0
-								},
-								multiline = true,
-								args = {
-									'[CAD - ERROR] ',
-									pluginConfig.language.noCharFound or "No character found. Please ensure you are logged in to a character."
-								}
-							})
-							return;
-						end
-						for iterator, table in pairs(res[1].sections) do
-							if table.category == 0 then
-								for iterator, field in pairs(table.fields) do
-									civData[field.uid] = field.value
-								end
-							end
+				local characterResponse = CadApiGetCharacters({
+					communityUserId = communityUserId
+				})
+				if not characterResponse.success then
+					CadApiLogFailure('GET_CHARACTERS', characterResponse, { communityUserId = communityUserId })
+					TriggerClientEvent('chat:addMessage', source, {
+						color = {
+							255,
+							0,
+							0
+						},
+						multiline = true,
+						args = {
+							'[CAD - ERROR] ',
+							pluginConfig.language.noCadLink or pluginConfig.language.noApiId or "Your CAD account is not linked."
+						}
+					})
+					return;
+				end
+				local res = characterResponse.data
+				if not res or type(res) ~= 'table' then
+					TriggerClientEvent('chat:addMessage', source, {
+						color = {
+							255,
+							0,
+							0
+						},
+						multiline = true,
+						args = {
+							'[CAD - ERROR] ',
+							pluginConfig.language.noCharFound or "No character found. Please ensure you are logged in to a character."
+						}
+					})
+					return;
+				end
+				if #res < 1 then
+					TriggerClientEvent('chat:addMessage', source, {
+						color = {
+							255,
+							0,
+							0
+						},
+						multiline = true,
+						args = {
+							'[CAD - ERROR] ',
+							pluginConfig.language.noCharFound or "No character found. Please ensure you are logged in to a character."
+						}
+					})
+					return;
+				end
+				for iterator, table in pairs(res[1].sections) do
+					if table.category == 0 then
+						for iterator, field in pairs(table.fields) do
+							civData[field.uid] = field.value
 						end
 					end
-				end)
-				Citizen.Wait(1000)
+				end
 				if not pluginConfig.recordData then
 					notSetConfig = true
 					pluginConfig.recordData = {
@@ -116,16 +110,15 @@ CreateThread(function()
 				for k, v in pairs(civData) do
 					replaceValues[k] = v
 				end
-				exports['sonorancad']:performApiRequest({
-					{
-						['user'] = communityUserId,
-						['useDictionary'] = true,
-						['recordTypeId'] = 5,
-						['replaceValues'] = replaceValues
-					}
-				}, 'NEW_RECORD', function(res)
-					res = tostring(res)
-					if string.find(res, 'taken') ~= nil then
+				local createResponse = CadApiCreateRecord({
+					['communityUserId'] = communityUserId,
+					['useDictionary'] = true,
+					['recordTypeId'] = 5,
+					['replaceValues'] = replaceValues
+				})
+				if not createResponse.success then
+					local reason = CadApiReasonText(createResponse.reason)
+					if string.find(reason, 'taken') ~= nil then
 						TriggerClientEvent('chat:addMessage', source, {
 							color = {
 								255,
@@ -139,6 +132,25 @@ CreateThread(function()
 							}
 						})
 					else
+						CadApiLogFailure('NEW_RECORD', createResponse, {
+							communityUserId = communityUserId,
+							recordTypeId = 5,
+							replaceValues = replaceValues
+						})
+						TriggerClientEvent('chat:addMessage', source, {
+							color = {
+								255,
+								0,
+								0
+							},
+							multiline = true,
+							args = {
+								'[CAD - ERROR] ',
+								pluginConfig.language.errorCreatingReg or "Failed to create registration record."
+							}
+						})
+					end
+				else
 						local placeHolders = {
 							['{{PLATE}}'] = plate,
 							['{{FIRST}}'] = civData.first,
@@ -156,8 +168,7 @@ CreateThread(function()
 								placeholderReplace(pluginConfig.language.successReg, placeHolders)
 							}
 						})
-					end
-				end)
+				end
 			end)
 		end
 	end)

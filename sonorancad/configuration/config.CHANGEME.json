@@ -3,7 +3,7 @@
     "apiKey": "",
     "mode": "production",
     "postTime": 5000,
-    "serverId": "1",
+    "serverId": 1,
     "linkCommand": "link",
     "requireLink": true,
     "autoOpenLinkPopup": true,

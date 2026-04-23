@@ -229,8 +229,6 @@ AddEventHandler("SonoranCAD::pushevents:UnitLogout", function(id)
     end
 end)
 
-
-registerApiType("GET_ACTIVE_UNITS", "emergency")
 Citizen.CreateThread(function()
     Wait(500)
     while Config.apiVersion == -1 do
@@ -250,92 +248,15 @@ Citizen.CreateThread(function()
             OldUnits[k] = v
         end
         if GetNumPlayerIndices() > 0 then
-            local payload = { serverId = Config.serverId, unitsOnly = false }
-            performApiRequest({payload}, "GET_ACTIVE_UNITS", function(runits)
-                local allUnits = json.decode(runits)
-                if allUnits ~= nil then
-                    rebuildActiveDispatchers(allUnits)
-                    for k, v in pairs(allUnits) do
-                        local playerId = GetSourceByCadIdentity(GetUnitIdentityValues(v))
-                        if playerId then
-                            PlayerUnitMapping[playerId] = v.id
-                            table.insert(NewUnits, v)
-                            TriggerEvent("SonoranCAD::core:AddPlayer", playerId, v)
-                        else
-                            debugLog(("Couldn't find unit, not adding %s (%s)"):format(playerId, json.encode(GetUnitIdentityValues(v))))
-                        end
-                    end
-                end
-                for k, v in pairs(OldUnits) do
-                    local exists = false
-                    for _, n in pairs(NewUnits) do
-                        if n.id == v.id then
-                            exists = true
-                        end
-                    end
-                    if not exists then
-                        debugLog(("Removing player %s, not on units list"):format(k))
-                        PlayerUnitMapping[k] = nil
-                        TriggerEvent("SonoranCAD::core:RemovePlayer", k, v)
-                        TriggerClientEvent("SonoranCAD::core:RemovePlayer", k, v)
-                    end
-                end
-                UnitCache = {}
-                for k, v in pairs(NewUnits) do
-                    debugLog("Insert unit "..json.encode(v))
-                    table.insert(UnitCache, v)
-                end
-                if allUnits == nil then
-                    rebuildActiveDispatchers({})
-                end
-            end)
-        end
-        Citizen.Wait(60000)
-    end
-end)
-
-registerApiType("GET_CALLS", "emergency")
-CreateThread(function()
-    Wait(1000)
-    while Config.apiVersion == -1 do
-        Wait(10)
-    end
-    if Config.apiVersion < 3 then
-        debugLog("Too low version or API disabled, skip call caching")
-        return
-    elseif not Config.apiSendEnabled then
-        errorLog("Config.apiSendEnabled disabled via convar or config, skipping call caching. Check your config if this is unintentional.")
-        return
-    end
-    local payload = { serverId = Config.serverId}
-    while true do
-        performApiRequest({payload},"GET_CALLS",function(response)
-            local calls = json.decode(response)
-            for k, v in pairs(calls.ActiveCalls) do
-                CallCache[v.callId] = { dispatch = v }
+            local payload = { serverId = tonumber(tonumber(Config.serverId)), unitsOnly = false }
+            local response = CadApiGetActiveUnits(payload)
+            if not response.success then
+                CadApiLogFailure("GET_ACTIVE_UNITS", response, payload)
             end
-            for k, v in pairs(calls.EmergencyCalls) do
-                EmergencyCache[v.callId] = v
-            end
-        end)
-        Citizen.Wait(60 * 1000)
-    end
-end)
-
-
-function manuallySetUnitCache()
-    local OldUnits = {}
-    local NewUnits = {}
-    for k, v in pairs(UnitCache) do
-        OldUnits[k] = v
-    end
-    if GetNumPlayerIndices() > 0 then
-        local payload = { serverId = Config.serverId, unitsOnly = false }
-        performApiRequest({payload}, "GET_ACTIVE_UNITS", function(runits)
-            local allUnits = json.decode(runits)
+            local allUnits = response.success and response.data or nil
             if allUnits ~= nil then
                 rebuildActiveDispatchers(allUnits)
-                for _, v in pairs(allUnits) do
+                for k, v in pairs(allUnits) do
                     local playerId = GetSourceByCadIdentity(GetUnitIdentityValues(v))
                     if playerId then
                         PlayerUnitMapping[playerId] = v.id
@@ -361,15 +282,98 @@ function manuallySetUnitCache()
                 end
             end
             UnitCache = {}
-            for _, v in pairs(NewUnits) do
+            for k, v in pairs(NewUnits) do
                 debugLog("Insert unit "..json.encode(v))
                 table.insert(UnitCache, v)
             end
             if allUnits == nil then
                 rebuildActiveDispatchers({})
             end
-        end)
+        end
+        Citizen.Wait(60000)
+    end
+end)
+
+CreateThread(function()
+    Wait(1000)
+    while Config.apiVersion == -1 do
+        Wait(10)
+    end
+    if Config.apiVersion < 3 then
+        debugLog("Too low version or API disabled, skip call caching")
+        return
+    elseif not Config.apiSendEnabled then
+        errorLog("Config.apiSendEnabled disabled via convar or config, skipping call caching. Check your config if this is unintentional.")
+        return
+    end
+    local payload = { serverId = tonumber(tonumber(Config.serverId)) }
+    while true do
+        local response = CadApiGetCalls(payload)
+        if not response.success then
+            CadApiLogFailure("GET_CALLS", response, payload)
+        else
+            local calls = response.data or {}
+            for k, v in pairs(calls.ActiveCalls) do
+                CallCache[v.callId] = { dispatch = v }
+            end
+            for k, v in pairs(calls.EmergencyCalls) do
+                EmergencyCache[v.callId] = v
+            end
+        end
+        Citizen.Wait(60 * 1000)
+    end
+end)
+
+
+function manuallySetUnitCache()
+    local OldUnits = {}
+    local NewUnits = {}
+    for k, v in pairs(UnitCache) do
+        OldUnits[k] = v
+    end
+    if GetNumPlayerIndices() > 0 then
+        local payload = { serverId = tonumber(tonumber(Config.serverId)), unitsOnly = false }
+        local response = CadApiGetActiveUnits(payload)
+        if not response.success then
+            CadApiLogFailure("GET_ACTIVE_UNITS", response, payload)
+        end
+        local allUnits = response.success and response.data or nil
+        if allUnits ~= nil then
+            rebuildActiveDispatchers(allUnits)
+            for _, v in pairs(allUnits) do
+                local playerId = GetSourceByCadIdentity(GetUnitIdentityValues(v))
+                if playerId then
+                    PlayerUnitMapping[playerId] = v.id
+                    table.insert(NewUnits, v)
+                    TriggerEvent("SonoranCAD::core:AddPlayer", playerId, v)
+                else
+                    debugLog(("Couldn't find unit, not adding %s (%s)"):format(playerId, json.encode(GetUnitIdentityValues(v))))
+                end
+            end
+        end
+        for k, v in pairs(OldUnits) do
+            local exists = false
+            for _, n in pairs(NewUnits) do
+                if n.id == v.id then
+                    exists = true
+                end
+            end
+            if not exists then
+                debugLog(("Removing player %s, not on units list"):format(k))
+                PlayerUnitMapping[k] = nil
+                TriggerEvent("SonoranCAD::core:RemovePlayer", k, v)
+                TriggerClientEvent("SonoranCAD::core:RemovePlayer", k, v)
+            end
+        end
+        UnitCache = {}
+        for _, v in pairs(NewUnits) do
+            debugLog("Insert unit "..json.encode(v))
+            table.insert(UnitCache, v)
+        end
+        if allUnits == nil then
+            rebuildActiveDispatchers({})
+        end
     end
 end
 
-exports('ManuallySetUnitCache', manuallySetUnitCache())
+exports('ManuallySetUnitCache', manuallySetUnitCache)

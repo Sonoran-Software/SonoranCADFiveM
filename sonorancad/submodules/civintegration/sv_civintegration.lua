@@ -27,8 +27,6 @@ if pluginConfig.enabled then
     CustomCharacterCache = {}
     local CharacterCacheTimers = {}
 
-    registerApiType("GET_CHARACTERS", "civilian")
-
     AddEventHandler("playerDropped", function()
         CharacterCache[source] = nil
         CharacterCacheTimers[source] = nil
@@ -41,11 +39,12 @@ if pluginConfig.enabled then
             callback(nil)
             return
         end
-        local payload = { ['communityUserId'] = communityUserId }
-        performApiRequest({payload}, "GET_CHARACTERS", function(result)
+        local response = CadApiGetCharacters({communityUserId = communityUserId})
+        if response.success then
+            local result = response.data
             if result ~= nil then
                 local characters = {}
-                for _, records in pairs(json.decode(result)) do
+                for _, records in pairs(result) do
                     local charData = {}
                    -- debugLog(("check record %s"):format(json.encode(records)))
                     for _, section in pairs(records.sections) do
@@ -70,7 +69,10 @@ if pluginConfig.enabled then
             else
                 callback(nil)
             end
-        end)
+        else
+            CadApiLogFailure("GET_CHARACTERS", response, {communityUserId = communityUserId})
+            callback(nil)
+        end
     end
 
     function GetCharacters(player, callback)
@@ -111,6 +113,7 @@ if pluginConfig.enabled then
                     TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^1Error ^0] ", "No characters found."}})
                 else
                     local char = characters[1]
+                    print('got char', json.encode(char))
                     local name = ("%s %s"):format(char.first, char.last)
                     local dob = char.dob
                     if char.img == "statics/images/blank_user.jpg" then

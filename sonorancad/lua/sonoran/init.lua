@@ -22,12 +22,15 @@ local create_client = load_module("lua/sonoran/client.lua")
 local create_fivem_adapter = load_module("lua/sonoran/adapters/fivem.lua")
 
 local Sonoran = {}
+Sonoran.productEnums = {
+  CAD = 0,
+  CMS = 1,
+  RADIO = 2
+}
 
 function Sonoran.createClient(config)
   return create_client(config or {}, create_fivem_adapter())
 end
-
-rawset(_G, "Sonoran", Sonoran)
 
 if exports then
   exports("createClient", Sonoran.createClient)

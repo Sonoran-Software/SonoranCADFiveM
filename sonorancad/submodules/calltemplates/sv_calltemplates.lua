@@ -10,8 +10,6 @@ CreateThread(function()
     Config.LoadPlugin("calltemplates", function(pluginConfig)
         if not pluginConfig.enabled then return end
 
-        registerApiType("NEW_DISPATCH", "emergency")
-
         local templateCache = {}
         local templateDirectory = pluginConfig.callTypeDirectory or "submodules/calltemplates/calltypes"
 
@@ -149,7 +147,7 @@ CreateThread(function()
             end
 
             local payload = {
-                serverId = Config.serverId,
+                serverId = tonumber(Config.serverId),
                 callId = template.callId or -1,
                 origin = template.origin or pluginConfig.defaultOrigin or 2,
                 status = template.status or pluginConfig.defaultStatus or 1,
@@ -177,8 +175,13 @@ CreateThread(function()
 
             if Config.apiSendEnabled then
                 debugLog(("[calltemplates] sending dispatch from /%s"):format(commandName or "unknown"))
-                performApiRequest({payload}, "NEW_DISPATCH", function() end)
-                TriggerClientEvent("chat:addMessage", source, {args = {"^0^5^*[SonoranCAD]^r ", "^7Your call has been sent to CAD."}})
+                local response = CadApiCreateDispatchCall(payload)
+                if response.success then
+                    TriggerClientEvent("chat:addMessage", source, {args = {"^0^5^*[SonoranCAD]^r ", "^7Your call has been sent to CAD."}})
+                else
+                    CadApiLogFailure("NEW_DISPATCH", response, payload)
+                    TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^1Error ^0] ", "Call could not be sent to CAD."}})
+                end
             else
                 errorLog("Config.apiSendEnabled disabled via convar or config, skipping call creation. Check your config if this is unintentional.")
                 TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^1Error ^0] ", "Call could not be sent; API is disabled."}})
@@ -187,7 +190,7 @@ CreateThread(function()
 
         for _, cmdConfig in ipairs(pluginConfig.commands or {}) do
             if cmdConfig.command ~= nil and cmdConfig.callTypeFile ~= nil then
-                local cfg = cmdConfig 
+                local cfg = cmdConfig
                 local restricted = cfg.useAcePermissions
                 if restricted == nil then restricted = true end
 

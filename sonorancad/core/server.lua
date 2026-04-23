@@ -19,39 +19,60 @@ function getApiUrl()
 end
 
 CreateThread(function()
-    infoLog("Starting SonoranCAD from "..GetResourcePath("sonorancad"))
-    Config.apiUrl = getApiUrl()
-    exports['sonorancad']:clearScreenshotsFolder()
-    performApiRequest({}, "GET_VERSION", function(result, ok)
-        if not ok then
+    local ok, err = xpcall(function()
+        infoLog("Starting SonoranCAD from "..GetResourcePath("sonorancad"))
+        Config.apiUrl = getApiUrl()
+
+        local clear_ok, clear_err = pcall(function()
+            exports['sonorancad']:clearScreenshotsFolder()
+        end)
+        if not clear_ok then
+            warnLog(("Failed to clear screenshots folder on startup: %s"):format(tostring(clear_err)))
+        end
+
+        local versionResponse = CadApiGetVersion()
+        if not versionResponse.success then
+            CadApiLogFailure("GET_VERSION", versionResponse, {})
             logError("API_ERROR")
             Config.critError = true
             return
         end
-        Config.apiVersion = tonumber(string.sub(result, 1, 1))
+
+        local result = tostring(versionResponse.data or "")
+        Config.apiVersion = tonumber(string.sub(result, 1, 1)) or -1
         if Config.apiVersion < 2 then
             logError("API_PAID_ONLY")
             Config.critError = true
         end
         debugLog(("Set version %s from response %s"):format(Config.apiVersion, result))
         infoLog(("Loaded community ID %s with API URL: %s"):format(Config.communityID, Config.apiUrl))
-    end)
-    if Config.primaryIdentifier == "steam" and (GetConvar("steam_webapiKey", "none") == "none" or GetConvar("steam_webapiKey", "none") == "") then
-        logError("STEAM_ERROR")
-        Config.critError = true
-    end
-    local versionfile = json.decode(LoadResourceFile(GetCurrentResourceName(), "/version.json"))
-    local fxversion = versionfile.testedFxServerVersion
-    local currentFxVersion = getServerVersion()
-    if currentFxVersion ~= nil and fxversion ~= nil then
-        if tonumber(currentFxVersion) < tonumber(fxversion) then
-            warnLog(("SonoranCAD has been tested with FXServer version %s, but you're running %s. Please update ASAP."):format(fxversion, currentFxVersion))
+
+        if Config.primaryIdentifier == "steam" and (GetConvar("steam_webapiKey", "none") == "none" or GetConvar("steam_webapiKey", "none") == "") then
+            logError("STEAM_ERROR")
+            Config.critError = true
         end
+
+        local versionRaw = LoadResourceFile(GetCurrentResourceName(), "/version.json")
+        local versionfile = versionRaw and json.decode(versionRaw) or nil
+        local fxversion = versionfile and versionfile.testedFxServerVersion or nil
+        local currentFxVersion = getServerVersion()
+        if currentFxVersion ~= nil and fxversion ~= nil then
+            if tonumber(currentFxVersion) < tonumber(fxversion) then
+                warnLog(("SonoranCAD has been tested with FXServer version %s, but you're running %s. Please update ASAP."):format(fxversion, currentFxVersion))
+            end
+        end
+
+        if GetResourceState("sonoran_updatehelper") == "started" then
+            ExecuteCommand("stop sonoran_updatehelper")
+        end
+
+        manuallySetUnitCache() -- set unit cache on startup
+    end, debug.traceback)
+
+    if not ok then
+        Config.critError = true
+        errorLog(("Startup initialization failed: %s"):format(tostring(err)))
     end
-    if GetResourceState("sonoran_updatehelper") == "started" then
-        ExecuteCommand("stop sonoran_updatehelper")
-    end
-    manuallySetUnitCache() -- set unit cache on startup
 end)
 
 exports("getCadVersion", function()
@@ -71,7 +92,6 @@ end)
 
 -- Metrics
 CreateThread(function()
-    registerApiType("HEARTBEAT", "general")
     while true do
         -- Wait a few seconds for server startup
         Wait(5000)
@@ -86,12 +106,15 @@ CreateThread(function()
             coreVersion = coreVersion,
             commId = Config.communityID,
             playerCount = playerCount,
-            serverId = Config.serverId,
+            serverId = tonumber(tonumber(Config.serverId)),
             fxVersion = getServerVersion(),
             plugins = plugins,
             ingressUrl = GetConvar("web_baseUrl", "")
         }
-        performApiRequest(payload, "HEARTBEAT", function() end)
+        local response = CadApiHeartbeat(payload)
+        if not response.success then
+            CadApiLogFailure("HEARTBEAT", response, payload)
+        end
         Wait(1000*60*60)
     end
 end)
@@ -146,7 +169,14 @@ function call911(caller, location, description, postal, plate, cb, silenceAlert,
     if deleteAfter then
         data['deleteAfter'] = deleteAfter
     end
-	exports['sonorancad']:performApiRequest(data, 'CALL_911', cb)
+    local response = CadApiCreateEmergencyCall(data)
+    if cb ~= nil then
+        local result = response.callId ~= nil and ("EMERGENCY CALL ADDED ID: %s"):format(response.callId)
+            or (response.success and json.encode(response.data or {}) or CadApiReasonText(response.reason))
+        cb(result, response.success == true)
+    elseif not response.success then
+        CadApiLogFailure('CALL_911', response, data)
+    end
 end
 
 RegisterNetEvent('SonoranScripts::Call911', function(caller, location, description, postal, plate, cb, silenceAlert, useCallLocation, deleteAfter)
@@ -160,17 +190,6 @@ dispatchOnline = false
 ActiveDispatchers = {}
 
 registerEndpoints = function()
-	exports['sonorancad']:registerApiType('MODIFY_BLIP', 'emergency')
-	exports['sonorancad']:registerApiType('ADD_BLIP', 'emergency')
-	exports['sonorancad']:registerApiType('REMOVE_BLIP', 'emergency')
-	exports['sonorancad']:registerApiType('GET_BLIPS', 'emergency')
-	exports['sonorancad']:registerApiType('MODIFY_BLIP', 'emergency')
-	exports['sonorancad']:registerApiType('CALL_911', 'emergency')
-	exports['sonorancad']:registerApiType('ADD_CALL_NOTE', 'emergency')
-	exports['sonorancad']:registerApiType('REMOVE_911', 'emergency')
-	exports['sonorancad']:registerApiType('LOOKUP', 'general')
-	exports['sonorancad']:registerApiType('SET_CALL_POSTAL', 'emergency')
-	exports['sonorancad']:registerApiType('GET_ACTIVE_UNITS', 'emergency')
 end
 addBlip = function(coords, colorHex, subType, toolTip, icon, dataTable, cb)
 	local data = {
@@ -190,50 +209,49 @@ addBlip = function(coords, colorHex, subType, toolTip, icon, dataTable, cb)
 			}
 		}
 	}
-	exports['sonorancad']:performApiRequest(data, 'ADD_BLIP', function(res)
-		if cb ~= nil then
-			cb(res)
-		end
-	end)
+    local response = CadApiCreateBlips(data)
+    if cb ~= nil then
+        cb(response.success and json.encode(response.data or {}) or CadApiReasonText(response.reason))
+    elseif not response.success then
+        CadApiLogFailure('ADD_BLIP', response, data)
+    end
 end
 addBlips = function(blips, cb)
-	exports['sonorancad']:performApiRequest(blips, 'ADD_BLIP', function(res)
-		if cb ~= nil then
-			cb(res)
-		end
-	end)
+    local response = CadApiCreateBlips(blips)
+    if cb ~= nil then
+        cb(response.success and json.encode(response.data or {}) or CadApiReasonText(response.reason))
+    elseif not response.success then
+        CadApiLogFailure('ADD_BLIP', response, blips)
+    end
 end
 removeBlip = function(ids, cb)
-	exports['sonorancad']:performApiRequest({
-		{
-			['ids'] = ids
-		}
-	}, 'REMOVE_BLIP', function(res)
-		if cb ~= nil then
-			cb(res)
-		end
-	end)
+    local payload = { ['ids'] = ids }
+    local response = CadApiDeleteBlips(payload)
+    if cb ~= nil then
+        cb(response.success and "OK" or CadApiReasonText(response.reason))
+    elseif not response.success then
+        CadApiLogFailure('REMOVE_BLIP', response, payload)
+    end
 end
 modifyBlipd = function(blipId, dataTable)
-	exports['sonorancad']:performApiRequest({
-		{
-			['id'] = blipId,
-			['data'] = dataTable
-		}
-	}, 'MODIFY_BLIP', function(_)
-	end)
+    local payload = {{
+        ['id'] = blipId,
+        ['data'] = dataTable
+    }}
+    local response = CadApiUpdateBlips(payload)
+    if not response.success then
+        CadApiLogFailure('MODIFY_BLIP', response, payload)
+    end
 end
 getBlips = function(cb)
-	local data = {
-		{
-			['serverId'] = GetConvar('sonoran_serverId', 1)
-		}
-	}
-	exports['sonorancad']:performApiRequest(data, 'GET_BLIPS', function(res)
-		if cb ~= nil then
-			cb(res)
-		end
-	end)
+    local response = CadApiGetBlips({
+        ['serverId'] = GetConvar('sonoran_serverId', 1)
+    })
+    if cb ~= nil then
+        cb(response.success and json.encode(response.data or {}) or CadApiReasonText(response.reason))
+    elseif not response.success then
+        CadApiLogFailure('GET_BLIPS', response, { serverId = GetConvar('sonoran_serverId', 1) })
+    end
 end
 removeWithSubtype = function(subType, cb)
 	getBlips(function(res)
@@ -280,103 +298,115 @@ call911 = function(caller, location, description, postal, plate, cb, coords, cus
     end
 
     -- Send the API request
-    exports['sonorancad']:performApiRequest({ payload }, 'CALL_911', cb)
+    local response = CadApiCreateEmergencyCall(payload)
+    if cb ~= nil then
+        local result = response.callId ~= nil and ("EMERGENCY CALL ADDED ID: %s"):format(response.callId)
+            or (response.success and json.encode(response.data or {}) or CadApiReasonText(response.reason))
+        cb(result, response.success == true)
+    elseif not response.success then
+        CadApiLogFailure('CALL_911', response, payload)
+    end
 end
 
 createDispatchCall = function(origin, status, priority, block, address, postal, title, code, primary, trackPrimary, description, notes, metaData, units, cb)
-    exports['sonorancad']:performApiRequest({
-        {
-            serverId = GetConvar('sonoran_serverId', 1),
-            origin = origin or 0,
-            status = status or 0,
-            priority = priority or 1,
-            block = block or "",
-            address = address or "",
-            postal = postal or "",
-            title = title or "New Call",
-            code = code or "",
-            primary = primary or 0,
-            trackPrimary = trackPrimary == nil and false or trackPrimary,
-            description = description or "",
-            notes = notes or {},         -- expects array of note objects if any
-            metaData = metaData or {},   -- optional extra metadata
-            units = units or {}          -- expects array of linked CAD community user IDs
-        }
-    }, "NEW_DISPATCH", cb)
+    local payload = {
+        serverId = GetConvar('sonoran_serverId', 1),
+        origin = origin or 0,
+        status = status or 0,
+        priority = priority or 1,
+        block = block or "",
+        address = address or "",
+        postal = postal or "",
+        title = title or "New Call",
+        code = code or "",
+        primary = primary or 0,
+        trackPrimary = trackPrimary == nil and false or trackPrimary,
+        description = description or "",
+        notes = notes or {},
+        metaData = metaData or {},
+        units = units or {}
+    }
+    local response = CadApiCreateDispatchCall(payload)
+    if cb ~= nil then
+        local result = response.callId ~= nil and ("NEW DISPATCH CREATED - ID: %s"):format(response.callId)
+            or (response.success and json.encode(response.data or {}) or CadApiReasonText(response.reason))
+        cb(result, response.success == true)
+    elseif not response.success then
+        CadApiLogFailure("NEW_DISPATCH", response, payload)
+    end
 end
 
 addTempBlipData = function(blipId, blipData, waitSeconds, returnToData)
-	exports['sonorancad']:performApiRequest({
-		{
-			['id'] = blipId,
-			['data'] = blipData
-		}
-	}, 'MODIFY_BLIP', function(_)
-
-	end)
+    local firstPayload = {{
+        ['id'] = blipId,
+        ['data'] = blipData
+    }}
+    local response = CadApiUpdateBlips(firstPayload)
+    if not response.success then
+        CadApiLogFailure('MODIFY_BLIP', response, firstPayload)
+    end
 
 	Citizen.CreateThread(function()
 		Citizen.Wait(waitSeconds * 1000)
-		exports['sonorancad']:performApiRequest({
-			{
-				['id'] = blipId,
-				['data'] = returnToData
-			}
-		}, 'MODIFY_BLIP', function(_)
-
-		end)
+        local payload = {{
+            ['id'] = blipId,
+            ['data'] = returnToData
+        }}
+        local delayedResponse = CadApiUpdateBlips(payload)
+        if not delayedResponse.success then
+            CadApiLogFailure('MODIFY_BLIP', delayedResponse, payload)
+        end
 	end)
 end
 addTempBlipColor = function(blipId, color, waitSeconds, returnToColor)
-	exports['sonorancad']:performApiRequest({
-		{
-			['id'] = blipId,
-			['color'] = color
-		}
-	}, 'MODIFY_BLIP', function(_)
-
-	end)
+    local firstPayload = {{
+        ['id'] = blipId,
+        ['color'] = color
+    }}
+    local response = CadApiUpdateBlips(firstPayload)
+    if not response.success then
+        CadApiLogFailure('MODIFY_BLIP', response, firstPayload)
+    end
 
 	Citizen.CreateThread(function()
 		Citizen.Wait(waitSeconds * 1000)
-		exports['sonorancad']:performApiRequest({
-			{
-				['id'] = blipId,
-				['color'] = returnToColor
-			}
-		}, 'MODIFY_BLIP', function(_)
-
-		end)
+        local payload = {{
+            ['id'] = blipId,
+            ['color'] = returnToColor
+        }}
+        local delayedResponse = CadApiUpdateBlips(payload)
+        if not delayedResponse.success then
+            CadApiLogFailure('MODIFY_BLIP', delayedResponse, payload)
+        end
 	end)
 end
 remove911 = function(callId)
-	exports['sonorancad']:performApiRequest({
-		{
-			['serverId'] = GetConvar('sonoran_serverId', 1),
-			['callId'] = callId
-		}
-	}, 'REMOVE_911', function(_)
-	end)
+    local response = CadApiDeleteEmergencyCall(callId, GetConvar('sonoran_serverId', 1))
+    if not response.success then
+        CadApiLogFailure('REMOVE_911', response, { serverId = GetConvar('sonoran_serverId', 1), callId = callId })
+    end
 end
 addCallNote = function(callId, caller)
-	exports['sonorancad']:performApiRequest({
-		{
-			['serverId'] = GetConvar('sonoran_serverId', 1),
-			['callId'] = callId,
-			['note'] = caller
-		}
-	}, 'ADD_CALL_NOTE', function(_)
-	end)
+    local payload = {
+        ['serverId'] = GetConvar('sonoran_serverId', 1),
+        ['callId'] = callId,
+        ['note'] = caller
+    }
+    local response = CadApiAddDispatchNote(payload)
+    if not response.success then
+        CadApiLogFailure('ADD_CALL_NOTE', response, payload)
+    end
 end
 setCallPostal = function(callId, postal)
-	exports['sonorancad']:performApiRequest({
-		{
-			['serverId'] = GetConvar('sonoran_serverId', 1),
-			['callId'] = callId,
-			['postal'] = postal
-		}
-	}, 'SET_CALL_POSTAL', function(_)
-	end)
+    local payload = {
+        ['serverId'] = GetConvar('sonoran_serverId', 1),
+        ['callId'] = callId,
+        ['postal'] = postal
+    }
+    local response = CadApiSetDispatchPostal(payload)
+    if not response.success then
+        CadApiLogFailure('SET_CALL_POSTAL', response, payload)
+    end
 end
 performLookup = function(plate, cb, options)
 	local data = {
@@ -408,11 +438,12 @@ performLookup = function(plate, cb, options)
 	if data.types == nil then
 		data.types = {2, 3, 4, 5}
 	end
-	exports['sonorancad']:performApiRequest({data}, 'LOOKUP', function(res)
-		if cb ~= nil then
-			cb(res)
-		end
-	end)
+    local response = CadApiLookup(data)
+    if cb ~= nil then
+        cb(response.success and json.encode(response.data or {}) or CadApiReasonText(response.reason))
+    elseif not response.success then
+        CadApiLogFailure('LOOKUP', response, data)
+    end
 end
 local function normalizeLookupStatusValue(status)
 	if status == nil then
@@ -504,20 +535,12 @@ getAllWarrantsAndBolos = function(options, cb)
 			limit = limit,
 			offset = currentOffset
 		}
-		exports['sonorancad']:performApiRequest({payload}, "LOOKUP_VALUE", function(res, ok)
-			if not ok then
-				cb(nil, {ok = false, error = res})
-				return
-			end
-			local decoded = res
-			if type(res) == "string" then
-				local success, parsed = pcall(json.decode, res)
-				if success then
-					decoded = parsed
-				else
-					decoded = {}
-				end
-			end
+        local response = CadApiLookupByValue(payload)
+        if not response.success then
+            cb(nil, {ok = false, error = response.reason})
+            return
+        end
+        local decoded = response.data or {}
 			local records = decoded
 			if type(decoded) ~= "table" then
 				records = {}
@@ -544,7 +567,6 @@ getAllWarrantsAndBolos = function(options, cb)
 			else
 				cb(results, {ok = true, pages = pagesFetched, limit = limit, offset = offset, statuses = statuses})
 			end
-		end)
 	end
 
 	fetchNextPage(offset)

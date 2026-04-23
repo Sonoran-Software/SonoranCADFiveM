@@ -15,8 +15,6 @@ if pluginConfig.enabled then
         RegisterNetEvent('ErsIntegration::OnAcceptedCalloutOffer')
         RegisterNetEvent('SonoranCAD::ErsIntegration::BuildChars')
         RegisterNetEvent('SonoranCAD::ErsIntegration::BuildVehs')
-        registerApiType('SET_AVAILABLE_CALLOUTS', 'emergency')
-        registerApiType('NEW_CHARACTER', 'civilian')
         local processedCalloutOffered = {}
         local processedCalloutAccepted = {}
         local processedPedData = {}
@@ -214,7 +212,7 @@ if pluginConfig.enabled then
                         plate = calloutData.VehiclePlate
                     end
                     local data = {
-                        ['serverId'] = Config.serverId,
+                        ['serverId'] = tonumber(Config.serverId),
                         ['isEmergency'] = true,
                         ['caller'] = caller,
                         ['location'] = location,
@@ -229,15 +227,18 @@ if pluginConfig.enabled then
                     if pluginConfig.clearRecordsAfter ~= 0 then
                         data.deleteAfterMinutes = pluginConfig.clearRecordsAfter
                     end
-                    performApiRequest({data}, 'CALL_911', function(response)
-                        local callId = string.match(response, "ID%s+(%d+)")
-                        if callId then
-                            processedCalloutOffered[uniqueKey] = {id = callId, timestamp = os.time()}
+                    local response = CadApiCreateEmergencyCall(data)
+                    if not response.success then
+                        errorLog("ERS emergency call creation failed: " .. CadApiReasonText(response.reason))
+                        return
+                    end
+                    local callId = response.callId
+                    if callId then
+                            processedCalloutOffered[uniqueKey] = {id = tostring(callId), timestamp = os.time()}
                             debugLog("Saved call ID: " .. processedCalloutOffered[uniqueKey].id)
-                        else
-                            debugLog("Could not extract call ID from response.")
-                        end
-                    end)
+                    else
+                        debugLog("Could not extract call ID from response.")
+                    end
                 end
             end)
         end
@@ -270,13 +271,16 @@ if pluginConfig.enabled then
                             return
                         end
                         local data = {
-                            ['serverId'] = Config.serverId,
+                            ['serverId'] = tonumber(Config.serverId),
                             ['callId'] = callId,
                             ['units'] = {unitId}
                         }
-                        performApiRequest({data}, 'ATTACH_UNIT', function(response)
-                            debugLog("Added unit to call: " .. response)
-                        end)
+                        local response = CadApiAttachUnitsToDispatchCall(data)
+                        if not response.success then
+                            CadApiLogFailure("ATTACH_UNIT", response, data)
+                        else
+                            debugLog("Added unit to call: OK")
+                        end
                     end
                 else
                     debugLog("Processing callout " .. calloutData.calloutId .. " for emergency call.")
@@ -299,7 +303,7 @@ if pluginConfig.enabled then
                         postal = calloutData.Postal
                     end
                     local data = {
-                        ['serverId'] = Config.serverId,
+                        ['serverId'] = tonumber(Config.serverId),
                         ['origin'] = 0,
                         ['status'] = 1,
                         ['priority'] = pluginConfig.callPriority,
@@ -319,23 +323,28 @@ if pluginConfig.enabled then
                     if pluginConfig.clearRecordsAfter ~= 0 then
                         data.deleteAfterMinutes = pluginConfig.clearRecordsAfter
                     end
-                    registerApiType("NEW_DISPATCH", "emergency")
-                    performApiRequest({data}, 'NEW_DISPATCH', function(response)
-                        local callId = response:match("ID: {?(%w+)}?")
-                        if callId then
+                    local response = CadApiCreateDispatchCall(data)
+                    if not response.success then
+                        errorLog("ERS dispatch creation failed: " .. CadApiReasonText(response.reason))
+                        return
+                    end
+                    local callId = response.callId
+                    if callId then
                             -- Save the callId in the processedCalloutOffered table using the unique key
-                            processedCalloutAccepted[uniqueKey] = {id = callId, timestamp = os.time()}
+                            processedCalloutAccepted[uniqueKey] = {id = tostring(callId), timestamp = os.time()}
                             if processedCalloutOffered[uniqueKey] ~= nil then
-                                local payload = { serverId = Config.serverId, callId = processedCalloutOffered[uniqueKey].id}
-                                performApiRequest({payload}, "REMOVE_911", function(resp)
-                                    debugLog("Remove status: "..tostring(resp))
-                                end)
+                                local payload = { serverId = tonumber(Config.serverId), callId = processedCalloutOffered[uniqueKey].id}
+                                local removeResponse = CadApiDeleteEmergencyCall(payload.callId, payload.serverId)
+                                if not removeResponse.success then
+                                    CadApiLogFailure("REMOVE_911", removeResponse, payload)
+                                else
+                                    debugLog("Remove status: OK")
+                                end
                             end
                             debugLog("Call ID " .. callId .. " saved for unique key: " .. uniqueKey)
-                        else
-                            debugLog("Failed to extract callId from response: " .. response)
-                        end
-                    end)
+                    else
+                        debugLog("Failed to extract callId from response: " .. json.encode(response.data or {}))
+                    end
                 end
             end)
         end
@@ -367,21 +376,16 @@ if pluginConfig.enabled then
                 data.deleteAfterMinutes = pluginConfig.clearRecordsAfter
             end
             data.replaceValues = generateReplaceValues(pedData, pluginConfig.customRecords.civilianValues)
-            performApiRequest({data}, 'NEW_CHARACTER', function(response)
-                local success, response = pcall(json.decode, response)
-                if success and type(response) == "table" and response.id ~= nil then
-                    local recordId = response.id
-                    if recordId then
-                        -- Save the recordId in the processedPedData table using the unique key
-                        processedPedData[uniqueKey] = {id = recordId, timestamp = os.time()}
-                        debugLog("Record ID " .. recordId .. " saved for unique key: " .. uniqueKey)
-                    else
-                        debugLog("Failed to extract recordId from response: " .. json.encode(response))
-                    end
-                else
-                    warnLog("Invalid or missing 'id' in response")
-                end
-            end)
+            local characterResponse = CadApiCreateRecord(data)
+            if characterResponse.success and characterResponse.recordId ~= nil then
+                local recordId = characterResponse.recordId
+                processedPedData[uniqueKey] = {id = recordId, timestamp = os.time()}
+                debugLog("Record ID " .. recordId .. " saved for unique key: " .. uniqueKey)
+            elseif characterResponse.success then
+                warnLog("Invalid or missing 'id' in response")
+            else
+                CadApiLogFailure("NEW_CHARACTER", characterResponse, data)
+            end
             -- LICENSE RECORD
             for _, v in pairs (pluginConfig.customRecords.licenseTypeConfigs) do
                 if pedData[v.license] ~= "No license" then
@@ -395,8 +399,10 @@ if pluginConfig.enabled then
                     end
                     licenseData.replaceValues = generateLicenseReplaceValues(pedData, pluginConfig.customRecords.licenseRecordValues, v)
                     licenseData.replaceValues[pluginConfig.customRecords.licenseTypeField] = v.type
-                    performApiRequest({licenseData}, 'NEW_RECORD', function(_)
-                    end)
+                    local response = CadApiCreateRecord(licenseData)
+                    if not response.success then
+                        CadApiLogFailure("NEW_RECORD", response, licenseData)
+                    end
                 end
             end
             -- WARRANT RECORD
@@ -424,8 +430,10 @@ if pluginConfig.enabled then
                 end
                 boloData.replaceValues[pluginConfig.customRecords.warrantDescription] = pedData.FlagsOrMarkers.flag_description or ""
                 boloData.replaceValues[pluginConfig.customRecords.warrantFlags] = json.encode(warrantTypes)
-                performApiRequest({boloData}, 'NEW_RECORD', function(res)
-                end)
+                local response = CadApiCreateRecord(boloData)
+                if not response.success then
+                    CadApiLogFailure("NEW_RECORD", response, boloData)
+                end
             end
         end)
         AddEventHandler('SonoranCAD::ErsIntegration::BuildVehs', function(vehData)
@@ -451,21 +459,16 @@ if pluginConfig.enabled then
                 data.deleteAfterMinutes = pluginConfig.clearRecordsAfter
             end
             data.replaceValues = generateReplaceValues(vehData, pluginConfig.customRecords.vehicleRegistrationValues)
-            performApiRequest({data}, 'NEW_RECORD', function(response)
-                local success, response = pcall(json.decode, response)
-                if success and type(response) == "table" and response.id ~= nil then
-                    local recordId = response.id
-                    if recordId then
-                        -- Save the recordId in the processedVehData table using the unique key
-                        processedVehData[uniqueKey] = {id = recordId, timestamp = os.time()}
-                        debugLog("Record ID " .. recordId .. " saved for unique key: " .. uniqueKey)
-                    else
-                        debugLog("Failed to extract recordId from response: " .. json.encode(response))
-                    end
-                else
-                    warnLog("Invalid or missing 'id' in response")
-                end
-            end)
+            local recordResponse = CadApiCreateRecord(data)
+            if recordResponse.success and recordResponse.recordId ~= nil then
+                local recordId = recordResponse.recordId
+                processedVehData[uniqueKey] = {id = recordId, timestamp = os.time()}
+                debugLog("Record ID " .. recordId .. " saved for unique key: " .. uniqueKey)
+            elseif recordResponse.success then
+                warnLog("Invalid or missing 'id' in response")
+            else
+                CadApiLogFailure("NEW_RECORD", recordResponse, data)
+            end
             if vehData.bolo then
                 local boloData = {
                     ['user'] = '00000000-0000-0000-0000-000000000000',
@@ -481,8 +484,10 @@ if pluginConfig.enabled then
                 for k, v in pairs(vehReplaceData) do
                     boloData.replaceValues[k] = v
                 end
-                performApiRequest({boloData}, 'NEW_RECORD', function(res)
-                end)
+                local response = CadApiCreateRecord(boloData)
+                if not response.success then
+                    CadApiLogFailure("NEW_RECORD", response, boloData)
+                end
             end
         end)
         CreateThread(function()
@@ -510,13 +515,16 @@ if pluginConfig.enabled then
                 table.insert(ersCallouts, data)
             end
             local data = {
-                ['serverId'] = Config.serverId,
+                ['serverId'] = tonumber(Config.serverId),
                 ['callouts'] = ersCallouts
             }
             debugLog('Loaded ' .. #ersCallouts .. ' ERS callouts.')
-            performApiRequest(data, 'SET_AVAILABLE_CALLOUTS', function(response)
+            local response = CadApiSetAvailableCallouts(data)
+            if response.success then
                 debugLog('ERS callouts sent to CAD.')
-            end)
+            else
+                CadApiLogFailure('SET_AVAILABLE_CALLOUTS', response, data)
+            end
         end)
         --[[
             PUSH EVENT HANDLER

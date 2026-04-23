@@ -116,8 +116,11 @@ if pluginConfig.enabled then
     end
 
     local function IsPlayerOnDuty(player)
+        print("checking duty for player "..player.." with method "..pluginConfig.unitDutyMethod)
         if pluginConfig.unitDutyMethod == "incad" then
+            print("GetUnitByPlayerId(tostring(player)) = ", json.encode(GetUnitByPlayerId(tostring(player))))
             if GetUnitByPlayerId(tostring(player)) ~= nil then
+                print("player is on duty by incad method")
                 return true
             else
                 return false
@@ -279,6 +282,7 @@ if pluginConfig.enabled then
         if metadata ~= nil and metadata.callerPlayerId ~= nil then
             CallOriginMapping[call.callId] = metadata.callerPlayerId
         end
+        print('shouldNotifyUnits() = '..tostring(shouldNotifyUnits()))
         if shouldNotifyUnits() then
             local type = call.emergency and pluginConfig.civilCallType or pluginConfig.emergencyCallType
             local messageTemplate = pluginConfig.incomingCallMessage
@@ -334,10 +338,6 @@ if pluginConfig.enabled then
     end)
 
     --Officer response
-    registerApiType("NEW_DISPATCH", "emergency")
-    registerApiType("ATTACH_UNIT", "emergency")
-    registerApiType("REMOVE_911", "emergency")
-    registerApiType("SET_CALL_POSTAL", "emergency")
     RegisterCommand(pluginConfig.respondCommandName, function(source, args, rawCommand)
         local source = tonumber(source)
         local callId = args[1]
@@ -429,7 +429,7 @@ if pluginConfig.enabled then
                 metaData['y'] = LocationCache[source].coordinates.y
                 metaData['z'] = LocationCache[source].coordinates.z
             end
-            local payload = {   serverId = Config.serverId,
+            local payload = {   serverId = tonumber(Config.serverId),
                                 origin = 0,
                                 status = 1,
                                 priority = 2,
@@ -446,26 +446,33 @@ if pluginConfig.enabled then
                                 metaData = metaData,
                                 units = { communityUserId }
             }
-            performApiRequest({payload}, "NEW_DISPATCH", function(response)
-                debugLog("Call creation OK")
-                if response:match("NEW DISPATCH CREATED - ID:") then
-                    TriggerEvent("SonoranCAD::dispatchnotify:UnitRespond", source, response:match("%d+"))
-                    EmergencyToCallMapping[call.callId] = tonumber(response:match("%d+"))
-                end
-                -- remove the 911 call
-                local payload = { serverId = Config.serverId, callId = call.callId }
-                performApiRequest({payload}, "REMOVE_911", function(resp)
-                    debugLog("Remove status: "..tostring(resp))
-                end)
-            end)
+            local response = CadApiCreateDispatchCall(payload)
+            if not response.success then
+                errorLog("Dispatch creation failed: " .. CadApiReasonText(response.reason))
+                return
+            end
+            debugLog("Call creation OK")
+            if response.callId ~= nil then
+                TriggerEvent("SonoranCAD::dispatchnotify:UnitRespond", source, response.callId)
+                EmergencyToCallMapping[call.callId] = tonumber(response.callId)
+            end
+            local removeResponse = CadApiDeleteEmergencyCall(call.callId, tonumber(Config.serverId))
+            if not removeResponse.success then
+                CadApiLogFailure("REMOVE_911", removeResponse, { serverId = tonumber(Config.serverId), callId = call.callId })
+            else
+                debugLog("Remove status: OK")
+            end
         else
             -- Call already exists
             debugLog("Found Call. Attaching!")
-            local data = {callId = call.callId, units = {communityUserId}, serverId = Config.serverId}
-            performApiRequest({data}, "ATTACH_UNIT", function(res)
-                debugLog("Attach OK: "..tostring(res))
+            local data = {callId = call.callId, units = {communityUserId}, serverId = tonumber(Config.serverId)}
+            local response = CadApiAttachUnitsToDispatchCall(data)
+            if not response.success then
+                CadApiLogFailure("ATTACH_UNIT", response, data)
+            else
+                debugLog("Attach OK: "..tostring(response.data and json.encode(response.data) or "OK"))
                 SendMessage("debug", source, "You have been attached to the call.")
-            end)
+            end
         end
     end)
 
@@ -759,9 +766,12 @@ if pluginConfig.enabled then
         data[1] = {
             callId = callid,
             postal = clpostal,
-            serverId = Config.serverId
+            serverId = tonumber(Config.serverId)
         }
-        performApiRequest(data, 'SET_CALL_POSTAL', function() end)
+        local response = CadApiSetDispatchPostal(data[1])
+        if not response.success then
+            CadApiLogFailure("SET_CALL_POSTAL", response, data[1])
+        end
     end)
 
     AddEventHandler("SonoranCAD::pushevents:DispatchNote", function(call, data)
@@ -824,7 +834,6 @@ if pluginConfig.enabled then
         end
     end)
 
-    registerApiType("ADD_CALL_NOTE", "emergency")
     RegisterNetEvent("SonoranCAD::dispatchnotify:AddNoteToCall")
     AddEventHandler("SonoranCAD::dispatchnotify:AddNoteToCall", function(callId, note)
         local source = source
@@ -833,8 +842,11 @@ if pluginConfig.enabled then
         if call == nil then
             TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^2Dispatch ^0] ", "Unable to find call."}})
         else
-            local payload = { serverId = Config.serverId, note = note, callId = callId }
-            performApiRequest({payload}, "ADD_CALL_NOTE", function(res) end)
+            local payload = { serverId = tonumber(Config.serverId), note = note, callId = callId }
+            local response = CadApiAddDispatchNote(payload)
+            if not response.success then
+                CadApiLogFailure("ADD_CALL_NOTE", response, payload)
+            end
         end
     end)
     if isPluginLoaded("wraithv2") then

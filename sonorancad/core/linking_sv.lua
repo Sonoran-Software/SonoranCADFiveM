@@ -125,6 +125,40 @@ local function coerce_link_data(data)
     return data
 end
 
+local function parse_link_reason_data(data)
+    if type(data) == "string" then
+        local ok, decoded = pcall(json.decode, data)
+        if ok and type(decoded) == "table" then
+            return decoded
+        end
+    end
+
+    if type(data) == "table" then
+        return data
+    end
+
+    return nil
+end
+
+local function is_unlinked_link_check_reason(reason)
+    local parsed = parse_link_reason_data(reason)
+    if type(parsed) ~= "table" then
+        return false
+    end
+
+    if parsed.linked == false then
+        return true
+    end
+
+    -- Some CAD responses currently return {"success":false} for "not linked"
+    -- instead of a successful payload with linked=false.
+    if parsed.success == false and parsed.accountUuid == nil and parsed.uuid == nil and parsed.error == nil and parsed.message == nil then
+        return true
+    end
+
+    return false
+end
+
 local function parse_link_response(data)
     local parsed = coerce_link_data(data)
     local code = parsed.code or parsed.linkCode or parsed.link_code or parsed.idCode
@@ -200,6 +234,16 @@ local function refresh_link_status_by_identifier(identifier, identifier_type, co
 
     local response = CadApiCheckCommunityLink(build_link_payload(identifier, identifier_type, code))
     if not response.success then
+        if is_unlinked_link_check_reason(response.reason) then
+            return update_link_cache(identifier, identifier_type, {
+                linked = false,
+                code = code,
+                url = cached and cached.url or nil,
+                communityUserId = cached and cached.communityUserId or nil,
+                raw = parse_link_reason_data(response.reason) or response.reason
+            })
+        end
+
         warnLog(("CAD link status check failed for %s (%s): %s"):format(
             tostring(identifier),
             tostring(identifier_type),
@@ -233,13 +277,34 @@ local function create_link_session_by_identifier(identifier, identifier_type, co
         return nil, response.reason
     end
 
+    debugLog(("[link] create-community-link raw response for %s (%s): %s"):format(
+        tostring(identifier),
+        tostring(identifier_type),
+        json.encode(response.data)
+    ))
+
     local parsed = parse_link_response(response.data)
-    local cached = update_link_cache(identifier, identifier_type, parsed)
-    if not cached.linked and is_non_empty_string(cached.code) then
-        cached = refresh_link_status_by_identifier(identifier, identifier_type, cached.code)
+    debugLog(("[link] create-community-link parsed result for %s (%s): code=%s url=%s linked=%s communityUserId=%s"):format(
+        tostring(identifier),
+        tostring(identifier_type),
+        tostring(parsed.code),
+        tostring(parsed.url),
+        tostring(parsed.linked),
+        tostring(parsed.communityUserId)
+    ))
+    if not is_non_empty_string(parsed.code) then
+        warnLog(("CAD link creation for %s (%s) did not return a link code: %s"):format(
+            tostring(identifier),
+            tostring(identifier_type),
+            json.encode(response.data)
+        ))
+        return nil, "CAD did not return a link code."
     end
 
-    return cached
+    -- The create-community-link endpoint returns the short-lived code that the
+    -- player must use immediately. Do not overwrite it with a follow-up check
+    -- before the client has received it.
+    return update_link_cache(identifier, identifier_type, parsed)
 end
 
 local function build_player_session(identifier, identifier_type, status, existing_session)
@@ -359,9 +424,9 @@ end
 
 -- Read-only export for third-party resources that need the configured CAD server ID.
 function GetServerId()
-    local server_id = tonumber(Config.serverId) or tonumber(GetConvar("sonoran_serverId", ""))
+    local server_id = tonumber(tonumber(Config.serverId)) or tonumber(GetConvar("sonoran_serverId", ""))
     if server_id == nil then
-        warnLog("getServerId export returned nil because Config.serverId is not configured.")
+        warnLog("getServerId export returned nil because tonumber(Config.serverId) is not configured.")
         return nil
     end
     return server_id
@@ -496,6 +561,12 @@ AddEventHandler("SonoranCAD::links:Open", function()
         return
     end
 
+    debugLog(("[link] sending open payload to player %s: code=%s url=%s linked=%s"):format(
+        tostring(player),
+        tostring(session.linkCode),
+        tostring(session.linkUrl),
+        tostring(session.linked == true)
+    ))
     TriggerClientEvent("SonoranCAD::links:OpenResult", player, {
         ok = true,
         code = session.linkCode,

@@ -117,10 +117,6 @@ function Client:_resolve_server_id(server_id)
     resolved = self._config.defaultServerId
   end
 
-  if type(resolved) == "string" then
-    resolved = tonumber(resolved)
-  end
-
   self:_assert_positive_integer(resolved, "serverId")
   return resolved
 end
@@ -251,17 +247,56 @@ local function create_client(config, adapter)
     error("Adapter is missing one or more required functions.")
   end
 
+  local product = config and config.product
+  if product == nil then
+    error("product is required when instancing.")
+  end
+
+  if product ~= 0 and product ~= 1 and product ~= 2 then
+    error("Only productEnums.CAD, productEnums.CMS, and productEnums.RADIO are currently supported in Sonoran.lua.")
+  end
+
   local instance = setmetatable({
     _adapter = adapter,
     _config = {
       apiKey = config and config.apiKey or nil,
       communityId = config and config.communityId or nil,
-      apiUrl = trim_trailing_slashes(config and config.apiUrl or "https://api.sonorancad.com"),
+      apiUrl = trim_trailing_slashes(config and config.apiUrl or (product == 2 and "https://api.sonoranradio.com" or product == 1 and "https://api.sonorancms.com" or "https://api.sonorancad.com")),
       defaultServerId = config and config.defaultServerId or 1,
       headers = shallow_copy(config and config.headers or {}),
       timeoutMs = config and config.timeoutMs or 30000
     }
   }, Client)
+
+  local cad_proxy = setmetatable({}, {
+    __index = function(_, key)
+      local value = instance[key]
+      if type(value) == "function" then
+        return function(_, ...)
+          return value(instance, ...)
+        end
+      end
+
+      return value
+    end
+  })
+
+  instance.cad = cad_proxy
+  local cms_proxy = setmetatable({}, {
+    __index = function(_, key)
+      local value = instance[key]
+      if type(value) == "function" then
+        return function(_, ...)
+          return value(instance, ...)
+        end
+      end
+
+      return value
+    end
+  })
+
+  instance.cms = cms_proxy
+  instance.radio = cad_proxy
 
   instance.getLoginPageV2 = function(self, params)
     params = params or {}
@@ -274,6 +309,9 @@ local function create_client(config, adapter)
     })
   end
 
+  instance.checkApiIdV2 = function(self, api_id)
+    return self:_request("GET", "v2/general/api-ids/" .. self:_encode_path_segment(api_id))
+  end
   instance.applyPermissionKeyV2 = function(self, data)
     return self:_request("POST", "v2/general/permission-keys/applications", { body = data })
   end
@@ -282,6 +320,9 @@ local function create_client(config, adapter)
   end
   instance.setPenalCodesV2 = function(self, codes)
     return self:_request("PUT", "v2/general/penal-codes", { body = { codes = codes } })
+  end
+  instance.setApiIdsV2 = function(self, data)
+    return self:_request("PUT", "v2/general/api-ids", { body = data })
   end
   instance.getTemplatesV2 = function(self, record_type_id)
     if record_type_id ~= nil then
@@ -327,9 +368,6 @@ local function create_client(config, adapter)
   end
   instance.setAccountPermissionsV2 = function(self, data)
     return self:_request("PATCH", "v2/general/accounts/permissions", { body = data })
-  end
-  instance.setApiIdsV2 = function(self, data)
-    return self:_request("PUT", "v2/general/api-ids", { body = data })
   end
   instance.heartbeatV2 = function(self, server_id, player_count)
     local resolved_server_id = self:_resolve_server_id(server_id)
@@ -436,7 +474,7 @@ local function create_client(config, adapter)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
     return self:_request("DELETE", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/units/kick", {
       body = {
-        communityUserId = data and data.communityUserId or nil,
+        apiId = data and data.apiId or nil,
         reason = data and data.reason or nil
       }
     })
@@ -611,6 +649,263 @@ local function create_client(config, adapter)
     return self:_request("DELETE", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/blips", {
       body = { ids = ids }
     })
+  end
+
+  instance.getCommunityChannelsV2 = function(self, server_id)
+    local resolved_server_id = self:_resolve_server_id(server_id)
+    return self:_request("GET", "v2/servers/" .. tostring(resolved_server_id) .. "/channels")
+  end
+  instance.getConnectedUsersV2 = function(self, server_id)
+    local resolved_server_id = self:_resolve_server_id(server_id)
+    return self:_request("GET", "v2/servers/" .. tostring(resolved_server_id) .. "/connected-users")
+  end
+  instance.getConnectedUserV2 = function(self, room_id, identity, server_id)
+    local resolved_server_id = self:_resolve_server_id(server_id)
+    self:_assert_positive_integer(room_id, "roomId")
+    return self:_request("GET", "v2/servers/" .. tostring(resolved_server_id) .. "/rooms/" .. tostring(room_id) .. "/users/" .. self:_encode_path_segment(identity))
+  end
+  instance.setUserChannelsV2 = function(self, room_id, identity, options, server_id)
+    local resolved_server_id = self:_resolve_server_id(server_id)
+    self:_assert_positive_integer(room_id, "roomId")
+    return self:_request("PATCH", "v2/servers/" .. tostring(resolved_server_id) .. "/rooms/" .. tostring(room_id) .. "/users/" .. self:_encode_path_segment(identity) .. "/channels", {
+      body = shallow_copy(options or {})
+    })
+  end
+  instance.setUserDisplayNameV2 = function(self, data)
+    local resolved_server_id = self:_resolve_server_id(data and data.serverId)
+    return self:_request("PATCH", "v2/servers/" .. tostring(resolved_server_id) .. "/users/display-name", {
+      body = strip_keys(data, { "serverId" })
+    })
+  end
+  instance.approveMembersV2 = function(self, acc_ids, server_id)
+    local resolved_server_id = self:_resolve_server_id(server_id)
+    return self:_request("POST", "v2/servers/" .. tostring(resolved_server_id) .. "/members/approve", {
+      body = { accIds = acc_ids }
+    })
+  end
+  instance.kickMembersV2 = function(self, acc_ids, server_id)
+    local resolved_server_id = self:_resolve_server_id(server_id)
+    return self:_request("POST", "v2/servers/" .. tostring(resolved_server_id) .. "/members/kick", {
+      body = { accIds = acc_ids }
+    })
+  end
+  instance.banMembersV2 = function(self, acc_ids, server_id)
+    local resolved_server_id = self:_resolve_server_id(server_id)
+    return self:_request("POST", "v2/servers/" .. tostring(resolved_server_id) .. "/members/ban", {
+      body = { accIds = acc_ids }
+    })
+  end
+  instance.setMemberDisplayNamesV2 = function(self, acc_nicknames, server_id)
+    local resolved_server_id = self:_resolve_server_id(server_id)
+    return self:_request("PATCH", "v2/servers/" .. tostring(resolved_server_id) .. "/members/display-names", {
+      body = { accNicknames = acc_nicknames }
+    })
+  end
+  instance.setMemberPermissionsV2 = function(self, user_perms, server_id)
+    local resolved_server_id = self:_resolve_server_id(server_id)
+    return self:_request("PATCH", "v2/servers/" .. tostring(resolved_server_id) .. "/members/permissions", {
+      body = { userPerms = user_perms }
+    })
+  end
+  instance.getServerSubscriptionFromIpV2 = function(self)
+    return self:_request("GET", "v2/server-subscriptions/by-ip", {
+      authenticated = false
+    })
+  end
+  instance.setServerIpV2 = function(self, data)
+    local resolved_server_id = self:_resolve_server_id(data and data.serverId)
+    return self:_request("POST", "v2/servers/" .. tostring(resolved_server_id) .. "/server-ip", {
+      body = strip_keys(data, { "serverId" })
+    })
+  end
+  instance.setInGameSpeakerLocationsV2 = function(self, locations, server_id)
+    local resolved_server_id = self:_resolve_server_id(server_id)
+    return self:_request("PUT", "v2/servers/" .. tostring(resolved_server_id) .. "/speakers", {
+      body = { locations = locations }
+    })
+  end
+  instance.playToneV2 = function(self, room_id, tones, play_to, server_id)
+    local resolved_server_id = self:_resolve_server_id(server_id)
+    self:_assert_positive_integer(room_id, "roomId")
+    return self:_request("POST", "v2/servers/" .. tostring(resolved_server_id) .. "/tones/play", {
+      body = {
+        roomId = room_id,
+        tones = tones,
+        playTo = play_to
+      }
+    })
+  end
+
+  instance.getCommunityV2 = function(self)
+    return self:_request("GET", "v2/community")
+  end
+  instance.getSubVersionV2 = function(self)
+    return self:_request("GET", "v2/community/sub-version")
+  end
+  instance.lookupCommunityV2 = function(self, query)
+    return self:_request("GET", "v2/community/lookup", { query = query })
+  end
+  instance.getDepartmentsV2 = function(self)
+    return self:_request("GET", "v2/community/departments")
+  end
+  instance.getProfileFieldsV2 = function(self)
+    return self:_request("GET", "v2/community/profile-fields")
+  end
+  instance.getClockInTypesV2 = function(self)
+    return self:_request("GET", "v2/community/clockin-types")
+  end
+  instance.getCustomLogTypesV2 = function(self)
+    return self:_request("GET", "v2/community/custom-log-types")
+  end
+  instance.getPromotionFlowsV2 = function(self)
+    return self:_request("GET", "v2/community/promotion-flows")
+  end
+  instance.triggerPromotionFlowsV2 = function(self, data)
+    return self:_request("POST", "v2/community/promotion-flows/trigger", { body = data })
+  end
+  instance.undoRankChangeV2 = function(self, undo_id, data)
+    return self:_request("POST", "v2/community/rank-changes/" .. self:_encode_path_segment(undo_id) .. "/undo", { body = data or {} })
+  end
+  instance.createShortUrlV2 = function(self, data)
+    return self:_request("POST", "v2/community/short-urls", { body = data })
+  end
+  instance.getAccountsV2 = function(self, query)
+    return self:_request("GET", "v2/community/accounts", { query = query })
+  end
+  instance.searchAccountsV2 = function(self, query)
+    return self:_request("GET", "v2/community/accounts/search", { query = query })
+  end
+  instance.getAccountV2 = function(self, account_id)
+    return self:_request("GET", "v2/community/accounts/" .. self:_encode_path_segment(account_id))
+  end
+  instance.getAccountRanksV2 = function(self, account_id)
+    return self:_request("GET", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/ranks")
+  end
+  instance.getAccountIdentifiersV2 = function(self, account_id)
+    return self:_request("GET", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/identifiers")
+  end
+  instance.registerAccountIdentifiersV2 = function(self, account_id, data)
+    return self:_request("POST", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/identifiers", { body = data })
+  end
+  instance.setAccountNameV2 = function(self, account_id, data)
+    return self:_request("PATCH", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/name", { body = data })
+  end
+  instance.setAccountRanksV2 = function(self, account_id, data)
+    return self:_request("PATCH", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/ranks", { body = data })
+  end
+  instance.editProfileFieldsV2 = function(self, account_id, data)
+    return self:_request("PATCH", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/profile-fields", { body = data })
+  end
+  instance.clockAccountV2 = function(self, account_id, data)
+    return self:_request("POST", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/clock", { body = data })
+  end
+  instance.getCurrentClockInV2 = function(self, account_id)
+    return self:_request("GET", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/clock/current")
+  end
+  instance.getLatestActivityV2 = function(self, account_id, query)
+    return self:_request("GET", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/activity/latest", { query = query })
+  end
+  instance.forceSyncV2 = function(self, account_id, data)
+    return self:_request("POST", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/sync", { body = data or {} })
+  end
+  instance.getServersV2 = function(self)
+    return self:_request("GET", "v2/community/servers")
+  end
+  instance.setServersV2 = function(self, data)
+    return self:_request("PUT", "v2/community/servers", { body = data })
+  end
+  instance.addServersV2 = function(self, data)
+    return self:_request("POST", "v2/community/servers", { body = data })
+  end
+  instance.getAceConfigV2 = function(self, server_id)
+    return self:_request("GET", "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/ace-config")
+  end
+  instance.setAceConfigV2 = function(self, server_id, data)
+    return self:_request("PATCH", "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/ace-config", { body = data })
+  end
+  instance.setServerTypeV2 = function(self, server_id, data)
+    return self:_request("PATCH", "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/type", { body = data })
+  end
+  instance.verifyWhitelistV2 = function(self, server_id, data)
+    return self:_request("POST", "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/whitelist/check", { body = data })
+  end
+  instance.getWhitelistV2 = function(self, server_id)
+    return self:_request("GET", "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/whitelist")
+  end
+  instance.createActivityV2 = function(self, server_id, data)
+    return self:_request("POST", "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/activity", { body = data or {} })
+  end
+  instance.startActivityV2 = function(self, server_id, data)
+    return self:_request("POST", "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/activity/start", { body = data or {} })
+  end
+  instance.rsvpEventV2 = function(self, event_id, data)
+    return self:_request("POST", "v2/community/events/" .. self:_encode_path_segment(event_id) .. "/rsvps", { body = data })
+  end
+  instance.changeFormStageV2 = function(self, form_id, data)
+    return self:_request("PATCH", "v2/community/forms/" .. self:_encode_path_segment(form_id) .. "/stage", { body = data })
+  end
+  instance.getFormSubmissionsV2 = function(self, template_id, query)
+    return self:_request("GET", "v2/community/forms/" .. self:_encode_path_segment(template_id) .. "/submissions", { query = query })
+  end
+  instance.getFormLockV2 = function(self, template_id)
+    return self:_request("GET", "v2/community/forms/" .. self:_encode_path_segment(template_id) .. "/lock")
+  end
+  instance.setFormLockV2 = function(self, template_id, data)
+    return self:_request("PATCH", "v2/community/forms/" .. self:_encode_path_segment(template_id) .. "/lock", { body = data })
+  end
+  instance.getSubmissionV2 = function(self, submission_id)
+    return self:_request("GET", "v2/community/forms/submissions/" .. self:_encode_path_segment(submission_id))
+  end
+  instance.getRosterV2 = function(self, roster_id, query)
+    return self:_request("GET", "v2/community/rosters/" .. self:_encode_path_segment(roster_id), { query = query })
+  end
+  instance.getDisciplinaryPointsV2 = function(self, account_id)
+    return self:_request("GET", "v2/community/disciplinary/accounts/" .. self:_encode_path_segment(account_id) .. "/points")
+  end
+  instance.getDisciplinaryRecordsV2 = function(self, account_id)
+    return self:_request("GET", "v2/community/disciplinary/accounts/" .. self:_encode_path_segment(account_id) .. "/records")
+  end
+  instance.addDisciplinaryRecordV2 = function(self, account_id, data)
+    return self:_request("POST", "v2/community/disciplinary/accounts/" .. self:_encode_path_segment(account_id) .. "/records", { body = data })
+  end
+  instance.setDisciplinaryRecordPointsV2 = function(self, record_id, data)
+    return self:_request("PATCH", "v2/community/disciplinary/records/" .. self:_encode_path_segment(record_id) .. "/points", { body = data })
+  end
+  instance.setDisciplinaryRecordReasonV2 = function(self, record_id, data)
+    return self:_request("PATCH", "v2/community/disciplinary/records/" .. self:_encode_path_segment(record_id) .. "/reason", { body = data })
+  end
+  instance.setDisciplinaryRecordStatusV2 = function(self, record_id, data)
+    return self:_request("PATCH", "v2/community/disciplinary/records/" .. self:_encode_path_segment(record_id) .. "/status", { body = data })
+  end
+  instance.getOnlinePlayersV2 = function(self, query)
+    return self:_request("GET", "v2/community/erlc/players/online", { query = query })
+  end
+  instance.getPlayerQueueV2 = function(self, query)
+    return self:_request("GET", "v2/community/erlc/players/queue", { query = query })
+  end
+  instance.addErlcRecordV2 = function(self, data)
+    return self:_request("POST", "v2/community/erlc/records", { body = data })
+  end
+  instance.executeErlcCommandV2 = function(self, data)
+    return self:_request("POST", "v2/community/erlc/commands", { body = data })
+  end
+  instance.lockTeamV2 = function(self, data)
+    return self:_request("POST", "v2/community/erlc/teams/lock", { body = data })
+  end
+  instance.unlockTeamV2 = function(self, data)
+    return self:_request("POST", "v2/community/erlc/teams/unlock", { body = data })
+  end
+  instance.getCurrentSessionV2 = function(self, server_id)
+    return self:_request("GET", "v2/community/sessions/current", { query = { serverId = self:_resolve_server_id(server_id) } })
+  end
+  instance.startSessionV2 = function(self, data)
+    return self:_request("POST", "v2/community/sessions", { body = data })
+  end
+  instance.stopSessionV2 = function(self, data)
+    return self:_request("PATCH", "v2/community/sessions", { body = data })
+  end
+  instance.cancelSessionV2 = function(self, data)
+    return self:_request("DELETE", "v2/community/sessions", { body = data })
   end
 
   return instance

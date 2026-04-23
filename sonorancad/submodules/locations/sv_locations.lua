@@ -189,6 +189,10 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
                 debugLog(("UNIT_LOCATION: Skipped %s (invalid coordinates payload: %s)"):format(communityUserId, tostring(position)))
                 return
             end
+            if type(currentLocation) ~= "string" or currentLocation == "" then
+                debugLog(("UNIT_LOCATION: Skipped %s (missing location text during join/update)"):format(communityUserId))
+                return
+            end
             local vehiclePayload = buildVehiclePayload(vehicleType, lightsOn)
             local lastSent = LastSent[communityUserId]
             local lastCoords = lastSent and lastSent.coordinates or nil

@@ -18,12 +18,6 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
 
 
         if Config.apiVersion > 3 then
-            -- Register Api Types
-            registerApiType("ADD_BLIP", "emergency")
-            registerApiType("MODIFY_BLIP", "emergency")
-            registerApiType("REMOVE_BLIP", "emergency")
-            registerApiType("GET_BLIPS", "emergency")
-
             BlipMan = {
                 addBlip = function(coords, radius, colorHex, subType, toolTip, icon, dataTable, cb)
                     local data = {{
@@ -43,48 +37,51 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
                         }
                     }}
 
-                    performApiRequest(data, "ADD_BLIP", function(res)
-                        if cb ~= nil then
-                            cb(res)
-                        end
-                    end)
+                    local response = CadApiCreateBlips(data)
+                    if not response.success then
+                        CadApiLogFailure("ADD_BLIP", response, data)
+                    elseif cb ~= nil then
+                        cb(json.encode(response.data))
+                    end
                 end,
 
                 addBlips = function(blips, cb)
-                    performApiRequest(blips, "ADD_BLIP", function(res)
-                        if cb ~= nil then
-                            cb(res)
-                        end
-                    end)
+                    local response = CadApiCreateBlips(blips)
+                    if not response.success then
+                        CadApiLogFailure("ADD_BLIP", response, blips)
+                    elseif cb ~= nil then
+                        cb(json.encode(response.data))
+                    end
                 end,
 
                 removeBlip = function(ids, cb)
-                    performApiRequest({{
-                        ["ids"] = ids
-                    }}, "REMOVE_BLIP", function(res)
-                        if cb ~= nil then
-                            cb(res)
-                        end
-                    end)
+                    local payload = {["ids"] = ids}
+                    local response = CadApiDeleteBlips(payload)
+                    if not response.success then
+                        CadApiLogFailure("REMOVE_BLIP", response, payload)
+                    elseif cb ~= nil then
+                        cb(tostring(response.data and json.encode(response.data) or "OK"))
+                    end
                 end,
 
                 modifyBlips = function(dataTable, cb)
-                    performApiRequest(dataTable, "MODIFY_BLIP", function(res)
-                        if cb ~= nil then
-                            cb(res)
-                        end
-                    end)
+                    local response = CadApiUpdateBlips(dataTable)
+                    if not response.success then
+                        CadApiLogFailure("MODIFY_BLIP", response, dataTable)
+                    elseif cb ~= nil then
+                        cb(tostring(response.data and json.encode(response.data) or "OK"))
+                    end
                 end,
 
                 getBlips = function(cb)
-                    local data = {{
+                    local response = CadApiGetBlips({
                         ["serverId"] = GetConvar("sonoran_serverId", 1)
-                    }}
-                    performApiRequest(data, "GET_BLIPS", function(res)
-                        if cb ~= nil then
-                            cb(res)
-                        end
-                    end)
+                    })
+                    if not response.success then
+                        CadApiLogFailure("GET_BLIPS", response, {serverId = GetConvar("sonoran_serverId", 1)})
+                    elseif cb ~= nil then
+                        cb(json.encode(response.data or {}))
+                    end
                 end,
 
                 removeWithSubtype = function(subType, cb)

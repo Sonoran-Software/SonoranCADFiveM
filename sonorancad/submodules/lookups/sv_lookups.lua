@@ -10,8 +10,6 @@ local pluginConfig = Config.GetPluginConfig("lookups")
 
 if pluginConfig.enabled then
 
-    registerApiType("LOOKUP", "general")
-
     local LookupCache = {}
 
     local Lookup = {
@@ -78,6 +76,7 @@ if pluginConfig.enabled then
         data["last"] = data["last"] == nil and "" or data["last"]
         data["plate"] = data["plate"] == nil and "" or data["plate"]:match("^%s*(.-)%s*$")
         data["types"] = data["types"] == nil and {2,3,4,5} or data["types"]
+        data["partial"] = data["partial"] == true
 
         if data.first == "" and data.last == "" and data.mi == "" and data.plate == "" then
             --not a valid request, just return a blank lookup
@@ -86,7 +85,7 @@ if pluginConfig.enabled then
             return
         end
         if autoLookup ~= nil then
-            data["communityUserId"] = autoLookup
+            data["notifyCommunityUserId"] = autoLookup
         else
             for k, v in pairs(LookupCache) do
                 if v:IsMatch(data.first, data.last, data.mi, data.plate, data.types) then
@@ -96,13 +95,17 @@ if pluginConfig.enabled then
                 end
             end
         end
-        performApiRequest({data}, "LOOKUP", function(result)
-            debugLog("Performed lookup")
-            local lookup = json.decode(result)
-            local l = Lookup.Create(data.first, data.last, data.mi, data.plate, data.types, result)
-            table.insert(LookupCache, l)
-            callback(lookup)
-        end)
+        local response = CadApiLookup(data)
+        if not response.success then
+            CadApiLogFailure("LOOKUP", response, data)
+            callback({})
+            return
+        end
+        debugLog("Performed lookup")
+        local lookup = response.data or {}
+        local l = Lookup.Create(data.first, data.last, data.mi, data.plate, data.types, json.encode(lookup))
+        table.insert(LookupCache, l)
+        callback(lookup)
 
     end
 
@@ -123,7 +126,7 @@ if pluginConfig.enabled then
         data.last = last
         data.mi = mi
         if autoLookup ~= nil then
-            data["communityUserId"] = autoLookup
+            data["notifyCommunityUserId"] = autoLookup
         end
         cadLookup(data, callback, autoLookup)
     end
@@ -139,7 +142,7 @@ if pluginConfig.enabled then
         local data = {}
         data["plate"] = plate
         if autoLookup ~= nil then
-            data["communityUserId"] = autoLookup
+            data["notifyCommunityUserId"] = autoLookup
         end
         cadLookup(data, callback, autoLookup)
 
@@ -149,7 +152,7 @@ if pluginConfig.enabled then
         local data = {}
         data["plate"] = plate
         if autoLookup ~= nil then
-            data["communityUserId"] = autoLookup
+            data["notifyCommunityUserId"] = autoLookup
         end
         cadLookup(data, function(result)
             local regData = {}

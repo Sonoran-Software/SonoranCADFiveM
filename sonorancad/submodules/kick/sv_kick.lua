@@ -11,7 +11,6 @@ local pluginConfig = Config.GetPluginConfig("kick")
 if pluginConfig.enabled then
 
     local PendingKicks = {}
-    registerApiType("KICK_UNIT", "emergency")
     AddEventHandler("playerDropped", function()
         local source = source
         local communityUserId = GetPlayerCommunityUserId(source)
@@ -35,12 +34,15 @@ if pluginConfig.enabled then
                 while true do
                     local pendingKick = table.remove(PendingKicks)
                     if pendingKick ~= nil then
-                        table.insert(kicks, {["communityUserId"] = pendingKick, ["reason"] = "You have exited the server", ["serverId"] = Config.serverId})
+                        table.insert(kicks, {["communityUserId"] = pendingKick, ["reason"] = "You have exited the server", ["serverId"] = tonumber(Config.serverId)})
                     else
                         break
                     end
                 end
-                performApiRequest(kicks, 'KICK_UNIT', function() end)
+                local response = CadApiKickUnits(kicks)
+                if not response.success then
+                    CadApiLogFailure("KICK_UNIT", response, kicks)
+                end
             end
             Wait(10000)
         end

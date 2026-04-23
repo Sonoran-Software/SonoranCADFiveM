@@ -39,7 +39,7 @@ CreateThread(function()
                 if turnUserId ~= nil then
                     return turnUserId
                 end
-                local serverId = Config.serverId
+                local serverId = tonumber(Config.serverId)
                 if serverId == nil or tostring(serverId) == "" then
                     serverId = GetConvar("sonoran_serverId", "server")
                 end

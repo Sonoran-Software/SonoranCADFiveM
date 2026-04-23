@@ -14,6 +14,9 @@
 			#recordPrinterContainer {
 				position: absolute;
 				inset: 0;
+				display: none;
+				pointer-events: none;
+				background: transparent;
 				z-index: 10;
 			}
 
@@ -23,68 +26,87 @@
 				display: none;
 				align-items: center;
 				justify-content: center;
-				background: rgba(6, 10, 16, 0.72);
+				background: transparent;
 				z-index: 1200;
 			}
 
 			#cadLinkPanel {
 				width: min(520px, calc(100vw - 48px));
-				padding: 28px;
-				border-radius: 18px;
-				border: 1px solid rgba(255, 255, 255, 0.08);
-				background: linear-gradient(180deg, rgba(18, 27, 39, 0.96), rgba(8, 13, 21, 0.98));
-				box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
-				color: #f4f7fb;
+				padding: 30px 28px 26px;
+				border-radius: 22px;
+				border: 1px solid rgba(237, 28, 36, 0.32);
+				background:
+					linear-gradient(180deg,
+						rgba(34, 8, 11, 0.92) 0%,
+						rgba(18, 10, 14, 0.96) 24%,
+						rgba(6, 7, 9, 0.985) 62%,
+						rgba(0, 0, 0, 0.995) 100%);
+				box-shadow:
+					0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+				color: #f3f5f7;
 				font-family: "Segoe UI", system-ui, sans-serif;
 				text-align: center;
 			}
 
 			#cadLinkPanel h2 {
-				margin: 0 0 14px;
-				font-size: 28px;
-				font-weight: 700;
+				margin: 0 0 16px;
+				font-size: 30px;
+				font-weight: 800;
+				letter-spacing: 0.05em;
+				text-transform: uppercase;
+				color: #ffffff;
 			}
 
 			#cadLinkPanel p {
-				margin: 0 0 18px;
+				margin: 0 0 22px;
 				font-size: 16px;
 				line-height: 1.5;
-				color: rgba(244, 247, 251, 0.86);
+				color: rgba(232, 236, 240, 0.82);
 			}
 
 			#cadLinkCode {
-				margin: 0 0 18px;
-				font-size: 14px;
-				letter-spacing: 0.08em;
+				margin: 0 0 20px;
+				padding: 14px 16px;
+				border: 1px solid rgba(237, 28, 36, 0.24);
+				border-radius: 14px;
+				background: rgba(10, 14, 19, 0.92);
+				font-size: 15px;
+				font-weight: 700;
+				letter-spacing: 0.10em;
 				text-transform: uppercase;
-				color: rgba(160, 202, 255, 0.92);
+				color: #ff676d;
+				box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.02) inset;
 			}
 
 			#cadLinkStatus {
 				margin-top: 18px;
 				font-size: 14px;
-				color: rgba(244, 247, 251, 0.72);
+				color: rgba(190, 198, 206, 0.76);
 			}
 
 			.cadLinkActions {
 				display: flex;
-				gap: 12px;
+				gap: 14px;
 				justify-content: center;
+				align-items: center;
 			}
 
 			.cadLinkButton {
 				appearance: none;
-				border: 0;
-				border-radius: 12px;
-				padding: 13px 20px;
+				border: 1px solid transparent;
+				border-radius: 14px;
+				padding: 14px 22px;
+				min-width: 108px;
 				display: inline-flex;
 				align-items: center;
 				justify-content: center;
 				font-size: 15px;
-				font-weight: 700;
+				font-weight: 800;
+				letter-spacing: 0.03em;
+				text-transform: uppercase;
 				text-decoration: none;
 				cursor: pointer;
-				transition: transform 120ms ease, opacity 120ms ease;
+				transition: transform 120ms ease, opacity 120ms ease, background 120ms ease, border-color 120ms ease, color 120ms ease;
 			}
 
 			.cadLinkButton:hover {
@@ -92,13 +114,21 @@
 			}
 
 			#cadLinkLaunch {
-				background: #7ec8ff;
-				color: #08131f;
+				background: linear-gradient(180deg, #ed1c24, #c9151d);
+				border-color: rgba(255, 111, 117, 0.4);
+				color: #ffffff;
+				box-shadow: 0 12px 26px rgba(237, 28, 36, 0.24);
 			}
 
 			#cadLinkClose {
-				background: rgba(255, 255, 255, 0.08);
-				color: #f4f7fb;
+				background: linear-gradient(180deg, rgba(34, 40, 48, 0.92), rgba(25, 30, 37, 0.92));
+				border-color: rgba(255, 255, 255, 0.08);
+				color: #e0e5ea;
+			}
+
+			#cadLinkClose:hover {
+				background: rgba(237, 28, 36, 0.10);
+				border-color: rgba(237, 28, 36, 0.26);
 			}
 
 			#app {
@@ -261,6 +291,10 @@
 			recordPrinterFrame.style.border = "0px";
 			recordPrinterFrame.style.zIndex = "10";
 			recordPrinterContainer.appendChild(recordPrinterFrame);
+
+			function setRecordPrinterVisible(visible) {
+				recordPrinterContainer.style.display = visible ? "block" : "none";
+			}
 
 			function renderCadLink() {
 				cadLinkOverlay.style.display = cadLinkState.visible ? "flex" : "none";
@@ -970,6 +1004,11 @@
 
 			window.addEventListener("message", function (event) {
 				if (event.data.recordPrinter) {
+					if (event.data.action === "openUI") {
+						setRecordPrinterVisible(true);
+					} else if (event.data.action === "closeui") {
+						setRecordPrinterVisible(false);
+					}
 					recordPrinterFrame.contentWindow.postMessage(event.data, "*");
 				}
 				if (event.data.cadDisplay) {

@@ -12,8 +12,6 @@ local pluginConfig = Config.GetPluginConfig("unitstatus")
 
 if pluginConfig.enabled then
 
-    registerApiType("UNIT_STATUS", "emergency")
-
     function setUnitStatus(unitIdentity, status, player)
         local statusNumber = nil
         debugLog(("%s %s %s"):format(unitIdentity, status, player))
@@ -24,13 +22,19 @@ if pluginConfig.enabled then
         end
         assert(statusNumber ~= nil, ("Status %s was not found in config"):format(status))
         local communityUserId = player ~= nil and GetPlayerCommunityUserId(player) or unitIdentity
-        local payload = {{["communityUserId"] = communityUserId, ["status"] = statusNumber, ["serverId"] = Config.serverId}}
-        performApiRequest(payload, "UNIT_STATUS", function(res, success)
-            TriggerEvent("SonoranCAD::unitstatus:StatusUpdate", unitIdentity, statusNumber, success)
-            if player ~= nil then
-                TriggerClientEvent("SonoranCAD::unitstatus:StatusUpdate", player, unitIdentity, statusNumber, success)
-            end
-        end)
+        local payload = {
+            ["communityUserId"] = communityUserId,
+            ["status"] = statusNumber,
+            ["serverId"] = tonumber(Config.serverId)
+        }
+        local response = CadApiSetUnitStatus(payload)
+        if not response.success then
+            CadApiLogFailure("UNIT_STATUS", response, payload)
+        end
+        TriggerEvent("SonoranCAD::unitstatus:StatusUpdate", unitIdentity, statusNumber, response.success == true)
+        if player ~= nil then
+            TriggerClientEvent("SonoranCAD::unitstatus:StatusUpdate", player, unitIdentity, statusNumber, response.success == true)
+        end
     end
 
     exports('cadSetUnitStatus', setUnitStatus)
