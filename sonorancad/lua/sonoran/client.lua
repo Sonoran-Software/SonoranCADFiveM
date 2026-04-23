@@ -113,6 +113,60 @@ end
 local CAD_V2_RATE_LIMIT_MAX_RETRIES = 2
 local CAD_V2_RATE_LIMIT_DEFAULT_DELAY_MS = 1000
 local CAD_V2_RATE_LIMIT_MAX_DELAY_MS = 10000
+local LOG_LEVELS = {
+  OFF = "OFF",
+  DEBUG = "DEBUG"
+}
+
+local function serialize_debug_value(value, seen)
+  local value_type = type(value)
+  if value_type == "string" then
+    return string.format("%q", value)
+  end
+
+  if value_type == "number" or value_type == "boolean" or value_type == "nil" then
+    return tostring(value)
+  end
+
+  if value_type ~= "table" then
+    return string.format("<%s>", value_type)
+  end
+
+  seen = seen or {}
+  if seen[value] then
+    return "<cycle>"
+  end
+
+  seen[value] = true
+
+  local parts = {}
+  local array_keys = {}
+  local map_keys = {}
+
+  for key in pairs(value) do
+    if type(key) == "number" and key >= 1 and key % 1 == 0 then
+      array_keys[#array_keys + 1] = key
+    else
+      map_keys[#map_keys + 1] = key
+    end
+  end
+
+  table.sort(array_keys)
+  table.sort(map_keys, function(left, right)
+    return tostring(left) < tostring(right)
+  end)
+
+  for _, key in ipairs(array_keys) do
+    parts[#parts + 1] = serialize_debug_value(value[key], seen)
+  end
+
+  for _, key in ipairs(map_keys) do
+    parts[#parts + 1] = string.format("[%s]=%s", serialize_debug_value(key, seen), serialize_debug_value(value[key], seen))
+  end
+
+  seen[value] = nil
+  return "{ " .. table.concat(parts, ", ") .. " }"
+end
 
 local Client = {}
 Client.__index = Client
@@ -190,6 +244,49 @@ function Client:_sleep_ms(delay_ms)
   end
 end
 
+function Client:_assert_log_level(level)
+  if level ~= LOG_LEVELS.OFF and level ~= LOG_LEVELS.DEBUG then
+    error("logLevel must be OFF or DEBUG.")
+  end
+
+  return level
+end
+
+function Client:setLogLevel(level)
+  self._config.logLevel = self:_assert_log_level(level or LOG_LEVELS.OFF)
+  return self
+end
+
+function Client:_is_debug_enabled()
+  return self._config.logLevel == LOG_LEVELS.DEBUG
+end
+
+function Client:_debug_log_http_request(request_options, attempt)
+  if not self:_is_debug_enabled() then
+    return
+  end
+
+  print("[Sonoran.lua][DEBUG] HTTP request")
+  print("[Sonoran.lua][DEBUG]   attempt: " .. tostring((attempt or 0) + 1))
+  print("[Sonoran.lua][DEBUG]   method: " .. tostring(request_options.method))
+  print("[Sonoran.lua][DEBUG]   url: " .. tostring(request_options.url))
+  print("[Sonoran.lua][DEBUG]   headers: " .. serialize_debug_value(request_options.headers))
+  print("[Sonoran.lua][DEBUG]   body: " .. serialize_debug_value(request_options.body))
+end
+
+function Client:_debug_log_http_response(response, attempt)
+  if not self:_is_debug_enabled() then
+    return
+  end
+
+  print("[Sonoran.lua][DEBUG] HTTP response")
+  print("[Sonoran.lua][DEBUG]   attempt: " .. tostring((attempt or 0) + 1))
+  print("[Sonoran.lua][DEBUG]   ok: " .. tostring(response and response.ok))
+  print("[Sonoran.lua][DEBUG]   status: " .. tostring(response and response.status))
+  print("[Sonoran.lua][DEBUG]   headers: " .. serialize_debug_value(response and response.headers))
+  print("[Sonoran.lua][DEBUG]   body: " .. serialize_debug_value(response and response.body))
+end
+
 function Client:_request(method, path, options)
   options = options or {}
 
@@ -221,7 +318,9 @@ function Client:_request(method, path, options)
   }
 
   for attempt = 0, CAD_V2_RATE_LIMIT_MAX_RETRIES do
+    self:_debug_log_http_request(request_options, attempt)
     local response = self._adapter.request(request_options)
+    self:_debug_log_http_response(response, attempt)
     local parsed = self:_parse_response(response or {})
     local ok = response and response.ok
     if ok == nil then
@@ -278,9 +377,14 @@ local function create_client(config, adapter)
       apiUrl = trim_trailing_slashes(config and config.apiUrl or (product == 2 and "https://api.sonoranradio.com" or product == 1 and "https://api.sonorancms.com" or "https://api.sonorancad.com")),
       defaultServerId = config and config.defaultServerId or 1,
       headers = shallow_copy(config and config.headers or {}),
-      timeoutMs = config and config.timeoutMs or 30000
+      timeoutMs = config and config.timeoutMs or 30000,
+      logLevel = LOG_LEVELS.OFF
     }
   }, Client)
+
+  if config and config.logLevel ~= nil then
+    instance:setLogLevel(config.logLevel)
+  end
 
   local cad_proxy = setmetatable({}, {
     __index = function(_, key)

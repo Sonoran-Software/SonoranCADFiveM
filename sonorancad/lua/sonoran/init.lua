@@ -27,6 +27,10 @@ Sonoran.productEnums = {
   CMS = 1,
   RADIO = 2
 }
+Sonoran.logLevels = {
+  OFF = "OFF",
+  DEBUG = "DEBUG"
+}
 
 function Sonoran.createClient(config)
   return create_client(config or {}, create_fivem_adapter())
