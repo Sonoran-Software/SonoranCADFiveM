@@ -115,7 +115,7 @@ CreateThread(function()
     AddEventHandler("SonoranCAD::mini:AttachToCall", function(callId)
         local ident, communityUserId = getLinkedUnitContext(source)
         if ident ~= nil and communityUserId ~= nil then
-            local data = {callId = callId, units = {communityUserId}, serverId = GetConvar("sonoran_serverId", 1)}
+            local data = {callId = callId, units = {communityUserId}, serverId = tonumber(GetConvar("sonoran_serverId", 1))}
             exports["sonorancad"]:performApiRequest({data}, "ATTACH_UNIT", function(res)
                 --print("Attach OK: " .. tostring(res))
             end)
@@ -128,7 +128,7 @@ CreateThread(function()
     AddEventHandler("SonoranCAD::mini:DetachFromCall", function(callId)
         local ident, communityUserId = getLinkedUnitContext(source)
         if ident ~= nil and communityUserId ~= nil then
-            local data = {callId = callId, units = {communityUserId}, serverId = GetConvar("sonoran_serverId", 1)}
+            local data = {callId = callId, units = {communityUserId}, serverId = tonumber(GetConvar("sonoran_serverId", 1))}
             exports["sonorancad"]:performApiRequest({data}, "DETACH_UNIT", function(res)
                 --print("Detach OK: " .. tostring(res))
             end)

@@ -289,9 +289,6 @@ if pluginConfig.enabled then
                 for _, veh in pairs(vehData) do
                     if veh.plate:lower() == args[1]:lower() then
                         reg = veh
-                        print("Got registration data "..veh.plate)
-                        print(json.encode(veh))
-                        print(json.encode(regData))
                         break
                     end
                 end

@@ -116,11 +116,8 @@ if pluginConfig.enabled then
     end
 
     local function IsPlayerOnDuty(player)
-        print("checking duty for player "..player.." with method "..pluginConfig.unitDutyMethod)
         if pluginConfig.unitDutyMethod == "incad" then
-            print("GetUnitByPlayerId(tostring(player)) = ", json.encode(GetUnitByPlayerId(tostring(player))))
             if GetUnitByPlayerId(tostring(player)) ~= nil then
-                print("player is on duty by incad method")
                 return true
             else
                 return false
@@ -282,7 +279,6 @@ if pluginConfig.enabled then
         if metadata ~= nil and metadata.callerPlayerId ~= nil then
             CallOriginMapping[call.callId] = metadata.callerPlayerId
         end
-        print('shouldNotifyUnits() = '..tostring(shouldNotifyUnits()))
         if shouldNotifyUnits() then
             local type = call.emergency and pluginConfig.civilCallType or pluginConfig.emergencyCallType
             local messageTemplate = pluginConfig.incomingCallMessage
@@ -418,18 +414,19 @@ if pluginConfig.enabled then
             if pluginConfig.callTitle ~= nil then
                 title = pluginConfig.callTitle.." - "..call.callId
             end
-            metaData = {callerPlayerId = callerPlayerId, createdFromId = call.callId }
+            metaData = {callerPlayerId = tostring(callerPlayerId), createdFromId = tostring(call.callId) }
             if call.metaData ~= nil then
                 for k, v in pairs(call.metaData) do
-                    metaData[k] = v
+                    metaData[k] = tostring(v)
                 end
             end
             if LocationCache[source] ~= nil and metaData['x'] == nil then
-                metaData['x'] = LocationCache[source].coordinates.x
-                metaData['y'] = LocationCache[source].coordinates.y
-                metaData['z'] = LocationCache[source].coordinates.z
+                metaData['x'] = tostring(LocationCache[source].coordinates.x)
+                metaData['y'] = tostring(LocationCache[source].coordinates.y)
+                metaData['z'] = tostring(LocationCache[source].coordinates.z)
             end
             local payload = {   serverId = tonumber(Config.serverId),
+                                communityUserIds = {communityUserId},
                                 origin = 0,
                                 status = 1,
                                 priority = 2,

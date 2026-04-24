@@ -113,7 +113,6 @@ if pluginConfig.enabled then
                     TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^1Error ^0] ", "No characters found."}})
                 else
                     local char = characters[1]
-                    print('got char', json.encode(char))
                     local name = ("%s %s"):format(char.first, char.last)
                     local dob = char.dob
                     if char.img == "statics/images/blank_user.jpg" then

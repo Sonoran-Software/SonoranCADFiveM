@@ -53,7 +53,9 @@ local function get_cad_client()
         apiKey = Config.apiKey,
         communityId = Config.communityID,
         apiUrl = resolve_api_url(),
-        defaultServerId = tonumber(tonumber(Config.serverId)) or 1
+        defaultServerId = tonumber(tonumber(Config.serverId)) or 1,
+        setLogLevel = sonoran.logLevels.DEBUG
+        -- setLogLevel = Config.debug and sonoran.logLevels.DEBUG or sonoran.logLevels.OFF
     })
 
     return cadV2Client
@@ -268,17 +270,15 @@ function CadApiSetUnitPanic(payload)
     return get_cad_client():setUnitPanicV2(payload)
 end
 
-function CadApiKickUnits(kicks)
-    for _, payload in ipairs(kicks or {}) do
-        local community_user_id, err = CadApiRequireCommunityUserId(payload.communityUserId)
-        if community_user_id == nil then
-            return {success = false, reason = err}
-        end
-        payload.communityUserId = community_user_id
-        local response = get_cad_client():kickUnitV2(payload)
-        if not response.success then
-            return response
-        end
+function CadApiKickUnits(payload)
+    local community_user_id, err = CadApiRequireCommunityUserId(payload.communityUserId)
+    if community_user_id == nil then
+        return {success = false, reason = err}
+    end
+    payload.communityUserId = community_user_id
+    local response = get_cad_client():kickUnitV2(payload)
+    if not response.success then
+        return response
     end
     return {success = true, data = {ok = true}}
 end
@@ -609,11 +609,7 @@ end
 function CadApiCreateBlips(payloads)
     local created = {}
     for _, payload in ipairs(payloads or {}) do
-        local blip = payload.blip or payload
-        local response = get_cad_client():createBlipV2({
-            serverId = payload.serverId or tonumber(Config.serverId),
-            blip = blip
-        })
+        local response = get_cad_client():createBlipV2(payload)
         if not response.success then
             return response
         end
