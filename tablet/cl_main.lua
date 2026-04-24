@@ -176,7 +176,7 @@ AddEventHandler('SonoranCAD::mini:OpenMini:Return', function(authorized, ident)
 			SetResourceKvp("shownTutorial", "yes")
 		end
 	else
-		PrintChatMessage("You are not logged into the CAD or your API id is not set.")
+		PrintChatMessage("You are not logged into the CAD or your account is not linked. Run /link first.")
 	end
 end)
 
@@ -269,8 +269,12 @@ RegisterCommand("cadrefresh", function()
 	RefreshModule("cad")
 end)
 
-RegisterCommand("checkapiid", function(source,args,rawCommand)
-	TriggerServerEvent("sonoran:tablet:forceCheckApiId")
+local function requestTabletLinkStatus()
+	TriggerServerEvent("SonoranCAD::Tablet::CheckLinkStatus")
+end
+
+RegisterCommand("checkcadlink", function(source,args,rawCommand)
+	requestTabletLinkStatus()
 end, false)
 
 local activeTablet = nil
@@ -563,7 +567,7 @@ AddEventHandler('onClientResourceStart', function(resourceName) --When resource 
 		return
 	end
 	SetFocused(false)
-	TriggerServerEvent("sonoran:tablet:forceCheckApiId")
+	requestTabletLinkStatus()
 	requestCadDisplayConfig()
 end)
 
@@ -574,31 +578,32 @@ AddEventHandler("onClientResourceStop", function(resourceName)
 	destroyTabletDuiObjects()
 end)
 
-RegisterNetEvent("SonoranCAD::Tablet::ApiIdNotLinked")
-AddEventHandler('SonoranCAD::Tablet::ApiIdNotLinked', function()
+RegisterNetEvent("SonoranCAD::Tablet::LinkMissing")
+AddEventHandler('SonoranCAD::Tablet::LinkMissing', function()
+	isRegistered = false
 	SendNUIMessage({
 		type = "regbar"
 	})
 end)
 
-RegisterNetEvent("sonoran:tablet:apiIdFound")
-AddEventHandler("sonoran:tablet:apiIdFound", function()
+RegisterNetEvent("SonoranCAD::Tablet::LinkFound")
+AddEventHandler("SonoranCAD::Tablet::LinkFound", function()
 	isRegistered = true
 end)
 
-RegisterNUICallback('SetAPIInformation', function(data,cb)
-	TriggerServerEvent("SonoranCAD::Tablet::SetApiData", data.session, data.username)
-	TriggerServerEvent("sonoran:tablet:forceCheckApiId")
+RegisterNUICallback('SetLinkInformation', function(data,cb)
+	TriggerServerEvent("SonoranCAD::Tablet::AssociateSsoData", data.session, data.username)
+	requestTabletLinkStatus()
 	cb(true)
 end)
 
-RegisterNUICallback('runApiCheck', function()
-	TriggerServerEvent("sonoran:tablet:forceCheckApiId")
+RegisterNUICallback('runLinkCheck', function()
+	requestTabletLinkStatus()
 end)
 
 RegisterNetEvent("sonoran:tablet:failed")
 AddEventHandler("sonoran:tablet:failed", function(message)
-	errorLog("Failed to set API ID: "..tostring(message))
+	errorLog("Failed to link CAD account: "..tostring(message))
 end)
 
 RegisterNUICallback("CadDisplayScreenshot", function(data, cb)

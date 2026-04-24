@@ -71,7 +71,6 @@ CreateThread(function()
 			end)
 			RegisterNetEvent('getShouldSendPostalResponse')
 			AddEventHandler('getShouldSendPostalResponse', function(toggle)
-				print('got ' .. tostring(toggle))
 				pluginConfig.shouldSendPostalData = toggle
 			end)
 		end

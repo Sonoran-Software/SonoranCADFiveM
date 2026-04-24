@@ -1,4 +1,4 @@
-var currentlyCheckingApi = false;
+var currentlyCheckingLink = false;
 
 var myident = null;
 
@@ -223,8 +223,8 @@ $(function () {
 		if (event.data.type == "display") {
 			moduleVisible(event.data.module, event.data.enabled)
 			if (event.data.apiCheck) {
-				currentlyCheckingApi = true;
-				//$("#check-api-id").show();
+				currentlyCheckingLink = true;
+				//$("#check-api-data").show();
 			}
 			setHotkeys(event.data.keyMap);
 		}
@@ -285,8 +285,8 @@ $(function () {
 			}
 		}
 		else if (event.data.type == "regbar") {
-			currentlyCheckingApi = true;
-			$("#check-api-id").show();
+			currentlyCheckingLink = true;
+			$("#check-api-data").show();
 		}
 		else if (event.data.type == "resize") {
 			if (event.data.module == "cad") {
@@ -506,9 +506,23 @@ function receiveMessage(event) {
 	let cadframe = document.getElementById("cadFrame");
 	let frameorigin = new URL(cadframe.src).origin;
 
-	if (currentlyCheckingApi && event.origin == frameorigin) {
-		nui('SetAPIInformation', event.data);
-		$("#check-api-id").hide();
+	if (currentlyCheckingLink && event.origin == frameorigin) {
+		const sanitizeLinkField = (value) => {
+			if (typeof value !== "string") return null;
+			const trimmed = value.trim();
+			if (!trimmed || trimmed.length > 128) return null;
+			if (!/^[A-Za-z0-9._:@/-]+$/.test(trimmed)) return null;
+			return trimmed;
+		};
+		const session = sanitizeLinkField(event.data && event.data.session);
+		const username = sanitizeLinkField(event.data && event.data.username);
+		if (session || username) {
+			nui('SetLinkInformation', {
+				session: session,
+				username: username
+			});
+			$("#check-api-data").hide();
+		}
 	}
 
 	// Forward caddisplay screenshot requests to the CAD iframe
@@ -536,10 +550,10 @@ function addCallNote(call, data) {
 	nui('addCallNote', {call: call, data: data});
 }
 
-function runApiCheck() {
-	currentlyCheckingApi = true;
+function runLinkCheck() {
+	currentlyCheckingLink = true;
 	document.getElementById("cadFrame").src += '';
-	nui('runApiCheck');
+	nui('runLinkCheck');
 	$("#check-api-data").hide();
 }
 

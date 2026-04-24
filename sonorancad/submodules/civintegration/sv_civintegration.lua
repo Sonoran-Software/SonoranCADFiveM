@@ -27,8 +27,6 @@ if pluginConfig.enabled then
     CustomCharacterCache = {}
     local CharacterCacheTimers = {}
 
-    registerApiType("GET_CHARACTERS", "civilian")
-
     AddEventHandler("playerDropped", function()
         CharacterCache[source] = nil
         CharacterCacheTimers[source] = nil
@@ -36,16 +34,17 @@ if pluginConfig.enabled then
     end)
 
     local function getCharactersApi(player, callback)
-        local apiId = GetIdentifiers(player)[Config.primaryIdentifier]
-        if not apiId or apiId == nil then
+        local communityUserId = GetPlayerCommunityUserId(player)
+        if not communityUserId then
             callback(nil)
             return
         end
-        local payload = { ['apiId'] = apiId }
-        performApiRequest({payload}, "GET_CHARACTERS", function(result)
+        local response = CadApiGetCharacters({communityUserId = communityUserId})
+        if response.success then
+            local result = response.data
             if result ~= nil then
                 local characters = {}
-                for _, records in pairs(json.decode(result)) do
+                for _, records in pairs(result) do
                     local charData = {}
                    -- debugLog(("check record %s"):format(json.encode(records)))
                     for _, section in pairs(records.sections) do
@@ -70,7 +69,10 @@ if pluginConfig.enabled then
             else
                 callback(nil)
             end
-        end)
+        else
+            CadApiLogFailure("GET_CHARACTERS", response, {communityUserId = communityUserId})
+            callback(nil)
+        end
     end
 
     function GetCharacters(player, callback)

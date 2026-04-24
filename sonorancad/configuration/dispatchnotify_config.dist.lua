@@ -7,7 +7,7 @@
 
 ]]
 local config = {
-    enabled = false,
+    enabled = true,
     configVersion = "3.4",
     pluginName = "dispatchnotify", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author

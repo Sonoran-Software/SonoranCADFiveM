@@ -6,7 +6,7 @@
     Put all needed configuration in this file.
 ]]
 local config = {
-    enabled = false,
+    enabled = true,
     pluginName = "calltemplates", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author
     requiresPlugins = {

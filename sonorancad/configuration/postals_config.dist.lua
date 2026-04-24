@@ -6,7 +6,7 @@
     Put all needed configuration in this file.
 ]]
 local config = {
-    enabled = false,
+    enabled = true,
     pluginName = "postals", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author
     configVersion = "1.3.0",

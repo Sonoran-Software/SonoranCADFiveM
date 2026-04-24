@@ -7,7 +7,7 @@
 
 ]]
 local config = {
-    enabled = false,
+    enabled = true,
     configVersion = "1.1",
     pluginName = "civintegration", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author
@@ -24,7 +24,7 @@ local config = {
     ,enableCommands = true
 
     -- if true, you must have the sonoran_idcard resource started in your server in order for it to work
-    ,enableIDCardUI = false
+    ,enableIDCardUI = true
 }
 
 if config.enabled then

@@ -77,8 +77,6 @@ CreateThread(function()
 
 			exports('cadGetNearestPostal', getNearestPostal)
 
-			registerApiType('SET_POSTALS', 'general')
-
 			CreateThread(function()
 				while Config.apiVersion == -1 or postals == nil do
 					Wait(1000)
@@ -88,8 +86,10 @@ CreateThread(function()
 				elseif not Config.apiSendEnabled then
 					errorLog('Config.apiSendEnabled disabled via convar or config, skipping postal sending. Check your config if this is unintentional.')
 				end
-				performApiRequest(postalFile, 'SET_POSTALS', function()
-				end)
+				local response = CadApiSetPostals(json.decode(postalFile))
+				if not response.success then
+					CadApiLogFailure('SET_POSTALS', response, postals)
+				end
 			end)
 
 			function getPostalFromVector3(coords)

@@ -15,8 +15,6 @@
     update - attempt to auto-update
 ]]
 
-registerApiType("UPLOAD_LOGS", "support")
-
 function dumpInfo()
     local version = GetResourceMetadata(GetCurrentResourceName(), "version", 0)
     local pluginList, loadedPlugins, disabledPlugins = GetPluginLists()
@@ -112,13 +110,14 @@ Last 50 Debug Messages
 %s
     ]]):format(dumpInfo(), GetConsoleBuffer(), table.concat(getDebugBuffer(), "\n"))
     Config.debugMode = false
-    performApiRequest({cadOutput}, "UPLOAD_LOGS", function(data)
-        if data == "LOGS UPDATED" then
-            infoLog("Support logs have been successfully uploaded. Debug mode was disabled during the upload.")
-        else
-            errorLog(("Failed to upload support logs: %s"):format(data))
-        end
-    end)
+    local response = CadApiUploadSupportLogs(cadOutput)
+    if response.success and response.data == "LOGS UPDATED" then
+        infoLog("Support logs have been successfully uploaded. Debug mode was disabled during the upload.")
+    elseif response.success then
+        errorLog(("Failed to upload support logs: %s"):format(tostring(response.data)))
+    else
+        errorLog(("Failed to upload support logs: %s"):format(CadApiReasonText(response.reason)))
+    end
 end
 RegisterCommand("sonoran", function(source, args, rawCommand)
     if source ~= 0 then

@@ -16,6 +16,7 @@
     const BACKGROUND_ENSURE_INTERVAL_MS = 30000;
     const SEND_ERROR_LOG_INTERVAL_MS = 60 * 1000;
     const MAX_SILENT_RECONNECT_FAILURES = 2;
+    const MANUAL_RETRY_DELAYS_MS = [2000, 5000, 10000, 30000];
     const SIGNALR_DEBUG_ONLY_PATTERNS = [
         "(WebSockets transport) There was an error with the transport.",
         "Failed to start the transport 'WebSockets'",
@@ -34,9 +35,11 @@
     let reconnectEscalated = false;
     let backgroundEnsureInterval = null;
     let backgroundEnsureInFlight = false;
+    let manualRetryTimer = null;
+    let manualRetryAttempt = 0;
     const serverIssueState = Object.create(null);
 
-    function log(level, message) {
+    function apiWsLog(level, message) {
         emit("SonoranCAD::core:writeLog", level, "[apiws] " + message);
     }
 
@@ -54,18 +57,18 @@
                     return;
                 }
                 if (isSignalRDebugOnlyMessage(message)) {
-                    log("debug", "[signalr] " + message);
+                    apiWsLog("debug", "[signalr] " + message);
                     return;
                 }
                 if (level === signalR.LogLevel.Critical || level === signalR.LogLevel.Error) {
-                    log("error", "[signalr] " + message);
+                    apiWsLog("error", "[signalr] " + message);
                     return;
                 }
                 if (level === signalR.LogLevel.Warning) {
-                    log("warn", "[signalr] " + message);
+                    apiWsLog("warn", "[signalr] " + message);
                     return;
                 }
-                log("debug", "[signalr] " + message);
+                apiWsLog("debug", "[signalr] " + message);
             }
         };
     }
@@ -105,12 +108,42 @@
         }
 
         state.suppressedCount++;
-        log("debug", "Suppressed server console error [" + key + "]: " + message);
+        apiWsLog("debug", "Suppressed server console error [" + key + "]: " + message);
     }
 
     function resetReconnectState() {
         reconnectFailureCount = 0;
         reconnectEscalated = false;
+    }
+
+    function clearManualRetry() {
+        if (!manualRetryTimer) {
+            return;
+        }
+        clearTimeout(manualRetryTimer);
+        manualRetryTimer = null;
+    }
+
+    function resetManualRetryState() {
+        clearManualRetry();
+        manualRetryAttempt = 0;
+    }
+
+    function scheduleManualRetry(reason) {
+        if (manualRetryTimer) {
+            apiWsLog("debug", "Manual retry already scheduled; latest reason=" + reason + ".");
+            return;
+        }
+        const delay = typeof MANUAL_RETRY_DELAYS_MS[manualRetryAttempt] === "number"
+            ? MANUAL_RETRY_DELAYS_MS[manualRetryAttempt]
+            : MANUAL_RETRY_DELAYS_MS[MANUAL_RETRY_DELAYS_MS.length - 1];
+        manualRetryAttempt += 1;
+        apiWsLog("debug", "Scheduling manual API WS retry in " + delay + "ms. Reason=" + reason + ".");
+        manualRetryTimer = setTimeout(async () => {
+            manualRetryTimer = null;
+            apiWsLog("debug", "Manual API WS retry fired.");
+            await runBackgroundEnsure();
+        }, delay);
     }
 
     function reportReconnectFailure(failedAttempts, err) {
@@ -119,7 +152,7 @@
         }
 
         reconnectEscalated = true;
-        log(
+        apiWsLog(
             "debug",
             "API WS reconnect has failed " + failedAttempts
             + " times. Latest error: " + getErrorMessage(err)
@@ -174,6 +207,7 @@
 
     function handleIncomingPushEvent(payload) {
         try {
+            apiWsLog("debug", "pushEvent callback fired. Raw payload type=" + typeof payload + ".");
             const parsed = parsePushEventPayload(payload);
             if (!parsed || typeof parsed !== "object") {
                 throw new Error("payload was not an object");
@@ -183,10 +217,10 @@
             }
             emit("SonoranCAD::pushevents:shim", JSON.stringify(parsed));
             clearServerIssue("ws-push");
-            log("debug", "Received pushEvent over WS: " + parsed.type);
+            apiWsLog("debug", "Received pushEvent over WS: type=" + parsed.type + ", keys=" + Object.keys(parsed).join(","));
         } catch (err) {
             const errMsg = getErrorMessage(err);
-            log("warn", "Failed to process pushEvent payload: " + errMsg);
+            apiWsLog("warn", "Failed to process pushEvent payload: " + errMsg);
             reportServerIssue("ws-push", "pushEvent processing failed: " + errMsg, SEND_ERROR_LOG_INTERVAL_MS);
         }
     }
@@ -198,7 +232,7 @@
                 return JSON.parse(raw);
             }
         } catch (err) {
-            log("warn", "Failed to parse configuration/config.json: " + (err.message || err));
+            apiWsLog("warn", "Failed to parse configuration/config.json: " + (err.message || err));
         }
         return {};
     }
@@ -222,7 +256,7 @@
             parseBoolean(fileConfig.apiSendEnabled, true)
         );
         const hubUrl = mode === "development" ? DEFAULT_HUBS.development : DEFAULT_HUBS.production;
-        log("debug", "Config: mode=" + mode + ", hubUrl=" + hubUrl + ", apiSendEnabled=" + apiSendEnabled
+        apiWsLog("debug", "Config: mode=" + mode + ", hubUrl=" + hubUrl + ", apiSendEnabled=" + apiSendEnabled
             + ", communityID=" + (communityID ? "set" : "missing") + ", apiKey=" + (apiKey ? "set" : "missing")
             + ", serverId=" + (serverId !== null ? String(serverId) : "missing"));
         return {
@@ -245,32 +279,35 @@
 
     async function authenticate() {
         if (authenticating) {
-            log("debug", "Authenticate: already in progress.");
+            apiWsLog("debug", "Authenticate: already in progress.");
             return authenticating;
         }
-        log("debug", "Authenticate: invoking authenticate().");
+        apiWsLog("debug", "Authenticate: invoking authenticatev2 for serverId=" + String(connectionConfig.serverId) + ".");
         authenticating = connection.invoke("authenticatev2", connectionConfig.communityID, connectionConfig.apiKey, connectionConfig.serverId)
             .then((auth) => {
                 if (auth && auth.success) {
                     authenticated = true;
-                    log("info", "Authenticated with API WS hub.");
-                    log("debug", "Authenticate: success.");
+                    resetManualRetryState();
+                    apiWsLog("info", "Authenticated with API WS hub.");
+                    apiWsLog("debug", "Authenticate: success.");
                     return true;
                 }
                 authenticated = false;
                 const errMsg = auth && auth.error ? auth.error : "unknown error";
-                log("error", "Authentication failed: " + errMsg);
-                log("debug", "Authenticate: failed response: " + JSON.stringify(auth));
+                apiWsLog("error", "Authentication failed: " + errMsg);
+                apiWsLog("debug", "Authenticate: failed response: " + JSON.stringify(auth));
+                scheduleManualRetry("authentication_failed");
                 return false;
             })
             .catch((err) => {
                 authenticated = false;
-                log("error", "Authentication error: " + (err && err.message ? err.message : err));
-                log("debug", "Authenticate: exception.");
+                apiWsLog("error", "Authentication error: " + (err && err.message ? err.message : err));
+                apiWsLog("debug", "Authenticate: exception.");
+                scheduleManualRetry("authentication_exception");
                 return false;
             })
             .finally(() => {
-                log("debug", "Authenticate: completed.");
+                apiWsLog("debug", "Authenticate: completed.");
                 authenticating = null;
             });
         return authenticating;
@@ -278,39 +315,40 @@
 
     async function ensureConnection(config) {
         if (!signalR) {
-            log("debug", "ensureConnection: signalR missing.");
+            apiWsLog("debug", "ensureConnection: signalR missing.");
             return false;
         }
         if (!config.apiSendEnabled) {
             if (!warnedApiSendDisabled) {
-                log("warn", "apiSendEnabled is false; skipping WS sends.");
+                apiWsLog("warn", "apiSendEnabled is false; skipping WS sends.");
                 warnedApiSendDisabled = true;
             }
-            log("debug", "ensureConnection: apiSendEnabled false.");
+            apiWsLog("debug", "ensureConnection: apiSendEnabled false.");
             return false;
         }
         warnedApiSendDisabled = false;
         if (!config.communityID || !config.apiKey || config.serverId === null) {
             if (!warnedMissingConfig) {
-                log("error", "Missing communityID, apiKey, or serverId for WS authentication. Check config.json or convars.");
+                apiWsLog("error", "Missing communityID, apiKey, or serverId for WS authentication. Check config.json or convars.");
                 warnedMissingConfig = true;
             }
-            log("debug", "ensureConnection: missing communityID/apiKey/serverId.");
+            apiWsLog("debug", "ensureConnection: missing communityID/apiKey/serverId.");
             return false;
         }
         warnedMissingConfig = false;
 
         if (!connection || !configsEqual(connectionConfig, config)) {
-            log("debug", "ensureConnection: building new connection (config changed or missing).");
+            apiWsLog("debug", "ensureConnection: building new connection (config changed or missing).");
             if (connection) {
                 try {
+                    apiWsLog("debug", "ensureConnection: stopping previous connection before rebuild.");
                     await connection.stop();
                 } catch (_) {
                 }
             }
             authenticated = false;
             connectionConfig = config;
-            log("debug", "ensureConnection: withUrl(" + config.hubUrl + "), transport=WebSockets, skipNegotiation=false");
+            apiWsLog("debug", "ensureConnection: withUrl(" + config.hubUrl + "), transport=WebSockets, skipNegotiation=false");
             connection = new signalR.HubConnectionBuilder()
                 .configureLogging(createSignalRLogger())
                 .withUrl(config.hubUrl, {
@@ -320,7 +358,7 @@
                     nextRetryDelayInMilliseconds: (retryContext) => {
                         reconnectFailureCount = retryContext.previousRetryCount;
                         if (retryContext.previousRetryCount > 0) {
-                            log(
+                            apiWsLog(
                                 "debug",
                                 "Reconnect attempt " + retryContext.previousRetryCount
                                 + " failed: " + getErrorMessage(retryContext.retryReason)
@@ -334,76 +372,87 @@
                 })
                 .build();
 
+            apiWsLog("debug", "ensureConnection: registering pushEvent handler on hub connection.");
             connection.on("pushEvent", handleIncomingPushEvent);
 
             connection.onreconnecting((err) => {
                 authenticated = false;
                 resetReconnectState();
                 const msg = err && err.message ? ": " + err.message : "";
-                log("debug", "Reconnecting to API WS hub" + msg + ".");
+                apiWsLog("debug", "Reconnecting to API WS hub" + msg + ".");
             });
             connection.onreconnected(async () => {
                 authenticated = false;
                 resetReconnectState();
+                resetManualRetryState();
                 clearServerIssue("ws-send");
-                log("debug", "Reconnected: re-authenticating.");
+                apiWsLog("debug", "Reconnected: re-authenticating.");
                 await authenticate();
             });
             connection.onclose((err) => {
                 authenticated = false;
                 const msg = err && err.message ? ": " + err.message : "";
                 reportReconnectFailure(reconnectFailureCount, err);
-                log("debug", "Disconnected from API WS hub" + msg + ".");
+                apiWsLog("debug", "Disconnected from API WS hub" + msg + ".");
                 resetReconnectState();
+                scheduleManualRetry("connection_closed");
             });
         }
 
+        apiWsLog("debug", "ensureConnection: current state=" + String(connection.state) + ".");
         if (connection.state !== signalR.HubConnectionState.Connected) {
             if (!connecting) {
-                log("debug", "ensureConnection: starting connection.");
+                apiWsLog("debug", "ensureConnection: starting connection.");
                 connecting = connection.start()
                     .then(() => {
                         clearServerIssue("ws-send");
-                        log("info", "Connected to API WS hub (" + connectionConfig.hubUrl + ").");
-                        log("debug", "ensureConnection: connection start resolved.");
+                        resetManualRetryState();
+                        apiWsLog("info", "Connected to API WS hub (" + connectionConfig.hubUrl + ").");
+                        apiWsLog("debug", "ensureConnection: connection start resolved.");
                     })
                     .catch((err) => {
                         const errMsg = getErrorMessage(err);
-                        log("debug", "Failed to connect to API WS hub: " + errMsg);
+                        apiWsLog("debug", "Failed to connect to API WS hub: " + errMsg);
                         reportServerIssue("ws-send", "Unable to connect to API WS hub: " + errMsg, SEND_ERROR_LOG_INTERVAL_MS);
-                        log("debug", "ensureConnection: connection start rejected.");
+                        apiWsLog("debug", "ensureConnection: connection start rejected.");
+                        scheduleManualRetry("connection_start_failed");
                         throw err;
                     })
                     .finally(() => {
-                        log("debug", "ensureConnection: start attempt finished.");
+                        apiWsLog("debug", "ensureConnection: start attempt finished.");
                         connecting = null;
                     });
             }
             try {
                 await connecting;
             } catch (_) {
-                log("debug", "ensureConnection: connection start failed.");
+                apiWsLog("debug", "ensureConnection: connection start failed.");
                 return false;
             }
         }
 
         if (!authenticated) {
-            log("debug", "ensureConnection: authenticating.");
-            return await authenticate();
+            apiWsLog("debug", "ensureConnection: authenticating.");
+            const authOk = await authenticate();
+            apiWsLog("debug", "ensureConnection: authenticate result=" + authOk + ".");
+            return authOk;
         }
-        log("debug", "ensureConnection: ready.");
+        apiWsLog("debug", "ensureConnection: ready.");
         return true;
     }
 
     async function runBackgroundEnsure() {
         if (backgroundEnsureInFlight) {
+            apiWsLog("debug", "Background ensure skipped: already running.");
             return;
         }
         backgroundEnsureInFlight = true;
         try {
+            apiWsLog("debug", "Background ensure tick starting.");
             await ensureConnection(buildConfig());
         } catch (_) {
         } finally {
+            apiWsLog("debug", "Background ensure tick finished.");
             backgroundEnsureInFlight = false;
         }
     }
@@ -412,6 +461,7 @@
         if (!signalR || backgroundEnsureInterval) {
             return;
         }
+        apiWsLog("debug", "Starting API WS background ensure loop (" + BACKGROUND_ENSURE_INTERVAL_MS + "ms).");
         runBackgroundEnsure();
         backgroundEnsureInterval = setInterval(runBackgroundEnsure, BACKGROUND_ENSURE_INTERVAL_MS);
     }
@@ -420,6 +470,7 @@
         authenticated = false;
         connecting = null;
         authenticating = null;
+        resetManualRetryState();
         if (!connection) {
             return;
         }
@@ -450,7 +501,14 @@
             if (!updates) {
                 return false;
             }
-            const payload = Array.isArray(updates) ? updates : Object.values(updates);
+            const payload = (Array.isArray(updates) ? updates : Object.values(updates)).filter((entry) => {
+                if (!entry || typeof entry !== "object") {
+                    return false;
+                }
+                const hasIdentity = !!(entry.identId || entry.apiId || entry.communityUserId);
+                const hasLocation = typeof entry.location === "string" && entry.location.length > 0;
+                return hasIdentity && hasLocation;
+            });
             if (!payload || payload.length === 0) {
                 return false;
             }
@@ -460,19 +518,19 @@
                 reportServerIssue("ws-send", "unitLocation skipped: connection not ready.", SEND_ERROR_LOG_INTERVAL_MS);
                 return false;
             }
-            log("debug", "Sending location update with payload: " + JSON.stringify(payload));
+            apiWsLog("debug", "Sending location update with payload: " + JSON.stringify(payload));
             const result = await connection.invoke("unitLocation", payload);
             clearServerIssue("ws-send");
-            log("debug", "unitLocation response: " + JSON.stringify(result));
+            apiWsLog("debug", "unitLocation response: " + JSON.stringify(result));
             if (result && result.success === false) {
                 const errMsg = result.error || "unknown error";
-                log("warn", "unitLocation rejected: " + errMsg);
+                apiWsLog("warn", "unitLocation rejected: " + errMsg);
                 return false;
             }
             return true;
         } catch (err) {
             const errMsg = getErrorMessage(err);
-            log("debug", "unitLocation send failed: " + errMsg);
+            apiWsLog("debug", "unitLocation send failed: " + errMsg);
             reportServerIssue("ws-send", "unitLocation send failed: " + errMsg, SEND_ERROR_LOG_INTERVAL_MS);
             return false;
         }

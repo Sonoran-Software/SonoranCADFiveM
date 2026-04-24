@@ -1,5 +1,5 @@
 {
-  "resource": "3.2.40",
+  "resource": "4.0.0",
   "testedFxServerVersion": "5932",
   "submoduleConfigs": {
     "bodycam": {
@@ -20,7 +20,7 @@
       "requiresPlugins": [
         {
           "name": "locations",
-          "critial": true
+          "critical": true
         }
       ]
     },

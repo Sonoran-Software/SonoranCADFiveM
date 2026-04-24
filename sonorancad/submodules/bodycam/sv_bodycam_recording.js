@@ -52,11 +52,15 @@ async function resolveAccountId(src, apiData) {
 	}
 
 	const identifier = getPlayerIdentifierByType(src);
+	const communityUserId = exports[GetCurrentResourceName()].getPlayerCommunityUserId
+		? exports[GetCurrentResourceName()].getPlayerCommunityUserId(String(src))
+		: null;
 	if (!identifier) {
 		return null;
 	}
-	if (ACCOUNT_CACHE.has(identifier)) {
-		return ACCOUNT_CACHE.get(identifier);
+	const cacheKey = communityUserId || identifier;
+	if (ACCOUNT_CACHE.has(cacheKey)) {
+		return ACCOUNT_CACHE.get(cacheKey);
 	}
 
 	if (!accountApiRegistered) {
@@ -66,11 +70,14 @@ async function resolveAccountId(src, apiData) {
 
 	return new Promise((resolve) => {
 		exports[GetCurrentResourceName()].performApiRequest(
-			[{ apiId: identifier, username: apiData && apiData.username ? apiData.username : undefined }],
+			[{
+				communityUserId: communityUserId || undefined,
+				username: apiData && apiData.username ? apiData.username : undefined,
+			}],
 			"GET_ACCOUNT",
 			(res, ok) => {
 				if (!ok) {
-					log("warn", `Account lookup failed for ${identifier}: ${res}`);
+					log("warn", `Account lookup failed for ${cacheKey}: ${res}`);
 					resolve(null);
 					return;
 				}
@@ -86,7 +93,7 @@ async function resolveAccountId(src, apiData) {
 							(parsed.account && (parsed.account.uuid || parsed.account.id)))) ||
 					null;
 				if (accountId) {
-					ACCOUNT_CACHE.set(identifier, accountId);
+					ACCOUNT_CACHE.set(cacheKey, accountId);
 				}
 				resolve(accountId);
 			}
@@ -181,7 +188,7 @@ async function uploadBodycamClip(src, payload) {
 	);
 }
 
-onNet("SonoranCAD::Tablet::SetApiData", (sessionId, username) => {
+const cacheTabletSession = (sessionId, username) => {
 	const src = String(global.source);
 	const current = API_CACHE.get(src) || {};
 	API_CACHE.set(src, {
@@ -189,7 +196,9 @@ onNet("SonoranCAD::Tablet::SetApiData", (sessionId, username) => {
 		sessionId,
 		username,
 	});
-});
+};
+
+onNet("SonoranCAD::Tablet::AssociateSsoData", cacheTabletSession);
 
 onNet("SonoranCAD::bodycam::UploadRecording", (payload) => {
 	const src = Number(global.source);

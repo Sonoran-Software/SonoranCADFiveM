@@ -10,8 +10,6 @@ CreateThread(function()
     Config.LoadPlugin("calltemplates", function(pluginConfig)
         if not pluginConfig.enabled then return end
 
-        registerApiType("NEW_DISPATCH", "emergency")
-
         local templateCache = {}
         local templateDirectory = pluginConfig.callTypeDirectory or "submodules/calltemplates/calltypes"
 
@@ -105,9 +103,9 @@ CreateThread(function()
                 return
             end
 
-            local identifier = GetIdentifiers(source)[Config.primaryIdentifier]
-            if identifier == nil then
-                TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^1Error ^0] ", "Unable to resolve your CAD identifier."}})
+            local communityUserId = GetPlayerCommunityUserId(source)
+            if communityUserId == nil then
+                TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^1Error ^0] ", "You must link your CAD account before sending this dispatch."}})
                 return
             end
 
@@ -131,7 +129,7 @@ CreateThread(function()
             end
 
             if cmdConfig.includePlayerUnit ~= false then
-                units[#units + 1] = identifier
+                units[#units + 1] = communityUserId
             end
 
             local extraNotes = {}
@@ -149,7 +147,7 @@ CreateThread(function()
             end
 
             local payload = {
-                serverId = Config.serverId,
+                serverId = tonumber(Config.serverId),
                 callId = template.callId or -1,
                 origin = template.origin or pluginConfig.defaultOrigin or 2,
                 status = template.status or pluginConfig.defaultStatus or 1,
@@ -161,11 +159,11 @@ CreateThread(function()
                 code = cmdConfig.code or template.code or "",
                 description = buildDescription(cmdConfig, template, args),
                 notes = mergeNotes(template.notes, extraNotes),
-                metaData = template.metaData or {},
                 units = units,
                 primary = template.primary or -1,
                 trackPrimary = template.trackPrimary or false,
-                idents = template.idents or {}
+                idents = template.idents or {},
+                communityUserIds = {communityUserId}
             }
 
             TriggerEvent("SonoranCAD::calltemplates:SendDispatch", payload, source, cmdConfig.command)
@@ -177,8 +175,13 @@ CreateThread(function()
 
             if Config.apiSendEnabled then
                 debugLog(("[calltemplates] sending dispatch from /%s"):format(commandName or "unknown"))
-                performApiRequest({payload}, "NEW_DISPATCH", function() end)
-                TriggerClientEvent("chat:addMessage", source, {args = {"^0^5^*[SonoranCAD]^r ", "^7Your call has been sent to CAD."}})
+                local response = CadApiCreateDispatchCall(payload)
+                if response.success then
+                    TriggerClientEvent("chat:addMessage", source, {args = {"^0^5^*[SonoranCAD]^r ", "^7Your call has been sent to CAD."}})
+                else
+                    CadApiLogFailure("NEW_DISPATCH", response, payload)
+                    TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^1Error ^0] ", "Call could not be sent to CAD."}})
+                end
             else
                 errorLog("Config.apiSendEnabled disabled via convar or config, skipping call creation. Check your config if this is unintentional.")
                 TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^1Error ^0] ", "Call could not be sent; API is disabled."}})
@@ -187,7 +190,7 @@ CreateThread(function()
 
         for _, cmdConfig in ipairs(pluginConfig.commands or {}) do
             if cmdConfig.command ~= nil and cmdConfig.callTypeFile ~= nil then
-                local cfg = cmdConfig 
+                local cfg = cmdConfig
                 local restricted = cfg.useAcePermissions
                 if restricted == nil then restricted = true end
 

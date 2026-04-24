@@ -34,7 +34,7 @@ if pluginConfig.enabled then
     end
 
     RegisterNetEvent("SonoranCAD::unitstatus:StatusUpdate")
-    AddEventHandler("SonoranCAD::unitstatus:StatusUpdate", function(apiId, status, success)
+    AddEventHandler("SonoranCAD::unitstatus:StatusUpdate", function(unitIdentity, status, success)
         if success then
             TriggerEvent("chat:addMessage", {args = {"^0^5^*[SonoranCAD]^r ", ("^7Status successfully changed to ^5%s^7."):format(statuses[status])}})
         else

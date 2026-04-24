@@ -5,7 +5,7 @@
 ]]
 
 local config = {
-    enabled = false,
+    enabled = true,
     pluginName = "vehreg", -- name your plugin here
     pluginAuthor = "Jordan.#2139", -- author
 	configVersion = "1.3",
@@ -16,7 +16,7 @@ local config = {
 
     language = {
         notInVeh = "Player Not In Vehicle... Please Ensure You're In A Vehicle And Try Again!",
-        noApiId = "API ID NOT LINKED TO AN ACCOUNT IN THIS COMMUNITY",
+        noCadLink = "CAD ACCOUNT IS NOT LINKED TO THIS COMMUNITY",
         plateAlrRegisted = "This plate has already been registered to another person",
         helpMsg = 'Register your current vehicle in CAD',
         noCharFound = "No character found. Please ensure you are logged in to a character.",

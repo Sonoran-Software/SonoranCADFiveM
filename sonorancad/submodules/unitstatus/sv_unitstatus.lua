@@ -12,24 +12,29 @@ local pluginConfig = Config.GetPluginConfig("unitstatus")
 
 if pluginConfig.enabled then
 
-    registerApiType("UNIT_STATUS", "emergency")
-
-    function setUnitStatus(apiId, status, player)
+    function setUnitStatus(unitIdentity, status, player)
         local statusNumber = nil
-        debugLog(("%s %s %s"):format(apiId, status, player))
+        debugLog(("%s %s %s"):format(unitIdentity, status, player))
         if tonumber(status) ~= nil and tonumber(status) >= 0 and tonumber(status) <= 5 then
             statusNumber = tonumber(status)
         else
             statusNumber = tonumber(pluginConfig.statusCodes[string.upper(status)])
         end
         assert(statusNumber ~= nil, ("Status %s was not found in config"):format(status))
-        local payload = {{["apiId"] = apiId, ["status"] = statusNumber, ["serverId"] = Config.serverId}}
-        performApiRequest(payload, "UNIT_STATUS", function(res, success)
-            TriggerEvent("SonoranCAD::unitstatus:StatusUpdate", apiId, statusNumber, success)
-            if player ~= nil then
-                TriggerClientEvent("SonoranCAD::unitstatus:StatusUpdate", player, apiId, statusNumber, success)
-            end
-        end)
+        local communityUserId = player ~= nil and GetPlayerCommunityUserId(player) or unitIdentity
+        local payload = {
+            ["communityUserId"] = communityUserId,
+            ["status"] = statusNumber,
+            ["serverId"] = tonumber(Config.serverId)
+        }
+        local response = CadApiSetUnitStatus(payload)
+        if not response.success then
+            CadApiLogFailure("UNIT_STATUS", response, payload)
+        end
+        TriggerEvent("SonoranCAD::unitstatus:StatusUpdate", unitIdentity, statusNumber, response.success == true)
+        if player ~= nil then
+            TriggerClientEvent("SonoranCAD::unitstatus:StatusUpdate", player, unitIdentity, statusNumber, response.success == true)
+        end
     end
 
     exports('cadSetUnitStatus', setUnitStatus)
