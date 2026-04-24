@@ -12,8 +12,7 @@ local pluginConfig = Config.GetPluginConfig("forcereg")
 if pluginConfig.enabled and Config.requireLink ~= false then
 
     local isNagging = false
-    local isFreezing = false
-    local freezePos = nil
+    local isFreezePopup = false
     local isNoSpawn = false
 
     local function resolve_forcereg_text(value, fallback)
@@ -35,6 +34,9 @@ if pluginConfig.enabled and Config.requireLink ~= false then
     end
 
     local function should_force_popup()
+        if get_captive_option() == "freeze" then
+            return true
+        end
         if Config.freezeUntilLinked == true then
             return true
         end
@@ -80,7 +82,7 @@ if pluginConfig.enabled and Config.requireLink ~= false then
 
             local captiveOption = get_captive_option()
             isNagging = captiveOption == "nag"
-            isFreezing = captiveOption == "freeze"
+            isFreezePopup = captiveOption == "freeze"
             isNoSpawn = captiveOption == "nospawn"
 
             if should_auto_open_popup() then
@@ -91,8 +93,7 @@ if pluginConfig.enabled and Config.requireLink ~= false then
 
         debugLog(("Forcereg cleared restrictions for %s"):format(tostring(identifier)))
         isNagging = false
-        isFreezing = false
-        freezePos = nil
+        isFreezePopup = false
         isNoSpawn = false
         TriggerEvent("SonoranCAD::links:ForceOpen", false)
     end)
@@ -112,23 +113,11 @@ if pluginConfig.enabled and Config.requireLink ~= false then
                     DrawText2D(verifyMessage, 0, 0, 0.265, 0.5, 0.5, 255, 255, 255, 150)
                 end
                 Wait(0)
-            elseif isFreezing then
-                if freezePos == nil then
-                    freezePos = GetEntityCoords(PlayerPedId())
-                end
-
-                FreezeEntityPosition(PlayerPedId(), true)
-                ClearPedTasksImmediately(PlayerPedId())
-                SetEntityCoords(PlayerPedId(), freezePos, 0.0, 0.0, 0.0, false)
-
+            elseif isFreezePopup then
                 DrawText2D(captiveMessage, 0, 0, 0.2, 0.4, 0.5, 255, 255, 255, 150)
                 DrawText2D(instructionalMessage, 0, 0, 0.195, 0.45, 0.5, 255, 255, 255, 150)
                 DrawText2D(verifyMessage, 0, 0, 0.265, 0.5, 0.5, 255, 255, 255, 150)
                 Wait(0)
-            elseif freezePos ~= nil then
-                FreezeEntityPosition(PlayerPedId(), false)
-                freezePos = nil
-                Wait(100)
             elseif isNoSpawn then
                 Wait(250)
             else
