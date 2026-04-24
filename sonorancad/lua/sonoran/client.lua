@@ -592,7 +592,7 @@ local function create_client(config, adapter)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
     return self:_request("DELETE", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/units/kick", {
       body = {
-        apiId = data and data.apiId or nil,
+        communityUserId = data and data.communityUserId or nil,
         reason = data and data.reason or nil
       }
     })
