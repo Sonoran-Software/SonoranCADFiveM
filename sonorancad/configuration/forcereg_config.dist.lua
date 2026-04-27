@@ -35,8 +35,6 @@ local config = {
 
         Nag: Simply nags the user with a big notification across the top of their screen.
         Freeze: Forces the /link menu on screen and it cannot be closed until the player links.
-        Whitelist: Prevents connection to the server entirely via deferrals.
-        Whitelist also blocks the in-game /link flow, so first-time linking must already be completed in CAD or via another external process.
         WARNING: NOT COMPATIBLE WITH ADAPTIVE CARD RESOURCES
     ]]
     captiveOption = "Nag",
