@@ -12,7 +12,7 @@
     "linkPollIntervalMs": 10000,
     "linkPopupTitleText": "Press the button to link your CAD account to this FiveM server",
     "linkButtonText": "Link CAD",
-    "primaryIdentifier": "steam",
+    "primaryIdentifier": "license",
     "apiSendEnabled": true,
     "debugMode": false,
     "updateBranch": "master",
