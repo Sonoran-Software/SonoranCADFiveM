@@ -9,7 +9,7 @@
 
 local pluginConfig = Config.GetPluginConfig("forcereg")
 
-if pluginConfig.enabled and Config.requireLink ~= false then
+if pluginConfig.enabled and pluginConfig.requireLink ~= false then
 
     local function resolve_forcereg_text(value, fallback)
         if type(value) ~= "string" or value == "" then
@@ -26,6 +26,9 @@ if pluginConfig.enabled and Config.requireLink ~= false then
     end
 
     local linkCommand = (type(Config.linkCommand) == "string" and Config.linkCommand ~= "" and Config.linkCommand) or "link"
+    if type(pluginConfig.linkCommand) == "string" and pluginConfig.linkCommand ~= "" then
+        linkCommand = pluginConfig.linkCommand
+    end
     local captiveMessage = resolve_forcereg_text(
         pluginConfig.captiveMessage,
         ("You must link your CAD account before joining this server. Whitelist mode blocks the in-game /%s flow, so link your identifier in CAD first or switch ForceReg to Nag/Freeze."):format(linkCommand)

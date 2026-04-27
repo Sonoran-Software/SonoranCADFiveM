@@ -424,6 +424,60 @@ if type(Config.linkButtonText) ~= "string" or Config.linkButtonText == "" then
     Config.linkButtonText = "Link CAD"
 end
 
+local function resolve_forcereg_link_settings()
+    local pluginConfig = Config.plugins.forcereg
+    if pluginConfig == nil then
+        pluginConfig = Config.GetPluginConfig('forcereg')
+    end
+    if type(pluginConfig) ~= "table" or pluginConfig.enabled ~= true then
+        return
+    end
+
+    if type(pluginConfig.requireLink) == "boolean" then
+        Config.requireLink = pluginConfig.requireLink
+    end
+
+    if type(pluginConfig.autoOpenLinkPopup) == "boolean" then
+        Config.autoOpenLinkPopup = pluginConfig.autoOpenLinkPopup
+    end
+
+    if type(pluginConfig.linkCommand) == "string" and pluginConfig.linkCommand ~= "" then
+        Config.linkCommand = pluginConfig.linkCommand
+    end
+
+    if tonumber(pluginConfig.linkPollIntervalMs) ~= nil then
+        Config.linkPollIntervalMs = tonumber(pluginConfig.linkPollIntervalMs)
+    end
+
+    if type(pluginConfig.linkPopupTitleText) == "string" and pluginConfig.linkPopupTitleText ~= "" then
+        Config.linkPopupTitleText = pluginConfig.linkPopupTitleText
+    end
+
+    if type(pluginConfig.linkButtonText) == "string" and pluginConfig.linkButtonText ~= "" then
+        Config.linkButtonText = pluginConfig.linkButtonText
+    end
+
+    local captiveOption = type(pluginConfig.captiveOption) == "string" and pluginConfig.captiveOption:lower() or "nag"
+    if captiveOption == "freeze" then
+        Config.freezeUntilLinked = true
+        Config.allowPopupCloseWhenUnlinked = false
+    else
+        Config.freezeUntilLinked = false
+        if type(pluginConfig.allowPopupCloseWhenUnlinked) == "boolean" then
+            Config.allowPopupCloseWhenUnlinked = pluginConfig.allowPopupCloseWhenUnlinked
+        else
+            Config.allowPopupCloseWhenUnlinked = true
+        end
+    end
+end
+
+resolve_forcereg_link_settings()
+
+Config.linkPollIntervalMs = tonumber(Config.linkPollIntervalMs) or 10000
+if Config.linkPollIntervalMs < 1000 then
+    Config.linkPollIntervalMs = 1000
+end
+
 local function applyFrameworkConvar(key, value)
     if key == "apiKey" or value == nil then
         return

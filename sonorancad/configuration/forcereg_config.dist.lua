@@ -8,10 +8,27 @@
 ]]
 local config = {
     enabled = true,
-    configVersion = "1.1",
+    configVersion = "1.2",
     pluginName = "forcereg", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author
     requiresPlugins = {}, -- required plugins for this plugin to work, separated by commas
+
+    -- Controls whether ForceReg actually enforces CAD linking.
+    -- This replaces the old top-level config.requireLink setting.
+    requireLink = true,
+
+    -- Replaces the old top-level config.autoOpenLinkPopup setting.
+    autoOpenLinkPopup = true,
+
+    -- Optional override for the /link command name used in ForceReg text and the link UI.
+    linkCommand = "link",
+
+    -- Optional override for how often the link UI polls for link completion.
+    linkPollIntervalMs = 10000,
+
+    -- Optional override for the link popup title/button text while ForceReg is active.
+    linkPopupTitleText = "Press the button to link your CAD account to this FiveM server",
+    linkButtonText = "Link CAD",
 
     --[[
         Below defines the "captive" option to use:
@@ -23,6 +40,10 @@ local config = {
         WARNING: NOT COMPATIBLE WITH ADAPTIVE CARD RESOURCES
     ]]
     captiveOption = "Nag",
+
+    -- When not using Freeze, should the popup still be closable while unlinked?
+    -- This replaces the old top-level config.allowPopupCloseWhenUnlinked setting.
+    allowPopupCloseWhenUnlinked = true,
 
     -- If using Nag, should the text be centered in the users screen or at the top? ('Center' or 'Top')
     nagDrawTextLocation = "Top",

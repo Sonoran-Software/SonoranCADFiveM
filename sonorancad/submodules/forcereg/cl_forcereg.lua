@@ -9,7 +9,7 @@
 
 local pluginConfig = Config.GetPluginConfig("forcereg")
 
-if pluginConfig.enabled and Config.requireLink ~= false then
+if pluginConfig.enabled and pluginConfig.requireLink ~= false then
 
     local isNagging = false
     local isFreezePopup = false
@@ -23,6 +23,9 @@ if pluginConfig.enabled and Config.requireLink ~= false then
     end
 
     local function get_link_command()
+        if type(pluginConfig.linkCommand) == "string" and pluginConfig.linkCommand ~= "" then
+            return pluginConfig.linkCommand
+        end
         if type(Config.linkCommand) == "string" and Config.linkCommand ~= "" then
             return Config.linkCommand
         end
@@ -30,23 +33,28 @@ if pluginConfig.enabled and Config.requireLink ~= false then
     end
 
     local function should_auto_open_popup()
+        if type(pluginConfig.autoOpenLinkPopup) == "boolean" then
+            return pluginConfig.autoOpenLinkPopup
+        end
         return Config.autoOpenLinkPopup ~= false
     end
 
+    local function should_allow_popup_close_when_unlinked()
+        local captiveOption = get_captive_option()
+        if captiveOption == "freeze" then
+            return false
+        end
+        if type(pluginConfig.allowPopupCloseWhenUnlinked) == "boolean" then
+            return pluginConfig.allowPopupCloseWhenUnlinked
+        end
+        return true
+    end
+
     local function should_force_popup()
-        if get_captive_option() == "freeze" then
-            return true
-        end
-        if Config.freezeUntilLinked == true then
-            return true
-        end
-        return Config.allowPopupCloseWhenUnlinked == false
+        return get_captive_option() == "freeze" or should_allow_popup_close_when_unlinked() == false
     end
 
     local function get_captive_option()
-        if Config.freezeUntilLinked == true then
-            return "freeze"
-        end
         if type(pluginConfig.captiveOption) ~= "string" then
             return "nag"
         end
