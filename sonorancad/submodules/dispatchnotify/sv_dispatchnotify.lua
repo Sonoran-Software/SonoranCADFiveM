@@ -230,46 +230,73 @@ if pluginConfig.enabled then
     if pluginConfig.enableUnitNotifyToggleCommand == nil then
         pluginConfig.enableUnitNotifyToggleCommand = false
     end
-    if pluginConfig.unitNotifyToggleCommand == nil then
-        pluginConfig.unitNotifyToggleCommand = "toggledispatchnotify"
+    if pluginConfig.commandName == nil or pluginConfig.commandName == "" then
+        pluginConfig.commandName = "dn"
+    end
+    if pluginConfig.respondSubcommandName == nil or pluginConfig.respondSubcommandName == "" then
+        pluginConfig.respondSubcommandName = pluginConfig.respondCommandName or "respond"
+    end
+    if pluginConfig.unitNotifyToggleSubcommand == nil or pluginConfig.unitNotifyToggleSubcommand == "" then
+        pluginConfig.unitNotifyToggleSubcommand = pluginConfig.unitNotifyToggleCommand or "notify"
     end
     if pluginConfig.unitNotifyToggleAce == nil then
         pluginConfig.unitNotifyToggleAce = "sonorancad.dispatchnotify.toggle"
     end
+    if pluginConfig.addNoteSubcommand == nil or pluginConfig.addNoteSubcommand == "" then
+        pluginConfig.addNoteSubcommand = pluginConfig.addNoteCommand or "note"
+    end
+    if pluginConfig.addPlateSubcommand == nil or pluginConfig.addPlateSubcommand == "" then
+        pluginConfig.addPlateSubcommand = pluginConfig.addPlateCommand or "plate"
+    end
+    if pluginConfig.gpsToggleSubcommand == nil or pluginConfig.gpsToggleSubcommand == "" then
+        pluginConfig.gpsToggleSubcommand = "gps"
+    end
+
+    local function getRespondCommandText()
+        return ("%s %s"):format(pluginConfig.commandName, pluginConfig.respondSubcommandName)
+    end
+
+    local function handleUnitNotifyToggle(source, args)
+        local playerSource = tonumber(source)
+        if playerSource ~= 0 and pluginConfig.unitNotifyToggleAce ~= "" then
+            if not IsPlayerAceAllowed(playerSource, pluginConfig.unitNotifyToggleAce) then
+                SendMessage("error", playerSource, "You do not have permission to use this command.")
+                return
+            end
+        end
+
+        local arg = args[1]
+        if arg then
+            local normalized = string.lower(arg)
+            if normalized == "on" or normalized == "enable" or normalized == "enabled" then
+                setUnitNotifyOverride(true, playerSource)
+                return
+            elseif normalized == "off" or normalized == "disable" or normalized == "disabled" then
+                setUnitNotifyOverride(false, playerSource)
+                return
+            elseif normalized == "auto" or normalized == "clear" then
+                setUnitNotifyOverride(nil, playerSource)
+                return
+            else
+                SendMessage("error", playerSource, ("Usage: /%s %s [on|off|auto]"):format(
+                    pluginConfig.commandName,
+                    pluginConfig.unitNotifyToggleSubcommand
+                ))
+                return
+            end
+        end
+
+        if unitNotifyOverride == nil then
+            setUnitNotifyOverride(true, playerSource)
+        else
+            setUnitNotifyOverride(not unitNotifyOverride, playerSource)
+        end
+    end
 
     if pluginConfig.enableUnitNotifyToggleCommand then
-        RegisterCommand(pluginConfig.unitNotifyToggleCommand, function(source, args, rawCommand)
-            local source = tonumber(source)
-            if source ~= 0 and pluginConfig.unitNotifyToggleAce ~= "" then
-                if not IsPlayerAceAllowed(source, pluginConfig.unitNotifyToggleAce) then
-                    SendMessage("error", source, "You do not have permission to use this command.")
-                    return
-                end
-            end
-
-            local arg = args[1]
-            if arg then
-                local normalized = string.lower(arg)
-                if normalized == "on" or normalized == "enable" or normalized == "enabled" then
-                    setUnitNotifyOverride(true, source)
-                    return
-                elseif normalized == "off" or normalized == "disable" or normalized == "disabled" then
-                    setUnitNotifyOverride(false, source)
-                    return
-                elseif normalized == "auto" or normalized == "clear" then
-                    setUnitNotifyOverride(nil, source)
-                    return
-                else
-                    SendMessage("error", source, ("Usage: /%s [on|off|auto]"):format(pluginConfig.unitNotifyToggleCommand))
-                    return
-                end
-            end
-
-            if unitNotifyOverride == nil then
-                setUnitNotifyOverride(true, source)
-            else
-                setUnitNotifyOverride(not unitNotifyOverride, source)
-            end
+        RegisterNetEvent("SonoranCAD::dispatchnotify:CommandNotify")
+        AddEventHandler("SonoranCAD::dispatchnotify:CommandNotify", function(args)
+            handleUnitNotifyToggle(source, args or {})
         end)
     end
 
@@ -286,7 +313,7 @@ if pluginConfig.enabled then
                 -- Hide self-response instructions when dispatchers are online
                 messageTemplate = pluginConfig.incomingCallMessageNoResponse or pluginConfig.incomingCallMessage
             end
-            local message = messageTemplate:gsub("{caller}", call.caller):gsub("{location}", call.location):gsub("{description}", call.description):gsub("{callId}", call.callId):gsub("{command}", pluginConfig.respondCommandName)
+            local message = messageTemplate:gsub("{caller}", call.caller):gsub("{location}", call.location):gsub("{description}", call.description):gsub("{callId}", call.callId):gsub("{command}", getRespondCommandText())
             for i = 0, GetNumPlayerIndices()-1 do
                 local player = GetPlayerFromIndex(i)
                 local unit = GetUnitByPlayerId(player)
@@ -334,8 +361,8 @@ if pluginConfig.enabled then
     end)
 
     --Officer response
-    RegisterCommand(pluginConfig.respondCommandName, function(source, args, rawCommand)
-        local source = tonumber(source)
+    local function handleRespondCommand(source, args)
+        source = tonumber(source)
         local callId = args[1]
         if callId == nil then
             SendMessage("error", source, "Call ID must be specified.")
@@ -471,6 +498,11 @@ if pluginConfig.enabled then
                 SendMessage("debug", source, "You have been attached to the call.")
             end
         end
+    end
+
+    RegisterNetEvent("SonoranCAD::dispatchnotify:CommandRespond")
+    AddEventHandler("SonoranCAD::dispatchnotify:CommandRespond", function(args)
+        handleRespondCommand(source, args or {})
     end)
 
     RegisterNetEvent("SonoranCAD::dispatchnotify:CallAttach")
