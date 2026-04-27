@@ -11,12 +11,17 @@
 local pluginConfig = Config.GetPluginConfig("civintegration")
 
 if pluginConfig.enabled then
+    if type(pluginConfig.commandName) ~= "string" or pluginConfig.commandName == "" then
+        pluginConfig.commandName = "civid"
+    end
 
     AddTextEntry("ENTER_NAME", "Enter first and last name")
     AddTextEntry("ENTER_DOB", "Enter character date of birth in format month/day/year")
     TriggerEvent("chat:addSuggestion", "/" .. pluginConfig.commandName, "Show or manage your civilian ID.", {
         { name = "action", help = "Subcommand: show, set, reset, refresh, or help" }
     })
+    RegisterPlayerCommandHelp("civintegration", pluginConfig.commandName,
+        "Show or manage your civilian ID.", "<show|set|reset|refresh|help>")
 
     local customId = {
         ['first'] = nil,

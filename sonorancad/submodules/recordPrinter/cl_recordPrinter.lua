@@ -373,6 +373,9 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         { name = 'action', help = ('%s | %s | %s | %s | %s'):format(configuredCommands.queue, configuredCommands.print, configuredCommands.clear, configuredCommands.share, configuredCommands.accept) },
         { name = 'param', help = 'For print/share/accept: queue index or server id' }
     })
+    RegisterPlayerCommandHelp("recordprinter", baseCommand,
+        "Manage record printer queue, printing, sharing, and accepting documents.",
+        "<action> [param]")
     -- State
     local WorldDocs = {}  -- [{ pdf_link=string, Position={x,y,z}, entityObject=entity }, ...]
 

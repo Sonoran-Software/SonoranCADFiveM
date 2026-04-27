@@ -123,6 +123,7 @@ RegisterCommand(cadLinkCommandName, function()
 end, false)
 
 TriggerEvent("chat:addSuggestion", "/" .. cadLinkCommandName, "Open the Sonoran CAD account link window.")
+RegisterPlayerCommandHelp("linking", cadLinkCommandName, "Open the Sonoran CAD account link window.")
 
 RegisterNetEvent("SonoranCAD::links:OpenResult")
 AddEventHandler("SonoranCAD::links:OpenResult", function(data)

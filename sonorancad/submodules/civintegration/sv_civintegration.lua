@@ -11,6 +11,9 @@
 local pluginConfig = Config.GetPluginConfig("civintegration")
 
 if pluginConfig.enabled then
+    if type(pluginConfig.commandName) ~= "string" or pluginConfig.commandName == "" then
+        pluginConfig.commandName = "civid"
+    end
     if pluginConfig.enableIDCardUI then
         if GetResourceState('sonoran_idcard') ~= 'started' then
             if GetResourceState('sonoran_idcard') == 'stopped' then

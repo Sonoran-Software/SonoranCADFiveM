@@ -16,9 +16,11 @@ if pluginConfig.enabled then
             TriggerEvent('chat:addSuggestion', '/'..call.command, call.suggestionText, {
                 { name="Description of Call", help="State what the call is about" }
             })
+            RegisterPlayerCommandHelp("callcommands", call.command, call.suggestionText, "<description>")
         end
         if pluginConfig.enablePanic then
             TriggerEvent('chat:addSuggestion', '/panic', 'Sends a panic signal to your SonoranCAD')
+            RegisterPlayerCommandHelp("callcommands", "panic", "Send a panic signal to your SonoranCAD.")
             RegisterKeyMapping('panic', 'Panic Button', 'keyboard', '')
         end
     end)

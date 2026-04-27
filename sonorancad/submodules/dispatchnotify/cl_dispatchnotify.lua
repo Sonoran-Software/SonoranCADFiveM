@@ -90,12 +90,16 @@ CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfi
             gpsLock = not gpsLock
             TriggerEvent("chat:addMessage", {args = {"^0[ ^2GPS ^0] ", ("GPS lock has been %s"):format(gpsLock and "enabled" or "disabled")}})
         end)
+        TriggerEvent("chat:addSuggestion", "/togglegps", "Toggle automatic dispatch GPS updates on or off.")
+        RegisterPlayerCommandHelp("dispatchnotify", "togglegps", "Toggle automatic dispatch GPS updates on or off.")
 
         if pluginConfig.enableUnitNotifyToggleCommand then
             TriggerEvent("chat:addSuggestion", "/" .. pluginConfig.unitNotifyToggleCommand,
                 "Toggle unit 911 notifications (override)", {
                     { name = "mode", help = "on | off | auto" }
                 })
+            RegisterPlayerCommandHelp("dispatchnotify", pluginConfig.unitNotifyToggleCommand,
+                "Toggle unit 911 notifications on, off, or auto.", "[on|off|auto]")
         end
 
         RegisterNetEvent("SonoranCAD::dispatchnotify:CallAttach")
@@ -133,6 +137,12 @@ CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfi
         end
 
         if pluginConfig.enableAddNote then
+            TriggerEvent("chat:addSuggestion", "/" .. pluginConfig.addNoteCommand,
+                "Add a note to your currently attached CAD call.", {
+                    { name = "note", help = "Text to attach to the active call" }
+                })
+            RegisterPlayerCommandHelp("dispatchnotify", pluginConfig.addNoteCommand,
+                "Add a note to your currently attached CAD call.", "<note>")
             RegisterCommand(pluginConfig.addNoteCommand, function(source, args, rawCommand)
                 local note = table.concat(args, " ")
                 if currentCallId ~= nil then
@@ -150,6 +160,10 @@ CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfi
                 debugLog("Got locked plate event "..tostring(plate))
                 lockedPlate = plate
             end)
+            TriggerEvent("chat:addSuggestion", "/" .. pluginConfig.addPlateCommand,
+                "Add your currently locked plate to the active CAD call.")
+            RegisterPlayerCommandHelp("dispatchnotify", pluginConfig.addPlateCommand,
+                "Add your currently locked plate to the active CAD call.")
             RegisterCommand(pluginConfig.addPlateCommand, function(source, args, rawCommand)
                 if currentCallId ~= nil and lockedPlate ~= nil then
                     TriggerServerEvent("SonoranCAD::dispatchnotify:AddNoteToCall", currentCallId, ("PLATE NUMBER: %s"):format(lockedPlate))
@@ -159,6 +173,13 @@ CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfi
                 end
             end)
         end
+
+        TriggerEvent("chat:addSuggestion", "/" .. pluginConfig.respondCommandName,
+            "Attach yourself to a CAD call by call ID.", {
+                { name = "callId", help = "The call ID to respond to" }
+            })
+        RegisterPlayerCommandHelp("dispatchnotify", pluginConfig.respondCommandName,
+            "Attach yourself to a CAD call by call ID.", "<callId>")
 
     end
 end) end)

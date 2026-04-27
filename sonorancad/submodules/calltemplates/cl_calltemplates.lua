@@ -16,6 +16,7 @@ CreateThread(function()
                     TriggerEvent('chat:addSuggestion', '/' .. commandConfig.command, suggestion, {
                         {name = "details", help = "Describe the call details to include in CAD"}
                     })
+                    RegisterPlayerCommandHelp("calltemplates", commandConfig.command, suggestion, "[details]")
                 end
             end
         end)

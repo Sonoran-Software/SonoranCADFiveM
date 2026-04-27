@@ -36,6 +36,7 @@ CreateThread(function() Config.LoadPlugin("vehreg", function(pluginConfig)
     end)
     TriggerEvent("chat:addSuggestion", "/" .. pluginConfig.reigsterCommand,
              pluginConfig.language.helpMsg)
+    RegisterPlayerCommandHelp("vehreg", pluginConfig.reigsterCommand, pluginConfig.language.helpMsg)
 
     end
 end) end)

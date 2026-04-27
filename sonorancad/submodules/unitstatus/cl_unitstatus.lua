@@ -28,9 +28,10 @@ if pluginConfig.enabled then
                 TriggerEvent("chat:addMessage", {args = {"^0^5^*[SonoranCAD]^r ", "^7Missing argument."}})
             end
         end)
-        TriggerEvent('chat:addSuggestion', pluginConfig.setStatusCommand, 'Sets your status in the CAD', {
+        TriggerEvent('chat:addSuggestion', '/' .. pluginConfig.setStatusCommand, 'Sets your status in the CAD', {
             { name="Status to set", help="UNAVAILABLE/AVAILABLE/ON_SCENE/ENROUTE/BUSY" }
         })
+        RegisterPlayerCommandHelp("unitstatus", pluginConfig.setStatusCommand, "Set your status in the CAD.", "<status>")
     end
 
     RegisterNetEvent("SonoranCAD::unitstatus:StatusUpdate")

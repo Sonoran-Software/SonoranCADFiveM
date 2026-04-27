@@ -501,6 +501,7 @@ CreateThread(function()
 
             TriggerEvent('chat:addSuggestion', '/' .. pluginConfig.command, '',
                 { { name = "[sound|anim|overlay|forceoff]", help = "Subcommand" } })
+            RegisterPlayerCommandHelp("bodycam", pluginConfig.command, "Manage Sonoran bodycam display options.", "[sound|anim|overlay|forceoff]")
             RegisterCommand('SonoranCAD::bodycam::Keybind', function()
                 local turnOn = not bodyCamDisplayOn
                 TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', true, turnOn)
@@ -513,6 +514,7 @@ CreateThread(function()
                 end, false)
                 TriggerEvent('chat:addSuggestion', '/' .. recordingConfig.commands.toggleRecording,
                     'Toggle local bodycam recording')
+                RegisterPlayerCommandHelp("bodycam", recordingConfig.commands.toggleRecording, "Toggle local bodycam recording.")
             end
             RegisterCommand('SonoranCAD::bodycam::RecordingKeybind', function()
                 toggleManualRecording()
