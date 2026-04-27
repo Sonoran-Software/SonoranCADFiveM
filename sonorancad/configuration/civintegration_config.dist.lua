@@ -8,7 +8,7 @@
 ]]
 local config = {
     enabled = true,
-    configVersion = "1.2",
+    configVersion = "1.3",
     pluginName = "civintegration", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author
     -- time to cache characters in seconds
@@ -22,6 +22,9 @@ local config = {
 
     -- if false, disables the built-in commands of this plugin so it can be used in custom code instead.
     ,enableCommands = true
+
+    -- the command name to use for showing ID info. This is used in the default text prompts and can be used in custom code as well.
+    ,commandName = "civid"
 
     -- how far away players can be to see /id show
     ,showNearbyDistance = 5.0

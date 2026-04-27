@@ -181,7 +181,7 @@ if pluginConfig.enabled then
             end)
         end
 
-        RegisterCommand("id", function(source, args, rawCommand)
+        RegisterCommand(pluginConfig.commandName, function(source, args, rawCommand)
             local subcommand = args[1] and string.lower(args[1]) or "help"
 
             if subcommand == "show" then

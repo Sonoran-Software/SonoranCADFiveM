@@ -14,6 +14,9 @@ if pluginConfig.enabled then
 
     AddTextEntry("ENTER_NAME", "Enter first and last name")
     AddTextEntry("ENTER_DOB", "Enter character date of birth in format month/day/year")
+    TriggerEvent("chat:addSuggestion", "/" .. pluginConfig.commandName, "Show or manage your civilian ID.", {
+        { name = "action", help = "Subcommand: show, set, reset, refresh, or help" }
+    })
 
     local customId = {
         ['first'] = nil,
