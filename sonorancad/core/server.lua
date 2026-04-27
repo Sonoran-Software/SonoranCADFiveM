@@ -195,18 +195,16 @@ addBlip = function(coords, colorHex, subType, toolTip, icon, dataTable, cb)
 	local data = {
 		{
 			['serverId'] = GetConvar('sonoran_serverId', 1),
-			['blip'] = {
-				['id'] = -1,
-				['subType'] = subType,
-				['coordinates'] = {
-					['x'] = coords.x,
-					['y'] = coords.y
-				},
-				['icon'] = icon,
-				['color'] = colorHex,
-				['tooltip'] = toolTip,
-				['data'] = dataTable
-			}
+            ['id'] = -1,
+            ['subType'] = subType,
+            ['coordinates'] = {
+                ['x'] = coords.x,
+                ['y'] = coords.y
+            },
+            ['icon'] = icon,
+            ['color'] = colorHex,
+            ['tooltip'] = toolTip,
+            ['data'] = dataTable
 		}
 	}
     local response = CadApiCreateBlips(data)
