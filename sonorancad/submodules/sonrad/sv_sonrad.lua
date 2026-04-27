@@ -25,7 +25,8 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
                         ["subType"] = subType,
                         ["coordinates"] = {
                             ["x"] = coords.x,
-                            ["y"] = coords.y
+                            ["y"] = coords.y,
+                            ["z"] = coords.z or 0.0
                         },
                         ["radius"] = radius,
                         ["icon"] = icon,

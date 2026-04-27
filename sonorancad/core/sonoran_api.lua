@@ -71,6 +71,8 @@ function registerApiType(_, endpoint)
 end
 exports("registerApiType", registerApiType)
 
+local legacyApiHandlers = {}
+
 local function response_with_data(response, data)
     if response and response.success then
         response.data = data
@@ -117,6 +119,18 @@ local function payload_preview(value)
     return tostring(value)
 end
 
+local function clone_table(value)
+    if type(value) ~= "table" then
+        return value
+    end
+
+    local copy = {}
+    for key, entry in pairs(value) do
+        copy[key] = entry
+    end
+    return copy
+end
+
 function CadApiReasonText(value)
     if type(value) == "string" then
         return value
@@ -145,6 +159,86 @@ local function get_v2_response_id(data)
     end
     return data.id or data.callId or data.recordId or data.dispatchCallId
 end
+
+local function get_legacy_request_payload(data)
+    if type(data) ~= "table" then
+        return {}
+    end
+
+    if data[1] ~= nil and type(data[1]) == "table" then
+        return clone_table(data[1])
+    end
+
+    return clone_table(data)
+end
+
+local function get_legacy_request_payloads(data)
+    if type(data) ~= "table" then
+        return {}
+    end
+
+    if data[1] ~= nil then
+        return data
+    end
+
+    return {clone_table(data)}
+end
+
+local function format_legacy_success(response)
+    local payload = response and response.data
+
+    if type(payload) == "table" then
+        payload = clone_table(payload)
+    elseif payload == nil then
+        payload = {}
+    end
+
+    if type(payload) == "table" then
+        if response.callId ~= nil and payload.callId == nil then
+            payload.callId = response.callId
+        end
+        if response.recordId ~= nil and payload.recordId == nil then
+            payload.recordId = response.recordId
+        end
+    end
+
+    return payload
+end
+
+local function invoke_legacy_handler(request_type, data)
+    local handler = legacyApiHandlers[tostring(request_type or ""):upper()]
+    if handler == nil then
+        return {
+            success = false,
+            reason = ("Unsupported legacy API request type: %s"):format(tostring(request_type))
+        }
+    end
+
+    local ok, response = pcall(handler, data)
+    if not ok then
+        return {
+            success = false,
+            reason = response
+        }
+    end
+
+    return response
+end
+
+function performApiRequest(data, request_type, callback)
+    local response = invoke_legacy_handler(request_type, data)
+
+    if type(callback) == "function" then
+        if response and response.success then
+            callback(format_legacy_success(response), true, response)
+        else
+            callback(CadApiReasonText(response and response.reason), false, response)
+        end
+    end
+
+    return response
+end
+exports("performApiRequest", performApiRequest)
 
 function CadApiResolveCommunityUserId(value)
     if type(value) ~= "string" or value == "" then
@@ -695,3 +789,170 @@ end
 function CadApiCheckCommunityLink(payload)
     return get_cad_client():checkCommunityLinkV2(payload)
 end
+
+legacyApiHandlers = {
+    GET_VERSION = function()
+        return CadApiGetVersion()
+    end,
+    GET_SERVERS = function()
+        return CadApiGetServers()
+    end,
+    SET_SERVERS = function(data)
+        return CadApiSetServers(get_legacy_request_payload(data))
+    end,
+    HEARTBEAT = function(data)
+        return CadApiHeartbeat(get_legacy_request_payload(data))
+    end,
+    SET_POSTALS = function(data)
+        return CadApiSetPostals(data or {})
+    end,
+    GET_CHARACTERS = function(data)
+        return CadApiGetCharacters(get_legacy_request_payload(data))
+    end,
+    SET_UNIT_STATUS = function(data)
+        return CadApiSetUnitStatus(get_legacy_request_payload(data))
+    end,
+    SET_UNIT_PANIC = function(data)
+        return CadApiSetUnitPanic(get_legacy_request_payload(data))
+    end,
+    PANIC = function(data)
+        return CadApiSetUnitPanic(get_legacy_request_payload(data))
+    end,
+    KICK_UNIT = function(data)
+        return CadApiKickUnits(get_legacy_request_payload(data))
+    end,
+    GET_ACTIVE_UNITS = function(data)
+        return CadApiGetActiveUnits(get_legacy_request_payload(data))
+    end,
+    GET_CALLS = function(data)
+        return CadApiGetCalls(get_legacy_request_payload(data))
+    end,
+    CREATE_EMERGENCY_CALL = function(data)
+        return CadApiCreateEmergencyCall(get_legacy_request_payload(data))
+    end,
+    CREATE_911_CALL = function(data)
+        return CadApiCreateEmergencyCall(get_legacy_request_payload(data))
+    end,
+    DELETE_EMERGENCY_CALL = function(data)
+        local payload = get_legacy_request_payload(data)
+        return CadApiDeleteEmergencyCall(payload.callId or payload.id, payload.serverId)
+    end,
+    DELETE_911_CALL = function(data)
+        local payload = get_legacy_request_payload(data)
+        return CadApiDeleteEmergencyCall(payload.callId or payload.id, payload.serverId)
+    end,
+    CREATE_DISPATCH_CALL = function(data)
+        return CadApiCreateDispatchCall(get_legacy_request_payload(data))
+    end,
+    CREATE_CALL = function(data)
+        return CadApiCreateDispatchCall(get_legacy_request_payload(data))
+    end,
+    UPDATE_DISPATCH_CALL = function(data)
+        local payload = get_legacy_request_payload(data)
+        local call_id = payload.callId or payload.id
+        return get_cad_client():updateDispatchCallV2(call_id, payload)
+    end,
+    ATTACH_UNIT = function(data)
+        return CadApiAttachUnitsToDispatchCall(get_legacy_request_payload(data))
+    end,
+    DETACH_UNIT = function(data)
+        return CadApiDetachUnitsFromDispatchCall(get_legacy_request_payload(data))
+    end,
+    ADD_DISPATCH_NOTE = function(data)
+        return CadApiAddDispatchNote(get_legacy_request_payload(data))
+    end,
+    ADD_CALL_NOTE = function(data)
+        return CadApiAddDispatchNote(get_legacy_request_payload(data))
+    end,
+    SET_CALL_POSTAL = function(data)
+        return CadApiSetDispatchPostal(get_legacy_request_payload(data))
+    end,
+    AUTH_STREETSIGNS = function(data)
+        local payload = get_legacy_request_payload(data)
+        return CadApiAuthorizeStreetSigns(payload.serverId or payload)
+    end,
+    SET_STREETSIGN_CONFIG = function(data)
+        local payload = get_legacy_request_payload(data)
+        return get_cad_client():setStreetSignConfigV2(payload.signConfig or payload.signs or {}, payload.serverId)
+    end,
+    UPDATE_STREETSIGN = function(data)
+        return get_cad_client():updateStreetSignsV2(get_legacy_request_payload(data))
+    end,
+    LOOKUP = function(data)
+        return CadApiLookup(get_legacy_request_payload(data))
+    end,
+    LOOKUP_BY_VALUE = function(data)
+        return CadApiLookupByValue(get_legacy_request_payload(data))
+    end,
+    CREATE_RECORD = function(data)
+        return CadApiCreateRecord(get_legacy_request_payload(data))
+    end,
+    GET_ACCOUNT = function(data)
+        return CadApiGetAccount(get_legacy_request_payload(data))
+    end,
+    GET_ACCOUNTS = function(data)
+        return CadApiGetAccounts(get_legacy_request_payload(data))
+    end,
+    SET_ACCOUNT_PERMISSIONS = function(data)
+        return CadApiSetAccountPermissions(get_legacy_request_payload(data))
+    end,
+    SET_API_IDS = function(data)
+        return CadApiSetApiIds(get_legacy_request_payload(data))
+    end,
+    VERIFY_SECRET = function(data)
+        local payload = get_legacy_request_payload(data)
+        return CadApiVerifySecret(payload.secret or payload)
+    end,
+    SEND_PHOTO = function(data)
+        return CadApiSendPhoto(get_legacy_request_payload(data))
+    end,
+    AUTHORIZE_STREET_SIGNS = function(data)
+        local payload = get_legacy_request_payload(data)
+        return CadApiAuthorizeStreetSigns(payload.serverId or payload)
+    end,
+    GET_CURRENT_CALL = function(data)
+        return CadApiGetCurrentCall(get_legacy_request_payload(data))
+    end,
+    GET_IDENTIFIERS = function(data)
+        return CadApiGetIdentifiers(get_legacy_request_payload(data))
+    end,
+    GET_ACCOUNT_UNITS = function(data)
+        return CadApiGetAccountUnits(get_legacy_request_payload(data))
+    end,
+    GET_TEMPLATES = function(data)
+        return CadApiGetTemplates(get_legacy_request_payload(data))
+    end,
+    SET_AVAILABLE_CALLOUTS = function(data)
+        return CadApiSetAvailableCallouts(get_legacy_request_payload(data))
+    end,
+    SET_STATIONS = function(data)
+        return CadApiSetStations(get_legacy_request_payload(data))
+    end,
+    GET_BLIPS = function(data)
+        return CadApiGetBlips(get_legacy_request_payload(data))
+    end,
+    CREATE_BLIPS = function(data)
+        return CadApiCreateBlips(get_legacy_request_payloads(data))
+    end,
+    UPDATE_BLIPS = function(data)
+        return CadApiUpdateBlips(get_legacy_request_payloads(data))
+    end,
+    DELETE_BLIPS = function(data)
+        return CadApiDeleteBlips(get_legacy_request_payload(data))
+    end,
+    APPLY_PERMISSION_KEY = function(data)
+        return CadApiApplyPermissionKey(get_legacy_request_payload(data))
+    end,
+    BAN_USER = function(data)
+        return CadApiBanUser(get_legacy_request_payload(data))
+    end,
+    UPLOAD_LOGS = function(data)
+        return CadApiUploadSupportLogs(get_legacy_request_payload(data))
+    end,
+    CREATE_COMMUNITY_LINK = function(data)
+        return CadApiCreateCommunityLink(get_legacy_request_payload(data))
+    end,
+    CHECK_COMMUNITY_LINK = function(data)
+        return CadApiCheckCommunityLink(get_legacy_request_payload(data))
+    end
+}
