@@ -106,7 +106,9 @@ if pluginConfig.enabled and pluginConfig.requireLink ~= false then
             isFreezePopup = captiveOption == "freeze"
             isNoSpawn = captiveOption == "nospawn"
 
-            if should_auto_open_popup() then
+            if isFreezePopup then
+                TriggerEvent("SonoranCAD::links:ForceOpen", true)
+            elseif should_auto_open_popup() then
                 TriggerEvent("SonoranCAD::links:ForceOpen", should_force_popup())
             end
             return
@@ -131,8 +133,7 @@ if pluginConfig.enabled and pluginConfig.requireLink ~= false then
                 end
                 Wait(0)
             elseif isFreezePopup then
-                draw_forcereg_message("center")
-                Wait(0)
+                Wait(100)
             elseif isNoSpawn then
                 Wait(250)
             else
