@@ -7,7 +7,7 @@
 
 ]]
 local config = {
-    enabled = false,
+    enabled = true,
     configVersion = "3.4",
     pluginName = "dispatchnotify", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author
@@ -34,10 +34,11 @@ local config = {
     ]]
     dotCallType = "511",
 
-    --[[
-        Command to respond to calls with
-    ]]
-    respondCommandName = "rcall",
+    -- Base command for dispatch notify actions
+    commandName = "dn",
+
+    -- Subcommand to respond to calls with
+    respondSubcommandName = "respond",
 
     --[[
         Enable call responding (self-dispatching)
@@ -57,13 +58,13 @@ local config = {
     --[[
         Enable an in-game command to override unit 911 notifications.
 
-        Usage: /<unitNotifyToggleCommand> [on|off|auto]
+        Usage: /<commandName> <unitNotifyToggleSubcommand> [on|off|auto]
             on: force notifications on
             off: force notifications off
             auto: follow dispatcher detection + config
     ]]
     enableUnitNotifyToggleCommand = true,
-    unitNotifyToggleCommand = "toggledispatchnotify",
+    unitNotifyToggleSubcommand = "notify",
     -- Leave blank ("") to allow anyone to use the command.
     unitNotifyToggleAce = "sonorancad.dispatchnotify.toggle",
 
@@ -167,17 +168,20 @@ local config = {
     ]]
     enableAddNote = true,
     --[[
-        addNoteCommand: The command to create for adding notes.
+        addNoteSubcommand: The subcommand to create for adding notes.
     ]]
-    addNoteCommand = "addnote",
+    addNoteSubcommand = "note",
     --[[
         enableAddPlate: Enable the addplate command, allowing units to send locked plate data as a note to their current call. Will require the wraithv2 plugin to work.
     ]]
     enableAddPlate = true,
     --[[
-        addPlateCommand: The command to create for sending plate data
+        addPlateSubcommand: The subcommand to create for sending plate data
     ]]
-    addPlateCommand = "addplate",
+    addPlateSubcommand = "plate",
+
+    -- subcommand for toggling automatic GPS waypointing
+    gpsToggleSubcommand = "gps",
 
     --[[
         onSceneHandler: Enables automatically disabling waypointing when marked on scene

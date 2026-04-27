@@ -27,7 +27,7 @@ end
 -- Helper function to determine index of given identifier
 function findIndex(identifier)
     for i,loc in ipairs(LocationCache) do
-        if loc.apiId == identifier then
+        if loc.communityUserId == identifier then
             return i
         end
     end

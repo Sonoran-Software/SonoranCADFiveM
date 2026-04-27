@@ -7,8 +7,8 @@
 
 ]]
 local config = {
-    enabled = false,
-    configVersion = "1.1",
+    enabled = true,
+    configVersion = "1.3",
     pluginName = "civintegration", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author
     -- time to cache characters in seconds
@@ -23,8 +23,14 @@ local config = {
     -- if false, disables the built-in commands of this plugin so it can be used in custom code instead.
     ,enableCommands = true
 
+    -- the command name to use for showing ID info. This is used in the default text prompts and can be used in custom code as well.
+    ,commandName = "civid"
+
+    -- how far away players can be to see /id show
+    ,showNearbyDistance = 5.0
+
     -- if true, you must have the sonoran_idcard resource started in your server in order for it to work
-    ,enableIDCardUI = false
+    ,enableIDCardUI = true
 }
 
 if config.enabled then

@@ -7,6 +7,3 @@
 [submodule "nearest-postal"]
 	path = nearest-postal
 	url = https://github.com/DevBlocky/nearest-postal.git
-[submodule "sonorancad/submodules/localcallers"]
-	path = sonorancad/submodules/localcallers
-	url = https://github.com/Sonoran-Software/LocalCallers

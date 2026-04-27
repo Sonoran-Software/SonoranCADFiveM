@@ -18,7 +18,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
                 break
             end
         end
-        local unitSource = GetSourceByApiId(unitInCache and unitInCache.data.apiIds or {})
+        local unitSource = GetSourceByCadIdentity(GetUnitIdentityValues(unitInCache))
         if not unitSource then return warnLog('User tried to print a PDF in-game but was not found in the unit cache')end
         local function resolvePromise(value)
             if type(value) == 'table' or type(value) == 'userdata' then

@@ -176,7 +176,7 @@ AddEventHandler('SonoranCAD::mini:OpenMini:Return', function(authorized, ident)
 			SetResourceKvp("shownTutorial", "yes")
 		end
 	else
-		PrintChatMessage("You are not logged into the CAD or your API id is not set.")
+		PrintChatMessage("You are not logged into the CAD or your account is not linked. Run /link first.")
 	end
 end)
 
@@ -193,85 +193,191 @@ function ShowHelpMessage()
 	PrintChatMessage("Keybinds: Attach/Detach [K], Details [L], Previous/Next [LEFT/RIGHT], changable in settings!")
 end
 
--- Mini Module Commands
-RegisterCommand("minicad", function(source, args, rawCommand)
+local function openMiniCad()
 	TriggerServerEvent("SonoranCAD::mini:OpenMini")
-end, false)
-RegisterKeyMapping('minicad', 'Mini CAD', 'keyboard', '')
+end
 
-RegisterCommand("minicadhelp", function() ShowHelpMessage() end)
-
-RegisterCommand("minicadp", function(source, args, rawCommand)
+local function miniCadPrev()
 	if not isMiniVisible then return end
 	SendNUIMessage({ type = "command", key="prev" })
-end, false)
-RegisterKeyMapping('minicadp', 'Previous Call', 'keyboard', 'LEFT')
+end
 
-RegisterCommand("minicada", function(source, args, rawCommand)
-	print("ismini "..tostring(isMiniVisible))
+local function miniCadAttach()
 	if not isMiniVisible then return end
 	SendNUIMessage({ type = "command", key="attach" })
-end, false)
-RegisterKeyMapping('minicada', 'Attach to Call', 'keyboard', 'K')
+end
 
-RegisterCommand("minicadd", function(source, args, rawCommand)
+local function miniCadDetail()
 	if not isMiniVisible then return end
 	SendNUIMessage({ type = "command", key="detail" })
-end, false)
-RegisterKeyMapping('minicadd', 'Call Detail', 'keyboard', 'L')
+end
 
-RegisterCommand("minicadn", function(source, args, rawCommand)
+local function miniCadNext()
 	if not isMiniVisible then return end
 	SendNUIMessage({ type = "command", key="next" })
-end, false)
-RegisterKeyMapping('minicadn', 'Next Call', 'keyboard', 'RIGHT')
+end
 
-TriggerEvent('chat:addSuggestion', '/minicadsize', "Resize the Mini-CAD to specific width and height in pixels.", {
-	{ name="Width", help="Width in pixels" }, { name="Height", help="Height in pixels" }
-})
-RegisterCommand("minicadsize", function(source,args,rawCommand)
-	if not args[1] and not args[2] then return end
-	SetModuleSize("hud", args[1], args[2])
-end)
-RegisterCommand("minicadrefresh", function()
-	RefreshModule("hud")
-end)
-
-RegisterCommand("minicadrows", function(source, args, rawCommand)
-	if #args ~= 1 then
-		PrintChatMessage("Please specify a number of rows to display.")
+local function setMiniCadSize(args)
+	if not args[1] or not args[2] then
+		PrintChatMessage("Usage: /tablet mini size <width> <height>")
 		return
-	else
-		SetModuleConfigValue("hud", "maxrows", tonumber(args[1]) - 1)
-		PrintChatMessage("Maximum Mini-CAD call notes set to " .. args[1])
 	end
-end)
-TriggerEvent('chat:addSuggestion', '/minicadrows', "Specify max number of call notes on Mini-CAD.", {
-	{ name="rows", help="any number (default 10)" }
-})
 
--- CAD Module Commands
-RegisterCommand("showcad", function(source, args, rawCommand)
+	local width = tonumber(args[1])
+	local height = tonumber(args[2])
+	if not width or not height then
+		PrintChatMessage("Mini CAD width and height must be numbers.")
+		return
+	end
+
+	SetModuleSize("hud", width, height)
+end
+
+local function refreshMiniCad()
+	RefreshModule("hud")
+end
+
+local function setMiniCadRows(args)
+	if #args ~= 1 then
+		PrintChatMessage("Usage: /tablet mini rows <count>")
+		return
+	end
+
+	local rows = tonumber(args[1])
+	if not rows or rows < 1 then
+		PrintChatMessage("Mini CAD rows must be a number greater than 0.")
+		return
+	end
+
+	SetModuleConfigValue("hud", "maxrows", rows - 1)
+	PrintChatMessage("Maximum Mini-CAD call notes set to " .. rows)
+end
+
+local function openCadTablet()
 	DisplayModule("cad", true)
 	toggleTabletDisplay(true)
 	SetFocused(true)
-end, false)
-RegisterKeyMapping('showcad', 'CAD Tablet', 'keyboard', '')
+end
 
-TriggerEvent('chat:addSuggestion', '/cadsize', "Resize CAD to specific width and height in pixels. Default is 1280x640 (16:9-ish)", {
-	{ name="Width", help="Width in pixels" }, { name="Height", help="Height in pixels" }
-})
-RegisterCommand("cadsize", function(source,args,rawCommand)
-	if not args[1] and not args[2] then return end
-	SetModuleSize("cad", args[1], args[2])
-end)
-RegisterCommand("cadrefresh", function()
+local function setCadTabletSize(args)
+	if not args[1] or not args[2] then
+		PrintChatMessage("Usage: /tablet size <width> <height>")
+		return
+	end
+
+	local width = tonumber(args[1])
+	local height = tonumber(args[2])
+	if not width or not height then
+		PrintChatMessage("Tablet width and height must be numbers.")
+		return
+	end
+
+	SetModuleSize("cad", width, height)
+end
+
+local function refreshCadTablet()
 	RefreshModule("cad")
-end)
+end
 
-RegisterCommand("checkapiid", function(source,args,rawCommand)
-	TriggerServerEvent("sonoran:tablet:forceCheckApiId")
+local function requestTabletLinkStatus()
+	TriggerServerEvent("SonoranCAD::Tablet::CheckLinkStatus")
+end
+
+local function showTabletCommandHelp()
+	PrintChatMessage("Tablet commands: /tablet open | /tablet refresh | /tablet size <width> <height> | /tablet checklink")
+	PrintChatMessage("Mini CAD: /tablet mini open | help | prev | attach | detail | next | refresh | size <width> <height> | rows <count>")
+end
+
+local function handleTabletMiniCommand(args)
+	local miniAction = string.lower(tostring(args[2] or "open"))
+	local miniArgs = {}
+	for i = 3, #args do
+		miniArgs[#miniArgs + 1] = args[i]
+	end
+
+	if miniAction == "open" then
+		openMiniCad()
+	elseif miniAction == "help" then
+		ShowHelpMessage()
+	elseif miniAction == "prev" then
+		miniCadPrev()
+	elseif miniAction == "attach" then
+		miniCadAttach()
+	elseif miniAction == "detail" then
+		miniCadDetail()
+	elseif miniAction == "next" then
+		miniCadNext()
+	elseif miniAction == "size" then
+		setMiniCadSize(miniArgs)
+	elseif miniAction == "refresh" then
+		refreshMiniCad()
+	elseif miniAction == "rows" then
+		setMiniCadRows(miniArgs)
+	else
+		PrintChatMessage("Unknown tablet mini command.")
+		showTabletCommandHelp()
+	end
+end
+
+local function handleTabletCommand(args)
+	local action = string.lower(tostring(args[1] or "help"))
+
+	if action == "help" then
+		showTabletCommandHelp()
+	elseif action == "open" or action == "show" then
+		openCadTablet()
+	elseif action == "size" then
+		setCadTabletSize({args[2], args[3]})
+	elseif action == "refresh" then
+		refreshCadTablet()
+	elseif action == "checklink" then
+		requestTabletLinkStatus()
+	elseif action == "mini" then
+		handleTabletMiniCommand(args)
+	else
+		PrintChatMessage("Unknown tablet command.")
+		showTabletCommandHelp()
+	end
+end
+
+RegisterCommand("tablet", function(source, args, rawCommand)
+	handleTabletCommand(args)
 end, false)
+
+RegisterCommand("SonoranTablet::MiniOpen", function()
+	openMiniCad()
+end, false)
+RegisterKeyMapping("SonoranTablet::MiniOpen", "Mini CAD", "keyboard", "")
+
+RegisterCommand("SonoranTablet::MiniPrev", function()
+	miniCadPrev()
+end, false)
+RegisterKeyMapping("SonoranTablet::MiniPrev", "Previous Call", "keyboard", "LEFT")
+
+RegisterCommand("SonoranTablet::MiniAttach", function()
+	miniCadAttach()
+end, false)
+RegisterKeyMapping("SonoranTablet::MiniAttach", "Attach to Call", "keyboard", "K")
+
+RegisterCommand("SonoranTablet::MiniDetail", function()
+	miniCadDetail()
+end, false)
+RegisterKeyMapping("SonoranTablet::MiniDetail", "Call Detail", "keyboard", "L")
+
+RegisterCommand("SonoranTablet::MiniNext", function()
+	miniCadNext()
+end, false)
+RegisterKeyMapping("SonoranTablet::MiniNext", "Next Call", "keyboard", "RIGHT")
+
+RegisterCommand("SonoranTablet::Open", function()
+	openCadTablet()
+end, false)
+RegisterKeyMapping("SonoranTablet::Open", "CAD Tablet", "keyboard", "")
+
+TriggerEvent("chat:addSuggestion", "/tablet", "Manage the Sonoran tablet and Mini CAD.", {
+	{ name = "action", help = "open, refresh, size, checklink, mini, or help" },
+	{ name = "args", help = "subcommands: mini open|help|prev|attach|detail|next|refresh|size|rows" }
+})
 
 local activeTablet = nil
 local tabletDisplayModel = "sf_prop_sf_tablet_01a"
@@ -563,7 +669,7 @@ AddEventHandler('onClientResourceStart', function(resourceName) --When resource 
 		return
 	end
 	SetFocused(false)
-	TriggerServerEvent("sonoran:tablet:forceCheckApiId")
+	requestTabletLinkStatus()
 	requestCadDisplayConfig()
 end)
 
@@ -574,31 +680,32 @@ AddEventHandler("onClientResourceStop", function(resourceName)
 	destroyTabletDuiObjects()
 end)
 
-RegisterNetEvent("SonoranCAD::Tablet::ApiIdNotLinked")
-AddEventHandler('SonoranCAD::Tablet::ApiIdNotLinked', function()
+RegisterNetEvent("SonoranCAD::Tablet::LinkMissing")
+AddEventHandler('SonoranCAD::Tablet::LinkMissing', function()
+	isRegistered = false
 	SendNUIMessage({
 		type = "regbar"
 	})
 end)
 
-RegisterNetEvent("sonoran:tablet:apiIdFound")
-AddEventHandler("sonoran:tablet:apiIdFound", function()
+RegisterNetEvent("SonoranCAD::Tablet::LinkFound")
+AddEventHandler("SonoranCAD::Tablet::LinkFound", function()
 	isRegistered = true
 end)
 
-RegisterNUICallback('SetAPIInformation', function(data,cb)
-	TriggerServerEvent("SonoranCAD::Tablet::SetApiData", data.session, data.username)
-	TriggerServerEvent("sonoran:tablet:forceCheckApiId")
+RegisterNUICallback('SetLinkInformation', function(data,cb)
+	TriggerServerEvent("SonoranCAD::Tablet::AssociateSsoData", data.session, data.username)
+	requestTabletLinkStatus()
 	cb(true)
 end)
 
-RegisterNUICallback('runApiCheck', function()
-	TriggerServerEvent("sonoran:tablet:forceCheckApiId")
+RegisterNUICallback('runLinkCheck', function()
+	requestTabletLinkStatus()
 end)
 
 RegisterNetEvent("sonoran:tablet:failed")
 AddEventHandler("sonoran:tablet:failed", function(message)
-	errorLog("Failed to set API ID: "..tostring(message))
+	errorLog("Failed to link CAD account: "..tostring(message))
 end)
 
 RegisterNUICallback("CadDisplayScreenshot", function(data, cb)

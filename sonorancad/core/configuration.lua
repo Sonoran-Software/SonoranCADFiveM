@@ -4,6 +4,14 @@ Config = {
     apiUrl = nil,
     postTime = nil,
     serverId = nil,
+    linkCommand = "link",
+    requireLink = true,
+    autoOpenLinkPopup = true,
+    freezeUntilLinked = false,
+    allowPopupCloseWhenUnlinked = true,
+    linkPollIntervalMs = 10000,
+    linkPopupTitleText = "Press the button to link your CAD account to this FiveM server",
+    linkButtonText = "Link CAD",
     primaryIdentifier = nil,
     apiSendEnabled = nil,
     debugMode = nil,
@@ -383,6 +391,112 @@ for k, v in pairs(json.decode(conf)) do
     end
 end
 
+if type(Config.linkCommand) ~= "string" or Config.linkCommand == "" then
+    Config.linkCommand = "link"
+end
+
+if type(Config.requireLink) ~= "boolean" then
+    Config.requireLink = true
+end
+
+if type(Config.autoOpenLinkPopup) ~= "boolean" then
+    Config.autoOpenLinkPopup = true
+end
+
+if type(Config.freezeUntilLinked) ~= "boolean" then
+    Config.freezeUntilLinked = false
+end
+
+if type(Config.allowPopupCloseWhenUnlinked) ~= "boolean" then
+    Config.allowPopupCloseWhenUnlinked = true
+end
+
+Config.linkPollIntervalMs = tonumber(Config.linkPollIntervalMs) or 10000
+if Config.linkPollIntervalMs < 1000 then
+    Config.linkPollIntervalMs = 1000
+end
+
+if type(Config.linkPopupTitleText) ~= "string" or Config.linkPopupTitleText == "" then
+    Config.linkPopupTitleText = "Press the button to link your CAD account to this FiveM server"
+end
+
+if type(Config.linkButtonText) ~= "string" or Config.linkButtonText == "" then
+    Config.linkButtonText = "Link CAD"
+end
+
+local function resolve_forcereg_link_settings()
+    local pluginConfig = Config.plugins.forcereg
+    if pluginConfig == nil then
+        pluginConfig = Config.GetPluginConfig('forcereg')
+    end
+    if type(pluginConfig) ~= "table" or pluginConfig.enabled ~= true then
+        return
+    end
+
+    if type(pluginConfig.requireLink) == "boolean" then
+        Config.requireLink = pluginConfig.requireLink
+    end
+
+    if type(pluginConfig.autoOpenLinkPopup) == "boolean" then
+        Config.autoOpenLinkPopup = pluginConfig.autoOpenLinkPopup
+    end
+
+    if type(pluginConfig.linkCommand) == "string" and pluginConfig.linkCommand ~= "" then
+        Config.linkCommand = pluginConfig.linkCommand
+    end
+
+    if tonumber(pluginConfig.linkPollIntervalMs) ~= nil then
+        Config.linkPollIntervalMs = tonumber(pluginConfig.linkPollIntervalMs)
+    end
+
+    if type(pluginConfig.linkPopupTitleText) == "string" and pluginConfig.linkPopupTitleText ~= "" then
+        Config.linkPopupTitleText = pluginConfig.linkPopupTitleText
+    end
+
+    if type(pluginConfig.linkButtonText) == "string" and pluginConfig.linkButtonText ~= "" then
+        Config.linkButtonText = pluginConfig.linkButtonText
+    end
+
+    local captiveOption = type(pluginConfig.captiveOption) == "string" and pluginConfig.captiveOption:lower() or "nag"
+    if captiveOption == "freeze" then
+        Config.freezeUntilLinked = true
+        Config.allowPopupCloseWhenUnlinked = false
+    else
+        Config.freezeUntilLinked = false
+        if type(pluginConfig.allowPopupCloseWhenUnlinked) == "boolean" then
+            Config.allowPopupCloseWhenUnlinked = pluginConfig.allowPopupCloseWhenUnlinked
+        else
+            Config.allowPopupCloseWhenUnlinked = true
+        end
+    end
+end
+
+resolve_forcereg_link_settings()
+
+Config.linkPollIntervalMs = tonumber(Config.linkPollIntervalMs) or 10000
+if Config.linkPollIntervalMs < 1000 then
+    Config.linkPollIntervalMs = 1000
+end
+
+local function applyFrameworkConvar(key, value)
+    if key == "apiKey" or value == nil then
+        return
+    end
+    SetConvar('sonoran_' .. key, tostring(value))
+    if GetConvar('sonoran_' .. key .. '_setter', 'NONE') == 'NONE' then
+        SetConvar('sonoran_' .. key .. '_setter', 'framework')
+    end
+end
+
+applyFrameworkConvar('linkCommand', Config.linkCommand)
+applyFrameworkConvar('requireLink', Config.requireLink)
+applyFrameworkConvar('autoOpenLinkPopup', Config.autoOpenLinkPopup)
+applyFrameworkConvar('freezeUntilLinked', Config.freezeUntilLinked)
+applyFrameworkConvar('allowPopupCloseWhenUnlinked', Config.allowPopupCloseWhenUnlinked)
+applyFrameworkConvar('linkPollIntervalMs', Config.linkPollIntervalMs)
+applyFrameworkConvar('linkPopupTitleText', Config.linkPopupTitleText)
+applyFrameworkConvar('linkButtonText', Config.linkButtonText)
+
 if Config.updateBranch == nil then Config.updateBranch = 'master' end
 
 RegisterNetEvent('SonoranCAD::core:sendClientConfig')
@@ -390,7 +504,15 @@ AddEventHandler('SonoranCAD::core:sendClientConfig', function()
     local config = {
         communityID = Config.communityID,
         postTime = Config.postTime,
-        serverId = Config.serverId,
+        serverId = tonumber(Config.serverId),
+        linkCommand = Config.linkCommand,
+        requireLink = Config.requireLink,
+        autoOpenLinkPopup = Config.autoOpenLinkPopup,
+        freezeUntilLinked = Config.freezeUntilLinked,
+        allowPopupCloseWhenUnlinked = Config.allowPopupCloseWhenUnlinked,
+        linkPollIntervalMs = Config.linkPollIntervalMs,
+        linkPopupTitleText = Config.linkPopupTitleText,
+        linkButtonText = Config.linkButtonText,
         primaryIdentifier = Config.primaryIdentifier,
         apiSendEnabled = Config.apiSendEnabled,
         debugMode = Config.debugMode,
@@ -405,7 +527,7 @@ end)
 CreateThread(function()
     Wait(2000) -- wait for server to settle
     if Config.critError then return end
-    local serverId = Config.serverId
+    local serverId = tonumber(Config.serverId)
     while Config.apiVersion == -1 do Wait(10) end
     if Config.apiVersion < 3 then
         debugLog('Too low version or API disabled, ignore this')
@@ -414,97 +536,108 @@ CreateThread(function()
         errorLog('Config.apiSendEnabled disabled via convar or config, skipping server registration. Check your config if this is unintentional.')
         return
     end
-    performApiRequest({}, 'GET_SERVERS', function(response)
-        local info = json.decode(response)
-        for k, v in pairs(info.servers) do
-            if tostring(v.id) == tostring(serverId) then
-                ServerInfo = v
-                break
+    local serversResponse = CadApiGetServers()
+    if not serversResponse.success then
+        CadApiLogFailure('GET_SERVERS', serversResponse, {})
+        return
+    end
+    local info = serversResponse.data
+    for k, v in pairs(info.servers or {}) do
+        if tostring(v.id) == tostring(serverId) then
+            ServerInfo = v
+            break
+        end
+    end
+    local needSetup = false
+    local serverObj = {}
+    if ServerInfo == nil then
+        needSetup = true
+        serverObj = {
+            id = serverId,
+            name = 'Server ' .. serverId,
+            description = 'Server ' .. serverId,
+            signal = '',
+            listenerPort = GetConvar('netPort', '0'),
+            mapIp = '',
+            differingOutbound = false,
+            outboundIp = '',
+            enableMap = true,
+            mapType = 'NORMAL'
+        }
+    else
+        serverObj = ServerInfo
+    end
+    local existingServerInfo = ServerInfo or {
+        listenerPort = '',
+        mapIp = '',
+        differingOutbound = false,
+        outboundIp = ''
+    }
+    if serverObj.name == '' then
+        serverObj.name = 'Server ' .. tostring(serverId)
+    end
+    if existingServerInfo.listenerPort ~= GetConvar('netPort', '0') then
+        infoLog(
+            ('Configuration information doesn\'t match, will attempt to auto-correct game port from %s to %s.'):format(
+                existingServerInfo.listenerPort, GetConvar('netPort', '0')))
+        serverObj.listenerPort = GetConvar('netPort', '0')
+        needSetup = true
+    end
+    PerformHttpRequest('https://api.ipify.org?format=json',
+                       function(errorCode, resultData, resultHeaders)
+        local r = json.decode(resultData)
+        if r ~= nil and r.ip ~= nil then
+            debugLog(
+                ('IP DETECT - IP: %s - Detected: %s - Outbound set: %s - Outbound IP: %s'):format(
+                    existingServerInfo.mapIp, r.ip, existingServerInfo.differingOutbound,
+                    existingServerInfo.outboundIp))
+            if serverObj.mapIp == '' or serverObj.mapIp == nil then
+                serverObj.mapIp = r.ip
+                needSetup = true
             end
-        end
-        local needSetup = false
-        local serverObj = {}
-        if ServerInfo == nil then
-            needSetup = true
-            serverObj = {
-                id = serverId,
-                name = 'Server ' .. serverId,
-                description = 'Server ' .. serverId,
-                signal = '',
-                listenerPort = GetConvar('netPort', '0'),
-                mapIp = '',
-                differingOutbound = false,
-                outboundIp = '',
-                enableMap = true,
-                mapType = 'NORMAL'
-            }
-        else
-            serverObj = ServerInfo
-        end
-        if serverObj.name == '' then
-            serverObj.name = 'Server ' .. tostring(serverId)
-        end
-        if ServerInfo.listenerPort ~= GetConvar('netPort', '0') then
-            infoLog(
-                ('Configuration information doesn\'t match, will attempt to auto-correct game port from %s to %s.'):format(
-                    ServerInfo.listenerPort, GetConvar('netPort', '0')))
-            serverObj.listenerPort = GetConvar('netPort', '0')
-            needSetup = true
-        end
-        PerformHttpRequest('https://api.ipify.org?format=json',
-                           function(errorCode, resultData, resultHeaders)
-            local r = json.decode(resultData)
-            if r ~= nil and r.ip ~= nil then
-                debugLog(
-                    ('IP DETECT - IP: %s - Detected: %s - Outbound set: %s - Outbound IP: %s'):format(
-                        ServerInfo.mapIp, r.ip, ServerInfo.differingOutbound,
-                        ServerInfo.outboundIp))
-                if serverObj.mapIp == '' or serverObj.mapIp == nil then
-                    serverObj.mapIp = r.ip
-                    needSetup = true
-                end
-                if ServerInfo.mapIp ~= r.ip then
-                    if ServerInfo.differingOutbound and ServerInfo.outboundIp ==
-                        r.ip then
-                        infoLog(
-                            'Detected proper differing outbound IP configuration.')
-                    else
-                        if ServerInfo.differingOutbound then
-                            needSetup = true
-                            serverObj.outboundIp = r.ip
-                        else
-                            needSetup = true
-                            serverObj.outboundIp = r.ip
-                            serverObj.differingOutbound = true
-                        end
-                    end
-                end
-            end
-            local disableOverride = (Config.disableOverride ~= nil and
-                                        Config.disableOverride or false)
-            if needSetup and not disableOverride then
-                local payload = nil
-                if ServerInfo == nil then
-                    payload = {['servers'] = {serverObj}}
+            if existingServerInfo.mapIp ~= r.ip then
+                if existingServerInfo.differingOutbound and existingServerInfo.outboundIp ==
+                    r.ip then
+                    infoLog(
+                        'Detected proper differing outbound IP configuration.')
                 else
-                    payload = info
-                    for k, v in pairs(payload) do
-                        if v.id == serverId then
-                            payload[k] = serverObj
-                        end
+                    if existingServerInfo.differingOutbound then
+                        needSetup = true
+                        serverObj.outboundIp = r.ip
+                    else
+                        needSetup = true
+                        serverObj.outboundIp = r.ip
+                        serverObj.differingOutbound = true
                     end
                 end
-                debugLog(('Send payload: %s'):format(json.encode(payload)))
-                performApiRequest(json.encode(payload), 'SET_SERVERS', function(
-                    resp)
-                    debugLog('SET_SERVERS: ' .. tostring(resp))
-                end)
-            elseif disableOverride and not needSetup then
-                warnLog(
-                    'disableOverride is true or there is no additional setup required, skipping any potential auto-IP/port fixing')
             end
-        end, 'GET', nil, nil)
-    end)
+        end
+        local disableOverride = (Config.disableOverride ~= nil and
+                                    Config.disableOverride or false)
+        if needSetup and not disableOverride then
+            local payload = nil
+            if ServerInfo == nil then
+                payload = {['servers'] = {serverObj}}
+            else
+                payload = info
+                for k, v in pairs(payload) do
+                    if v.id == serverId then
+                        payload[k] = serverObj
+                    end
+                end
+            end
+            debugLog(('Send payload: %s'):format(json.encode(payload)))
+            local setServersResponse = CadApiSetServers(payload)
+            if not setServersResponse.success then
+                CadApiLogFailure('SET_SERVERS', setServersResponse, payload)
+            else
+                debugLog('SET_SERVERS: ' .. tostring(setServersResponse.data and json.encode(setServersResponse.data) or 'OK'))
+            end
+        elseif disableOverride and not needSetup then
+            warnLog(
+                'disableOverride is true or there is no additional setup required, skipping any potential auto-IP/port fixing')
+        end
+    end, 'GET', nil, nil)
 
     if isPluginLoaded('livemap') then
         warnLog(

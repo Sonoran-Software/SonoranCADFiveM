@@ -182,7 +182,7 @@ local PushEventHandler = {
 	end,
 	EVENT_911 = function(body)
 		SetEmergencyCache(body.data.call.callId, body.data.call)
-		TriggerEvent('SonoranCAD::pushevents:IncomingCadCall', body.data.call, body.data.call.metaData, body.data.apiIds)
+		TriggerEvent('SonoranCAD::pushevents:IncomingCadCall', body.data.call, body.data.call.metaData, body.data.identities or body.data.communityUserIds or body.data.apiIds)
 		return true
 	end,
 	EVENT_REMOVE_911 = function(body)
@@ -314,6 +314,7 @@ local function handlePushEventPayload(body, rawData, res, source)
 		encodedBody = json.encode(body)
 	end
 
+	infoLog(('Push event received over %s: %s'):format(source, eventType))
 	debugLog(('EVENT[%s]: %s - %s'):format(source, eventType, encodedBody))
 	if Config.enablePushEventForwarding then
 		PerformHttpRequest(Config.pushEventForwardUrl, function(statusCode, forwardRes, headers)

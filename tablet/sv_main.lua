@@ -86,39 +86,54 @@ CreateThread(function()
         TriggerClientEvent("SonoranCAD::mini:NewNote", -1, data)
     end)
 
+    local function getLinkedUnitContext(player)
+        local ident = exports["sonorancad"]:GetUnitByPlayerId(player)
+        if ident == nil or ident.data == nil then
+            return nil, nil
+        end
+
+        local communityUserId = exports["sonorancad"].getPlayerCommunityUserId
+            and exports["sonorancad"]:getPlayerCommunityUserId(player)
+            or nil
+        if communityUserId == nil or communityUserId == "" then
+            return ident, nil
+        end
+
+        return ident, communityUserId
+    end
+
     RegisterServerEvent("SonoranCAD::mini:OpenMini")
     AddEventHandler("SonoranCAD::mini:OpenMini", function ()
-        local ident = exports["sonorancad"]:GetUnitByPlayerId(source)
+        local ident, communityUserId = getLinkedUnitContext(source)
         if ident == nil then TriggerClientEvent("SonoranCAD::mini:OpenMini:Return", source, false) return end
-        if ident.data == nil then TriggerClientEvent("SonoranCAD::mini:OpenMini:Return", source, false) return end
-        if ident.data.apiIds[1] == nil then TriggerClientEvent("SonoranCAD::mini:OpenMini:Return", source, false) return end
+        if communityUserId == nil then TriggerClientEvent("SonoranCAD::mini:OpenMini:Return", source, false) return end
         TriggerClientEvent("SonoranCAD::mini:CallSync", source, CallCache, EmergencyCache)
         TriggerClientEvent("SonoranCAD::mini:OpenMini:Return", source, true, ident.id)
     end)
 
     RegisterServerEvent("SonoranCAD::mini:AttachToCall")
     AddEventHandler("SonoranCAD::mini:AttachToCall", function(callId)
-        local ident = exports["sonorancad"]:GetUnitByPlayerId(source)
-        if ident ~= nil then
-            local data = {callId = callId, units = {ident.data.apiIds[1]}, serverId = GetConvar("sonoran_serverId", 1)}
+        local ident, communityUserId = getLinkedUnitContext(source)
+        if ident ~= nil and communityUserId ~= nil then
+            local data = {callId = callId, units = {communityUserId}, serverId = tonumber(GetConvar("sonoran_serverId", 1))}
             exports["sonorancad"]:performApiRequest({data}, "ATTACH_UNIT", function(res)
                 --print("Attach OK: " .. tostring(res))
             end)
         else
-            --print("Unable to attach... if api id is set properly, try relogging into cad.")
+            --print("Unable to attach... if the CAD account is linked properly, try relogging into CAD.")
         end
     end)
 
     RegisterServerEvent("SonoranCAD::mini:DetachFromCall")
     AddEventHandler("SonoranCAD::mini:DetachFromCall", function(callId)
-        local ident = exports["sonorancad"]:GetUnitByPlayerId(source)
-        if ident ~= nil then
-            local data = {callId = callId, units = {ident.data.apiIds[1]}, serverId = GetConvar("sonoran_serverId", 1)}
+        local ident, communityUserId = getLinkedUnitContext(source)
+        if ident ~= nil and communityUserId ~= nil then
+            local data = {callId = callId, units = {communityUserId}, serverId = tonumber(GetConvar("sonoran_serverId", 1))}
             exports["sonorancad"]:performApiRequest({data}, "DETACH_UNIT", function(res)
                 --print("Detach OK: " .. tostring(res))
             end)
         else
-            --print("Unable to detach... if api id is set properly, try relogging into cad.")
+            --print("Unable to detach... if the CAD account is linked properly, try relogging into CAD.")
         end
     end)
 

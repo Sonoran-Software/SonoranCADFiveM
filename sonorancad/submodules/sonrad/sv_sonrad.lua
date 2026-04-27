@@ -18,73 +18,66 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
 
 
         if Config.apiVersion > 3 then
-            -- Register Api Types
-            registerApiType("ADD_BLIP", "emergency")
-            registerApiType("MODIFY_BLIP", "emergency")
-            registerApiType("REMOVE_BLIP", "emergency")
-            registerApiType("GET_BLIPS", "emergency")
-
             BlipMan = {
                 addBlip = function(coords, radius, colorHex, subType, toolTip, icon, dataTable, cb)
-                    local data = {{
-                        ["serverId"] = GetConvar("sonoran_serverId", 1),
-                        ["blip"] = {
-                            ["id"] = -1,
-                            ["subType"] = subType,
-                            ["coordinates"] = {
-                                ["x"] = coords.x,
-                                ["y"] = coords.y
-                            },
-                            ["radius"] = radius,
-                            ["icon"] = icon,
-                            ["color"] = colorHex,
-                            ["tooltip"] = toolTip,
-                            ["data"] = dataTable
-                        }
-                    }}
+                    local data = {
+                        ["serverId"] = tonumber(GetConvar("sonoran_serverId", 1)),
+                        ["subType"] = subType,
+                        ["coordinates"] = {
+                            ["x"] = coords.x,
+                            ["y"] = coords.y,
+                            ["z"] = coords.z or 0.0
+                        },
+                        ["radius"] = radius,
+                        ["icon"] = icon,
+                        ["color"] = colorHex,
+                        ["tooltip"] = toolTip,
+                        ["data"] = dataTable
+                    }
 
-                    performApiRequest(data, "ADD_BLIP", function(res)
-                        if cb ~= nil then
-                            cb(res)
-                        end
-                    end)
+                    local response = CadApiCreateBlips({data})
+                    if not response.success then
+                        CadApiLogFailure("ADD_BLIP", response, data)
+                    elseif cb ~= nil then
+                        cb(json.encode(response.data))
+                    end
                 end,
 
                 addBlips = function(blips, cb)
-                    performApiRequest(blips, "ADD_BLIP", function(res)
-                        if cb ~= nil then
-                            cb(res)
-                        end
-                    end)
+                    local response = CadApiCreateBlips(blips)
+                    if not response.success then
+                        CadApiLogFailure("ADD_BLIP", response, blips)
+                    elseif cb ~= nil then
+                        cb(json.encode(response.data))
+                    end
                 end,
 
                 removeBlip = function(ids, cb)
-                    performApiRequest({{
-                        ["ids"] = ids
-                    }}, "REMOVE_BLIP", function(res)
-                        if cb ~= nil then
-                            cb(res)
-                        end
-                    end)
+                    local payload = {["ids"] = ids}
+                    local response = CadApiDeleteBlips(payload)
+                    if not response.success then
+                        CadApiLogFailure("REMOVE_BLIP", response, payload)
+                    elseif cb ~= nil then
+                        cb(tostring(response.data and json.encode(response.data) or "OK"))
+                    end
                 end,
 
                 modifyBlips = function(dataTable, cb)
-                    performApiRequest(dataTable, "MODIFY_BLIP", function(res)
-                        if cb ~= nil then
-                            cb(res)
-                        end
-                    end)
+                    local response = CadApiUpdateBlips(dataTable)
+                    if not response.success then
+                        CadApiLogFailure("MODIFY_BLIP", response, dataTable)
+                    elseif cb ~= nil then
+                        cb(tostring(response.data and json.encode(response.data) or "OK"))
+                    end
                 end,
 
                 getBlips = function(cb)
-                    local data = {{
-                        ["serverId"] = GetConvar("sonoran_serverId", 1)
-                    }}
-                    performApiRequest(data, "GET_BLIPS", function(res)
-                        if cb ~= nil then
-                            cb(res)
-                        end
-                    end)
+                    local response = CadApiGetBlips(tonumber(GetConvar("sonoran_serverId", 1)))
+                    if not response.success then
+                        CadApiLogFailure("GET_BLIPS", response,  tonumber(GetConvar("sonoran_serverId", 1)))
+                    elseif cb ~= nil then
+                        cb(json.encode(response.data or {}))
+                    end
                 end,
 
                 removeWithSubtype = function(subType, cb)
@@ -95,6 +88,12 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
                             if v.subType == subType then
                                 table.insert(ids, #ids + 1, v.id)
                             end
+                        end
+                        if #ids < 1 then
+                            if cb ~= nil then
+                                cb("No blips found with subtype: " .. subType)
+                            end
+                            return
                         end
                         BlipMan.removeBlip(ids, cb)
                     end)
@@ -155,37 +154,44 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
                         end
 
                         local CurrentBlip = {
-                            ["serverId"] = GetConvar("sonoran_serverId", 1),
-                            ["blip"] = {
-                                ["id"] = -1,
-                                ["subType"] = "repeater",
-                                ["coordinates"] = {
-                                    ["x"] = tower.PropPosition.x,
-                                    ["y"] = tower.PropPosition.y
-                                },
-                                ["radius"] = tower.Range * 0.7937,
-                                ["icon"] = "https://sonoransoftware.com/assets/images/icons/email/radio.png",
-                                ["color"] = color,
-                                ["tooltip"] =  title,
-                                ["data"] = {
-                                    {
-                                        ["title"] = "Status",
-                                        ["text"] = status,
-                                    }
+                            ["serverId"] = tonumber(GetConvar("sonoran_serverId", 1)),
+                            ["subType"] = "repeater",
+                            ["coordinates"] = {
+                                ["x"] = tower.PropPosition.x,
+                                ["y"] = tower.PropPosition.y
+                            },
+                            ["radius"] = tower.Range * 0.7937,
+                            ["icon"] = "https://sonoransoftware.com/assets/images/icons/email/radio.png",
+                            ["color"] = color,
+                            ["tooltip"] =  title,
+                            ["data"] = {
+                                {
+                                    ["title"] = "Status",
+                                    ["text"] = status,
                                 }
                             }
                         }
 
                         table.insert(BlipQueue, #BlipQueue + 1, CurrentBlip)
                     end
-
-                    BlipMan.addBlips(BlipQueue, function(res)
-                        local blips = json.decode(res)
-                        for i=1, #TowerCache do
-                            TowerCache[i].BlipID = blips[i].id
-                        end
-                        debugLog("Tower Cache:" .. json.encode(TowerCache))
-                    end)
+                    for i=1, #BlipQueue do
+                        local queuedBlip = BlipQueue[i]
+                        debugLog("Queueing blip for tower at coords: " .. queuedBlip.coordinates.x .. ", " .. queuedBlip.coordinates.y)
+                        BlipMan.addBlip(queuedBlip.coordinates, queuedBlip.radius, queuedBlip.color, queuedBlip.subType, queuedBlip.tooltip, queuedBlip.icon, queuedBlip.data, function(res)
+                            local createdBlips = json.decode(res)
+                            local createdBlip = type(createdBlips) == "table" and createdBlips[1] or nil
+                            if not createdBlip or not createdBlip.id then
+                                warnLog("Failed to assign repeater blip ID for tower at coords: " .. queuedBlip.coordinates.x .. ", " .. queuedBlip.coordinates.y)
+                                return
+                            end
+                            for towerIndex=1, #TowerCache do
+                                if TowerCache[towerIndex].PropPosition.x == queuedBlip.coordinates.x and TowerCache[towerIndex].PropPosition.y == queuedBlip.coordinates.y then
+                                    TowerCache[towerIndex].BlipID = createdBlip.id
+                                    debugLog("Assigned blip ID " .. createdBlip.id .. " to tower at coords: " .. queuedBlip.coordinates.x .. ", " .. queuedBlip.coordinates.y)
+                                end
+                            end
+                        end)
+                    end
                 end)
             end)
 

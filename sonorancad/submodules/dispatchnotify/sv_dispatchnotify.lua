@@ -230,52 +230,79 @@ if pluginConfig.enabled then
     if pluginConfig.enableUnitNotifyToggleCommand == nil then
         pluginConfig.enableUnitNotifyToggleCommand = false
     end
-    if pluginConfig.unitNotifyToggleCommand == nil then
-        pluginConfig.unitNotifyToggleCommand = "toggledispatchnotify"
+    if pluginConfig.commandName == nil or pluginConfig.commandName == "" then
+        pluginConfig.commandName = "dn"
+    end
+    if pluginConfig.respondSubcommandName == nil or pluginConfig.respondSubcommandName == "" then
+        pluginConfig.respondSubcommandName = pluginConfig.respondCommandName or "respond"
+    end
+    if pluginConfig.unitNotifyToggleSubcommand == nil or pluginConfig.unitNotifyToggleSubcommand == "" then
+        pluginConfig.unitNotifyToggleSubcommand = pluginConfig.unitNotifyToggleCommand or "notify"
     end
     if pluginConfig.unitNotifyToggleAce == nil then
         pluginConfig.unitNotifyToggleAce = "sonorancad.dispatchnotify.toggle"
     end
+    if pluginConfig.addNoteSubcommand == nil or pluginConfig.addNoteSubcommand == "" then
+        pluginConfig.addNoteSubcommand = pluginConfig.addNoteCommand or "note"
+    end
+    if pluginConfig.addPlateSubcommand == nil or pluginConfig.addPlateSubcommand == "" then
+        pluginConfig.addPlateSubcommand = pluginConfig.addPlateCommand or "plate"
+    end
+    if pluginConfig.gpsToggleSubcommand == nil or pluginConfig.gpsToggleSubcommand == "" then
+        pluginConfig.gpsToggleSubcommand = "gps"
+    end
+
+    local function getRespondCommandText()
+        return ("%s %s"):format(pluginConfig.commandName, pluginConfig.respondSubcommandName)
+    end
+
+    local function handleUnitNotifyToggle(source, args)
+        local playerSource = tonumber(source)
+        if playerSource ~= 0 and pluginConfig.unitNotifyToggleAce ~= "" then
+            if not IsPlayerAceAllowed(playerSource, pluginConfig.unitNotifyToggleAce) then
+                SendMessage("error", playerSource, "You do not have permission to use this command.")
+                return
+            end
+        end
+
+        local arg = args[1]
+        if arg then
+            local normalized = string.lower(arg)
+            if normalized == "on" or normalized == "enable" or normalized == "enabled" then
+                setUnitNotifyOverride(true, playerSource)
+                return
+            elseif normalized == "off" or normalized == "disable" or normalized == "disabled" then
+                setUnitNotifyOverride(false, playerSource)
+                return
+            elseif normalized == "auto" or normalized == "clear" then
+                setUnitNotifyOverride(nil, playerSource)
+                return
+            else
+                SendMessage("error", playerSource, ("Usage: /%s %s [on|off|auto]"):format(
+                    pluginConfig.commandName,
+                    pluginConfig.unitNotifyToggleSubcommand
+                ))
+                return
+            end
+        end
+
+        if unitNotifyOverride == nil then
+            setUnitNotifyOverride(true, playerSource)
+        else
+            setUnitNotifyOverride(not unitNotifyOverride, playerSource)
+        end
+    end
 
     if pluginConfig.enableUnitNotifyToggleCommand then
-        RegisterCommand(pluginConfig.unitNotifyToggleCommand, function(source, args, rawCommand)
-            local source = tonumber(source)
-            if source ~= 0 and pluginConfig.unitNotifyToggleAce ~= "" then
-                if not IsPlayerAceAllowed(source, pluginConfig.unitNotifyToggleAce) then
-                    SendMessage("error", source, "You do not have permission to use this command.")
-                    return
-                end
-            end
-
-            local arg = args[1]
-            if arg then
-                local normalized = string.lower(arg)
-                if normalized == "on" or normalized == "enable" or normalized == "enabled" then
-                    setUnitNotifyOverride(true, source)
-                    return
-                elseif normalized == "off" or normalized == "disable" or normalized == "disabled" then
-                    setUnitNotifyOverride(false, source)
-                    return
-                elseif normalized == "auto" or normalized == "clear" then
-                    setUnitNotifyOverride(nil, source)
-                    return
-                else
-                    SendMessage("error", source, ("Usage: /%s [on|off|auto]"):format(pluginConfig.unitNotifyToggleCommand))
-                    return
-                end
-            end
-
-            if unitNotifyOverride == nil then
-                setUnitNotifyOverride(true, source)
-            else
-                setUnitNotifyOverride(not unitNotifyOverride, source)
-            end
+        RegisterNetEvent("SonoranCAD::dispatchnotify:CommandNotify")
+        AddEventHandler("SonoranCAD::dispatchnotify:CommandNotify", function(args)
+            handleUnitNotifyToggle(source, args or {})
         end)
     end
 
-    --EVENT_911 TriggerEvent('SonoranCAD::pushevents:IncomingCadCall', body.data.call, body.data.apiIds, body.data.metaData)
+    --EVENT_911 TriggerEvent('SonoranCAD::pushevents:IncomingCadCall', body.data.call, body.data.call.metaData, body.data.identities)
     RegisterServerEvent("SonoranCAD::pushevents:IncomingCadCall")
-    AddEventHandler("SonoranCAD::pushevents:IncomingCadCall", function(call, metadata, apiIds)
+    AddEventHandler("SonoranCAD::pushevents:IncomingCadCall", function(call, metadata, unitIdentities)
         if metadata ~= nil and metadata.callerPlayerId ~= nil then
             CallOriginMapping[call.callId] = metadata.callerPlayerId
         end
@@ -286,7 +313,7 @@ if pluginConfig.enabled then
                 -- Hide self-response instructions when dispatchers are online
                 messageTemplate = pluginConfig.incomingCallMessageNoResponse or pluginConfig.incomingCallMessage
             end
-            local message = messageTemplate:gsub("{caller}", call.caller):gsub("{location}", call.location):gsub("{description}", call.description):gsub("{callId}", call.callId):gsub("{command}", pluginConfig.respondCommandName)
+            local message = messageTemplate:gsub("{caller}", call.caller):gsub("{location}", call.location):gsub("{description}", call.description):gsub("{callId}", call.callId):gsub("{command}", getRespondCommandText())
             for i = 0, GetNumPlayerIndices()-1 do
                 local player = GetPlayerFromIndex(i)
                 local unit = GetUnitByPlayerId(player)
@@ -334,12 +361,8 @@ if pluginConfig.enabled then
     end)
 
     --Officer response
-    registerApiType("NEW_DISPATCH", "emergency")
-    registerApiType("ATTACH_UNIT", "emergency")
-    registerApiType("REMOVE_911", "emergency")
-    registerApiType("SET_CALL_POSTAL", "emergency")
-    RegisterCommand(pluginConfig.respondCommandName, function(source, args, rawCommand)
-        local source = tonumber(source)
+    local function handleRespondCommand(source, args)
+        source = tonumber(source)
         local callId = args[1]
         if callId == nil then
             SendMessage("error", source, "Call ID must be specified.")
@@ -384,7 +407,11 @@ if pluginConfig.enabled then
         if call.metaData ~= nil and callerPlayerId == nil then
             debugLog("failed to find caller info")
         end
-        local identifiers = GetIdentifiers(source)[Config.primaryIdentifier]
+        local communityUserId = GetPlayerCommunityUserId(source)
+        if communityUserId == nil then
+            SendMessage("error", source, "You must link your CAD account before self attaching.")
+            return
+        end
         if originCall == nil then
             -- no mapped call, create a new one
             debugLog(("Creating new call request...(no mapped call for %s)"):format(callId))
@@ -414,18 +441,19 @@ if pluginConfig.enabled then
             if pluginConfig.callTitle ~= nil then
                 title = pluginConfig.callTitle.." - "..call.callId
             end
-            metaData = {callerPlayerId = callerPlayerId, createdFromId = call.callId }
+            metaData = {callerPlayerId = tostring(callerPlayerId), createdFromId = tostring(call.callId) }
             if call.metaData ~= nil then
                 for k, v in pairs(call.metaData) do
-                    metaData[k] = v
+                    metaData[k] = tostring(v)
                 end
             end
             if LocationCache[source] ~= nil and metaData['x'] == nil then
-                metaData['x'] = LocationCache[source].coordinates.x
-                metaData['y'] = LocationCache[source].coordinates.y
-                metaData['z'] = LocationCache[source].coordinates.z
+                metaData['x'] = tostring(LocationCache[source].coordinates.x)
+                metaData['y'] = tostring(LocationCache[source].coordinates.y)
+                metaData['z'] = tostring(LocationCache[source].coordinates.z)
             end
-            local payload = {   serverId = Config.serverId,
+            local payload = {   serverId = tonumber(Config.serverId),
+                                communityUserIds = {communityUserId},
                                 origin = 0,
                                 status = 1,
                                 priority = 2,
@@ -440,29 +468,41 @@ if pluginConfig.enabled then
                                     {time = '00:00:00', label = 'Dispatch', type = 'text', content = 'Officer Responding'}
                                 },
                                 metaData = metaData,
-                                units = { identifiers }
+                                units = { communityUserId }
             }
-            performApiRequest({payload}, "NEW_DISPATCH", function(response)
-                debugLog("Call creation OK")
-                if response:match("NEW DISPATCH CREATED - ID:") then
-                    TriggerEvent("SonoranCAD::dispatchnotify:UnitRespond", source, response:match("%d+"))
-                    EmergencyToCallMapping[call.callId] = tonumber(response:match("%d+"))
-                end
-                -- remove the 911 call
-                local payload = { serverId = Config.serverId, callId = call.callId }
-                performApiRequest({payload}, "REMOVE_911", function(resp)
-                    debugLog("Remove status: "..tostring(resp))
-                end)
-            end)
+            local response = CadApiCreateDispatchCall(payload)
+            if not response.success then
+                errorLog("Dispatch creation failed: " .. CadApiReasonText(response.reason))
+                return
+            end
+            debugLog("Call creation OK")
+            if response.callId ~= nil then
+                TriggerEvent("SonoranCAD::dispatchnotify:UnitRespond", source, response.callId)
+                EmergencyToCallMapping[call.callId] = tonumber(response.callId)
+            end
+            local removeResponse = CadApiDeleteEmergencyCall(call.callId, tonumber(Config.serverId))
+            if not removeResponse.success then
+                CadApiLogFailure("REMOVE_911", removeResponse, { serverId = tonumber(Config.serverId), callId = call.callId })
+            else
+                debugLog("Remove status: OK")
+            end
         else
             -- Call already exists
             debugLog("Found Call. Attaching!")
-            local data = {callId = call.callId, units = {identifiers}, serverId = Config.serverId}
-            performApiRequest({data}, "ATTACH_UNIT", function(res)
-                debugLog("Attach OK: "..tostring(res))
+            local data = {callId = call.callId, units = {communityUserId}, serverId = tonumber(Config.serverId)}
+            local response = CadApiAttachUnitsToDispatchCall(data)
+            if not response.success then
+                CadApiLogFailure("ATTACH_UNIT", response, data)
+            else
+                debugLog("Attach OK: "..tostring(response.data and json.encode(response.data) or "OK"))
                 SendMessage("debug", source, "You have been attached to the call.")
-            end)
+            end
         end
+    end
+
+    RegisterNetEvent("SonoranCAD::dispatchnotify:CommandRespond")
+    AddEventHandler("SonoranCAD::dispatchnotify:CommandRespond", function(args)
+        handleRespondCommand(source, args or {})
     end)
 
     RegisterNetEvent("SonoranCAD::dispatchnotify:CallAttach")
@@ -475,7 +515,7 @@ if pluginConfig.enabled then
             debugLog("set caller ID "..call.dispatch.metaData.callerPlayerId)
             callerId = call.dispatch.metaData.callerPlayerId
         end
-        local officerId = GetSourceByApiId(unit.data.apiIds)
+        local officerId = GetSourceByCadIdentity(GetUnitIdentityValues(unit))
         if officerId ~= nil then
             local statusMethod = ResolveNotifyMethod()
 
@@ -535,7 +575,7 @@ if pluginConfig.enabled then
                 if call.dispatch.postal ~= nil and call.dispatch.postal ~= "" then
                     TriggerClientEvent("SonoranCAD::dispatchnotify:SetGps", officerId, call.dispatch.postal)
                     if call.dispatch.metaData ~= nil and call.dispatch.metaData.trackPrimary == "True" then
-                        if GetSourceByApiId(GetUnitCache()[call.dispatch.idents[1]].data.apiIds) == officerId then
+                        if GetSourceByCadIdentity(GetUnitIdentityValues(GetUnitCache()[call.dispatch.idents[1]])) == officerId then
                             TriggerClientEvent("SonoranCAD::dispatchnotify:BeginTracking", officerId, call.dispatch.callId)
                         end
                     end
@@ -604,7 +644,7 @@ if pluginConfig.enabled then
                     if not unit then
                         debugLog("Not sending attach, unit not online")
                     else
-                        local officerId = GetSourceByApiId(unit.data.apiIds)
+                        local officerId = GetSourceByCadIdentity(GetUnitIdentityValues(unit))
                         TriggerEvent("SonoranCAD::pushevents:UnitAttach", data, unit)
                     end
                 end
@@ -643,7 +683,7 @@ if pluginConfig.enabled then
             -- Primary Unit Updated, remove tracking from old unit.
             local unit = GetUnitCache()[GetUnitById(before.dispatch.primary)]
             if unit ~= nil then
-                local officerId = GetSourceByApiId(unit.data.apiIds)
+                local officerId = GetSourceByCadIdentity(GetUnitIdentityValues(unit))
                 TriggerClientEvent("SonoranCAD::dispatchnotify:StopTracking", officerId)
             end
         end
@@ -662,7 +702,7 @@ if pluginConfig.enabled then
         local call = GetCallCache()[callId]
         assert(call ~= nil, "Call not found, failed to process.")
         local unit = GetUnitCache()[GetUnitById(primary)]
-        local officerId = GetSourceByApiId(unit.data.apiIds)
+        local officerId = GetSourceByCadIdentity(GetUnitIdentityValues(unit))
         if tracking then
             TriggerClientEvent("SonoranCAD::dispatchnotify:BeginTracking", officerId, callId)
         else
@@ -672,7 +712,7 @@ if pluginConfig.enabled then
 
 
     AddEventHandler("SonoranCAD::pushevents:UnitDetach", function(call, unit)
-        local officerId = GetSourceByApiId(unit.data.apiIds)
+        local officerId = GetSourceByCadIdentity(GetUnitIdentityValues(unit))
         if GetCallCache()[call.dispatch.callId] == nil then
             debugLog("Ignore unit detach, call doesn't exist")
             return
@@ -741,7 +781,7 @@ if pluginConfig.enabled then
                 debugLog(("Unit was nil, requested %s, cache is: %s"):format(id, GetUnitCache()))
                 return
             end
-            local officerId = GetSourceByApiId(unit.data.apiIds)
+            local officerId = GetSourceByCadIdentity(GetUnitIdentityValues(unit))
             if officerId ~= nil then
                 TriggerClientEvent("SonoranCAD::dispatchnotify:SetGps", officerId, postal)
             else
@@ -755,9 +795,12 @@ if pluginConfig.enabled then
         data[1] = {
             callId = callid,
             postal = clpostal,
-            serverId = Config.serverId
+            serverId = tonumber(Config.serverId)
         }
-        performApiRequest(data, 'SET_CALL_POSTAL', function() end)
+        local response = CadApiSetDispatchPostal(data[1])
+        if not response.success then
+            CadApiLogFailure("SET_CALL_POSTAL", response, data[1])
+        end
     end)
 
     AddEventHandler("SonoranCAD::pushevents:DispatchNote", function(call, data)
@@ -820,7 +863,6 @@ if pluginConfig.enabled then
         end
     end)
 
-    registerApiType("ADD_CALL_NOTE", "emergency")
     RegisterNetEvent("SonoranCAD::dispatchnotify:AddNoteToCall")
     AddEventHandler("SonoranCAD::dispatchnotify:AddNoteToCall", function(callId, note)
         local source = source
@@ -829,8 +871,11 @@ if pluginConfig.enabled then
         if call == nil then
             TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^2Dispatch ^0] ", "Unable to find call."}})
         else
-            local payload = { serverId = Config.serverId, note = note, callId = callId }
-            performApiRequest({payload}, "ADD_CALL_NOTE", function(res) end)
+            local payload = { serverId = tonumber(Config.serverId), note = note, callId = callId }
+            local response = CadApiAddDispatchNote(payload)
+            if not response.success then
+                CadApiLogFailure("ADD_CALL_NOTE", response, payload)
+            end
         end
     end)
     if isPluginLoaded("wraithv2") then
@@ -847,7 +892,7 @@ if pluginConfig.enabled then
     AddEventHandler("SonoranCAD::pushevents:UnitUpdate", function(unit, status)
         local u = GetUnitCache()[unit]
         if u then
-            local player = GetSourceByApiId(u.data.apiIds)
+            local player = GetSourceByCadIdentity(GetUnitIdentityValues(u))
             if player then
                 TriggerClientEvent("SonoranCAD::dispatchnotify:UnsetGps", player)
             end

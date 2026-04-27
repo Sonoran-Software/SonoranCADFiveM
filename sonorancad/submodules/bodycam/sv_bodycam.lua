@@ -39,7 +39,7 @@ CreateThread(function()
                 if turnUserId ~= nil then
                     return turnUserId
                 end
-                local serverId = Config.serverId
+                local serverId = tonumber(Config.serverId)
                 if serverId == nil or tostring(serverId) == "" then
                     serverId = GetConvar("sonoran_serverId", "server")
                 end
@@ -306,10 +306,10 @@ CreateThread(function()
             end)
 
             AddEventHandler('SonoranCAD::pushevents:UnitPanic', function(unit, identId, isPanic)
-                if not isPanic or not unit or not unit.data or not unit.data.apiIds then
+                if not isPanic or not unit then
                     return
                 end
-                local player = GetSourceByApiId(unit.data.apiIds)
+                local player = GetSourceByCadIdentity(GetUnitIdentityValues(unit))
                 if player then
                     TriggerClientEvent('SonoranCAD::bodycam::AutoRecordTrigger', player, 'panic')
                 end

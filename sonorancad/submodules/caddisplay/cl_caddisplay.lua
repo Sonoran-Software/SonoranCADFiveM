@@ -1247,6 +1247,8 @@ CreateThread(function()
             TriggerServerEvent("SonoranCAD::caddisplay::RequestPlacements")
             TriggerEvent("chat:addSuggestion", "/" .. pluginConfig.commands.cadDisplayMenu,
                 "Sonoran CAD Display: " .. pluginConfig.lang.addNewDisplayHelp)
+            RegisterPlayerCommandHelp("caddisplay", pluginConfig.commands.cadDisplayMenu,
+                "Sonoran CAD Display: " .. pluginConfig.lang.addNewDisplayHelp)
 
             RegisterCommand("SonoranCAD::caddisplay::Interact", function()
                 local ped = PlayerPedId()

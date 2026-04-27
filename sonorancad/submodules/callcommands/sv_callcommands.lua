@@ -44,7 +44,6 @@
             -- 911/311 Handler
             function HandleCivilianCall(type, typeObj, source, args, rawCommand)
                 local isEmergency = typeObj.isEmergency
-                local identifier = GetIdentifiers(source)[Config.primaryIdentifier]
                 local callLocation = LocationCache[source] ~= nil and LocationCache[source].location or 'Unknown'
                 -- Checking if there are any description arguments.
                 if args[1] then
@@ -146,11 +145,11 @@
                 isEmergency = (true/false) whether this is a 911 call, default true
                 notes = array of notes to add to the call when created
                 metaData = key/value pair of metadata to attach to the call
-                units = array of unit API IDs to auto-attach
+                units = array of linked CAD community user IDs to auto-attach
         ]]
             AddEventHandler("SonoranCAD::callcommands:CreateCall", function(data)
                 local payload = {
-                    serverId = Config.serverId,
+                    serverId = tonumber(Config.serverId),
                     origin = 0,
                     status = 1,
                     priority = 2,
@@ -168,25 +167,34 @@
                 for k, v in pairs(data) do
                     payload[k] = v
                 end
-                performApiRequest({payload}, "NEW_DISPATCH", function(response)
-                    if response:match("NEW DISPATCH CREATED - ID:") then
-                        TriggerEvent("SonoranCAD::callcommands:CallCreated", response:match("%d+"))
-                    else
-                        warnLog("Call creation returned unexpected response: " .. tostring(response))
-                    end
-                end)
+                local response = CadApiCreateDispatchCall(payload)
+                if not response.success then
+                    warnLog("Call creation failed: " .. CadApiReasonText(response.reason))
+                    return
+                end
+                if response.callId ~= nil then
+                    TriggerEvent("SonoranCAD::callcommands:CallCreated", response.callId)
+                else
+                    warnLog("Call creation returned unexpected response: " .. json.encode(response.data or {}))
+                end
             end)
 
             AddEventHandler("SonoranCAD::callcommands:SendPanic", function(playerId)
-                local id = GetIdentifiers(playerId)[Config.primaryIdentifier]
-                if id then
-                    performApiRequest({{
+                local communityUserId = GetPlayerCommunityUserId(playerId)
+                if communityUserId then
+                    local response = CadApiSetUnitPanic({
                         ['isPanic'] = true,
-                        ['apiId'] = id
-                    }}, 'UNIT_PANIC', function()
-                        debugLog(("Sent panic event for %s"):format(id))
+                        ['communityUserId'] = communityUserId
+                    })
+                    if response.success then
+                        debugLog(("Sent panic event for %s"):format(communityUserId))
                         TriggerEvent("SonoranCAD::callcommands:PanicSent", playerId)
-                    end)
+                    else
+                        CadApiLogFailure("UNIT_PANIC", response, {
+                            isPanic = true,
+                            communityUserId = communityUserId
+                        })
+                    end
                 end
             end)
 
@@ -219,38 +227,43 @@
                     end
                     if Config.apiSendEnabled then
                         local data = {
-                            ['serverId'] = Config.serverId,
+                            ['serverId'] = tonumber(tonumber(Config.serverId)),
                             ['isEmergency'] = emergency,
                             ['caller'] = caller,
                             ['location'] = location,
                             ['description'] = description,
+                            ['deleteAfterMinutes'] = 30,
                             ['metaData'] = {
-                                ['callerPlayerId'] = source,
-                                ['callerApiId'] = GetIdentifiers(source)[Config.primaryIdentifier],
+                                ['callerPlayerId'] = tostring(source),
+                                ['callerCommunityUserId'] = tostring(GetPlayerCommunityUserId(source)),
                                 ['uuid'] = uid,
-                                ['silentAlert'] = silenceAlert,
-                                ['useCallLocation'] = useCallLocation,
-                                ['postal'] = postal
+                                ['silentAlert'] = tostring(silenceAlert),
+                                ['useCallLocation'] = tostring(useCallLocation),
+                                ['postal'] = tostring(postal)
                             }
                         }
                         if LocationCache[source] ~= nil then
-                            data['metaData']['x'] = LocationCache[source].coordinates.x
-                            data['metaData']['y'] = LocationCache[source].coordinates.y
-                            data['metaData']['z'] = LocationCache[source].coordinates.z
+                            data['metaData']['x'] = tostring(LocationCache[source].coordinates.x)
+                            data['metaData']['y'] = tostring(LocationCache[source].coordinates.y)
+                            data['metaData']['z'] = tostring(LocationCache[source].coordinates.z)
                         elseif type(location) == "vector3" and pluginConfig.usePositionForMetadata then
-                            data['metaData']['x'] = location.x
-                            data['metaData']['y'] = location.y
-                            data['metaData']['z'] = location.z
+                            data['metaData']['x'] = tostring(location.x)
+                            data['metaData']['y'] = tostring(location.y)
+                            data['metaData']['z'] = tostring(location.z)
                         else
                             debugLog("Warning: location cache was nil, not sending position")
                         end
                         debugLog("sending call!")
-                        performApiRequest({data}, 'CALL_911', function(response)
-                            if response:match("EMERGENCY CALL ADDED ID:") then
-                                TriggerEvent("SonoranCAD::callcommands:EmergencyCallAdd", source,
-                                    response:match("%d+"))
-                            end
-                        end)
+                        local response = CadApiCreateEmergencyCall(data)
+                        if not response.success then
+                            errorLog("Emergency call creation failed: " .. CadApiReasonText(response.reason))
+                            return
+                        end
+                        if response.callId ~= nil then
+                            TriggerEvent("SonoranCAD::callcommands:EmergencyCallAdd", source, response.callId)
+                        else
+                            warnLog("Emergency call creation returned unexpected response: " .. json.encode(response.data or {}))
+                        end
                     else
                         errorLog("Config.apiSendEnabled disabled via convar or config, skipping call creation. Check your config if this is unintentional.")
                     end
@@ -269,7 +282,7 @@
                 end
                 local unit = GetUnitCache()[GetUnitById(ident)]
                 if unit then
-                    local player = GetSourceByApiId(unit.data.apiIds)
+                    local player = GetSourceByCadIdentity(GetUnitIdentityValues(unit))
                     if player then
                         sendPanic(player)
                     end
@@ -278,7 +291,7 @@
             function sendPanic(source, ispanicrequest)
                 -- Determine identifier
                 local source = tostring(source)
-                local identifier = GetIdentifiers(source)[Config.primaryIdentifier]
+                local communityUserId = GetPlayerCommunityUserId(source)
                 -- Process panic POST request
                 if pluginConfig.addPanicCall and not ispanicrequest then
                     local unit = GetUnitByPlayerId(source)
@@ -293,14 +306,14 @@
                         debugLog("postal is nil?!")
                     end
                     local data = {
-                        ['serverId'] = Config.serverId,
+                        ['serverId'] = tonumber(Config.serverId),
                         ['isEmergency'] = true,
                         ['caller'] = unit.data.name,
                         ['location'] = unit.location,
                         ['description'] = ("Unit %s has pressed their panic button!"):format(unit.data.unitNum),
                         ['metaData'] = {
                             ['callerPlayerId'] = source,
-                            ['callerApiId'] = GetIdentifiers(source)[Config.primaryIdentifier],
+                            ['callerCommunityUserId'] = GetPlayerCommunityUserId(source),
                             ['uuid'] = uuid(),
                             ['silentAlert'] = false,
                             ['useCallLocation'] = false,
@@ -315,16 +328,24 @@
                         debugLog("Warning: location cache was nil, not sending position")
                     end
                     debugLog(("perform panic request %s"):format(json.encode(data)))
-                    performApiRequest({data}, 'CALL_911', function(resp)
-                        debugLog(resp)
-                    end)
+                    local response = CadApiCreateEmergencyCall(data)
+                    if response.success then
+                        debugLog(json.encode(response.data or {}))
+                    else
+                        CadApiLogFailure("CALL_911", response, data)
+                    end
                 end
-                if ispanicrequest then
-                    performApiRequest({{
+                if ispanicrequest and communityUserId ~= nil then
+                    local response = CadApiSetUnitPanic({
                         ['isPanic'] = true,
-                        ['apiId'] = identifier
-                    }}, 'UNIT_PANIC', function()
-                    end)
+                        ['communityUserId'] = communityUserId
+                    })
+                    if not response.success then
+                        CadApiLogFailure("UNIT_PANIC", response, {
+                            isPanic = true,
+                            communityUserId = communityUserId
+                        })
+                    end
                 end
             end
 

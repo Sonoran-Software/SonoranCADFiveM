@@ -14,6 +14,24 @@ local trackingID = nil
 CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfig)
 
     if pluginConfig.enabled then
+        if pluginConfig.commandName == nil or pluginConfig.commandName == "" then
+            pluginConfig.commandName = "dn"
+        end
+        if pluginConfig.respondSubcommandName == nil or pluginConfig.respondSubcommandName == "" then
+            pluginConfig.respondSubcommandName = pluginConfig.respondCommandName or "respond"
+        end
+        if pluginConfig.unitNotifyToggleSubcommand == nil or pluginConfig.unitNotifyToggleSubcommand == "" then
+            pluginConfig.unitNotifyToggleSubcommand = pluginConfig.unitNotifyToggleCommand or "notify"
+        end
+        if pluginConfig.addNoteSubcommand == nil or pluginConfig.addNoteSubcommand == "" then
+            pluginConfig.addNoteSubcommand = pluginConfig.addNoteCommand or "note"
+        end
+        if pluginConfig.addPlateSubcommand == nil or pluginConfig.addPlateSubcommand == "" then
+            pluginConfig.addPlateSubcommand = pluginConfig.addPlateCommand or "plate"
+        end
+        if pluginConfig.gpsToggleSubcommand == nil or pluginConfig.gpsToggleSubcommand == "" then
+            pluginConfig.gpsToggleSubcommand = "gps"
+        end
 
         local gpsLock = true
         local lastPostal = nil
@@ -86,16 +104,9 @@ CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfi
             trackingID = nil
         end)
 
-        RegisterCommand("togglegps", function(source, args, rawCommand)
-            gpsLock = not gpsLock
+        local function setGpsLock(value)
+            gpsLock = value
             TriggerEvent("chat:addMessage", {args = {"^0[ ^2GPS ^0] ", ("GPS lock has been %s"):format(gpsLock and "enabled" or "disabled")}})
-        end)
-
-        if pluginConfig.enableUnitNotifyToggleCommand then
-            TriggerEvent("chat:addSuggestion", "/" .. pluginConfig.unitNotifyToggleCommand,
-                "Toggle unit 911 notifications (override)", {
-                    { name = "mode", help = "on | off | auto" }
-                })
         end
 
         RegisterNetEvent("SonoranCAD::dispatchnotify:CallAttach")
@@ -132,33 +143,96 @@ CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfi
             end
         end
 
-        if pluginConfig.enableAddNote then
-            RegisterCommand(pluginConfig.addNoteCommand, function(source, args, rawCommand)
-                local note = table.concat(args, " ")
+        local canAddPlate = pluginConfig.enableAddPlate and isPluginLoaded("wraithv2")
+        if canAddPlate then
+            RegisterNetEvent("SonoranCAD::dispatchnotify:PlateLock")
+            AddEventHandler("SonoranCAD::dispatchnotify:PlateLock", function(plate)
+                debugLog("Got locked plate event "..tostring(plate))
+                lockedPlate = plate
+            end)
+        end
+
+        TriggerEvent("chat:addSuggestion", "/" .. pluginConfig.commandName,
+            "Dispatch notify commands: respond, notify, note, plate, gps, help.", {
+                { name = "action", help = "respond | notify | note | plate | gps | help" },
+                { name = "param", help = "Call ID, notify mode, or note text depending on subcommand" }
+            })
+        RegisterPlayerCommandHelp("dispatchnotify", pluginConfig.commandName,
+            "Dispatch notify commands: respond, notify, note, plate, gps, help.",
+            "<respond|notify|note|plate|gps|help> [param]")
+
+        RegisterCommand(pluginConfig.commandName, function(source, args, rawCommand)
+            local subcommand = args[1] and string.lower(args[1]) or "help"
+
+            if subcommand == string.lower(pluginConfig.gpsToggleSubcommand) then
+                setGpsLock(not gpsLock)
+                return
+            end
+
+            if subcommand == string.lower(pluginConfig.respondSubcommandName) then
+                if args[2] == nil then
+                    TriggerEvent("chat:addMessage", {args = {"^0[ ^4Error ^0] ", ("Usage: /%s %s <callId>"):format(pluginConfig.commandName, pluginConfig.respondSubcommandName)}})
+                    return
+                end
+                TriggerServerEvent("SonoranCAD::dispatchnotify:CommandRespond", {args[2]})
+                return
+            end
+
+            if subcommand == string.lower(pluginConfig.unitNotifyToggleSubcommand) then
+                local notifyArgs = {}
+                if args[2] ~= nil then
+                    notifyArgs[1] = args[2]
+                end
+                TriggerServerEvent("SonoranCAD::dispatchnotify:CommandNotify", notifyArgs)
+                return
+            end
+
+            if subcommand == string.lower(pluginConfig.addNoteSubcommand) then
+                if not pluginConfig.enableAddNote then
+                    TriggerEvent("chat:addMessage", {args = {"^0[ ^4Error ^0] ", "Adding notes is disabled."}})
+                    return
+                end
+                local note = table.concat(args, " ", 2)
+                if note == nil or note == "" then
+                    TriggerEvent("chat:addMessage", {args = {"^0[ ^4Error ^0] ", ("Usage: /%s %s <note>"):format(pluginConfig.commandName, pluginConfig.addNoteSubcommand)}})
+                    return
+                end
                 if currentCallId ~= nil then
                     TriggerServerEvent("SonoranCAD::dispatchnotify:AddNoteToCall", currentCallId, note)
                     TriggerEvent("chat:addMessage", {args = {"^0[ ^2Note ^0] ", "Note sent to CAD."}})
                 else
                     TriggerEvent("chat:addMessage", {args = {"^0[ ^4Error ^0] ", "Not attached to any call."}})
                 end
-            end)
-        end
+                return
+            end
 
-        if pluginConfig.enableAddPlate and isPluginLoaded("wraithv2") then
-            RegisterNetEvent("SonoranCAD::dispatchnotify:PlateLock")
-            AddEventHandler("SonoranCAD::dispatchnotify:PlateLock", function(plate)
-                debugLog("Got locked plate event "..tostring(plate))
-                lockedPlate = plate
-            end)
-            RegisterCommand(pluginConfig.addPlateCommand, function(source, args, rawCommand)
+            if subcommand == string.lower(pluginConfig.addPlateSubcommand) then
+                if not canAddPlate then
+                    TriggerEvent("chat:addMessage", {args = {"^0[ ^4Error ^0] ", "Plate sending is unavailable."}})
+                    return
+                end
                 if currentCallId ~= nil and lockedPlate ~= nil then
                     TriggerServerEvent("SonoranCAD::dispatchnotify:AddNoteToCall", currentCallId, ("PLATE NUMBER: %s"):format(lockedPlate))
                     TriggerEvent("chat:addMessage", {args = {"^0[ ^2Note ^0] ", ("Locked plate %s sent to CAD."):format(lockedPlate)}})
                 else
                     TriggerEvent("chat:addMessage", {args = {"^0[ ^4Error ^0] ", "Not attached to any call or no plate locked."}})
                 end
-            end)
-        end
+                return
+            end
+
+            TriggerEvent("chat:addMessage", {args = {"^0[ ^3Dispatch ^0] ", ("Usage: /%s %s <callId> | /%s %s [on|off|auto] | /%s %s <note> | /%s %s | /%s %s"):format(
+                pluginConfig.commandName,
+                pluginConfig.respondSubcommandName,
+                pluginConfig.commandName,
+                pluginConfig.unitNotifyToggleSubcommand,
+                pluginConfig.commandName,
+                pluginConfig.addNoteSubcommand,
+                pluginConfig.commandName,
+                pluginConfig.addPlateSubcommand,
+                pluginConfig.commandName,
+                pluginConfig.gpsToggleSubcommand
+            )}})
+        end)
 
     end
 end) end)

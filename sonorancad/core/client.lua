@@ -1,5 +1,110 @@
 Config = {plugins = {}}
 Plugins = {}
+SonoranCommandHelp = {}
+
+local function normalize_help_command_name(command)
+    if type(command) ~= "string" then
+        return nil
+    end
+    local trimmed = command:gsub("^%s+", ""):gsub("%s+$", "")
+    if trimmed == "" then
+        return nil
+    end
+    return trimmed:gsub("^/", "")
+end
+
+function RegisterPlayerCommandHelp(submodule, command, description, usage)
+    local normalizedCommand = normalize_help_command_name(command)
+    if normalizedCommand == nil then
+        return
+    end
+
+    local normalizedSubmodule = type(submodule) == "string" and submodule:lower() or "core"
+    if SonoranCommandHelp[normalizedSubmodule] == nil then
+        SonoranCommandHelp[normalizedSubmodule] = {}
+    end
+
+    SonoranCommandHelp[normalizedSubmodule][normalizedCommand] = {
+        command = normalizedCommand,
+        description = type(description) == "string" and description or "",
+        usage = type(usage) == "string" and usage or nil
+    }
+end
+
+local function send_command_help_message(message)
+    TriggerEvent("chat:addMessage", {
+        args = {"^0[ ^3SonoranCAD ^0] ", tostring(message)}
+    })
+end
+
+local function sorted_keys(input)
+    local keys = {}
+    for key in pairs(input or {}) do
+        keys[#keys + 1] = key
+    end
+    table.sort(keys)
+    return keys
+end
+
+local function show_sonoran_command_help(submodule)
+    if submodule ~= nil and submodule ~= "" then
+        local normalizedSubmodule = string.lower(submodule)
+        local entries = SonoranCommandHelp[normalizedSubmodule]
+        if entries == nil then
+            send_command_help_message(("Unknown submodule '%s'."):format(tostring(submodule)))
+            local modules = sorted_keys(SonoranCommandHelp)
+            if #modules > 0 then
+                send_command_help_message(("Enabled submodules: %s"):format(table.concat(modules, ", ")))
+            end
+            return
+        end
+
+        send_command_help_message(("Commands for %s:"):format(normalizedSubmodule))
+        for _, commandName in ipairs(sorted_keys(entries)) do
+            local entry = entries[commandName]
+            local line = "/" .. entry.command
+            if entry.usage ~= nil and entry.usage ~= "" then
+                line = line .. " " .. entry.usage
+            end
+            if entry.description ~= nil and entry.description ~= "" then
+                line = line .. " - " .. entry.description
+            end
+            send_command_help_message(line)
+        end
+        return
+    end
+
+    local modules = sorted_keys(SonoranCommandHelp)
+    if #modules < 1 then
+        send_command_help_message("No player command help is registered.")
+        return
+    end
+
+    send_command_help_message("Enabled command groups:")
+    for _, moduleName in ipairs(modules) do
+        local entries = SonoranCommandHelp[moduleName]
+        local commands = {}
+        for _, commandName in ipairs(sorted_keys(entries)) do
+            commands[#commands + 1] = "/" .. commandName
+        end
+        send_command_help_message(("%s: %s"):format(moduleName, table.concat(commands, ", ")))
+    end
+end
+
+RegisterCommand("sonorancad", function(_, args)
+    local subcommand = args[1] and string.lower(args[1]) or "help"
+    if subcommand ~= "help" then
+        send_command_help_message("Usage: /sonorancad help [submodule]")
+        return
+    end
+    show_sonoran_command_help(args[2])
+end, false)
+
+TriggerEvent("chat:addSuggestion", "/sonorancad", "Show SonoranCAD command help.", {
+    { name = "action", help = "Use help" },
+    { name = "submodule", help = "Optional submodule name, such as civintegration or dispatchnotify" }
+})
+RegisterPlayerCommandHelp("core", "sonorancad", "Show SonoranCAD command help by submodule.", "help [submodule]")
 
 
 Config.RegisterPluginConfig = function(pluginName, configs)
