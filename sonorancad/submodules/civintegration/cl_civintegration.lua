@@ -24,6 +24,7 @@ if pluginConfig.enabled then
 
     RegisterNetEvent("SonoranCAD::civintegration:SetCustomId")
     AddEventHandler("SonoranCAD::civintegration:SetCustomId", function()
+        TriggerEvent("chat:addMessage", {args = {"^0[ ^3ID ^0] ", "Prompt 1/2: enter first and last name."}})
         DisplayOnscreenKeyboard(1, "ENTER_NAME", "", customId.first ~= nil and ("%s %s"):format(customId.first, customId.last), "", "", "", 50)
         while (UpdateOnscreenKeyboard() == 0) do
             DisableAllControlActions(0);
@@ -33,6 +34,7 @@ if pluginConfig.enabled then
             local result = GetOnscreenKeyboardResult()
             customId.first = stringsplit(result, " ")[1]
             customId.last = stringsplit(result, " ")[2]
+            TriggerEvent("chat:addMessage", {args = {"^0[ ^3ID ^0] ", "Prompt 2/2: enter DOB as month/day/year."}})
             DisplayOnscreenKeyboard(1, "ENTER_DOB", "", customId.dob ~= nil and customId.dob or "", "", "", "", 50)
             while (UpdateOnscreenKeyboard() == 0) do
                 DisableAllControlActions(0);
@@ -44,7 +46,7 @@ if pluginConfig.enabled then
             end
         end
         TriggerServerEvent("SonoranCAD::civintegration:SetCustomId", customId)
-        TriggerEvent("chat:addMessage", {args = {"^0[ ^1ID ^0] ", "Custom name and DOB set. Use /resetid to remove."}})
+        TriggerEvent("chat:addMessage", {args = {"^0[ ^3ID ^0] ", "Custom name and DOB set. Use /id show to display it nearby or /id reset to remove it."}})
     end)
 
 end
