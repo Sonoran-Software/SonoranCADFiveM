@@ -112,10 +112,33 @@ end
 
 local CAD_V2_RATE_LIMIT_MAX_RETRIES = 2
 local CAD_V2_RATE_LIMIT_DEFAULT_DELAY_MS = 1000
-local CAD_V2_RATE_LIMIT_MAX_DELAY_MS = 10000
+local CAD_V2_RATE_LIMIT_MAX_AUTO_RETRY_DELAY_MS = 10000
 local LOG_LEVELS = {
   OFF = "OFF",
+  ERROR = "ERROR",
   DEBUG = "DEBUG"
+}
+local REDACTED_VALUE = "<redacted>"
+local HTTP_MONTHS = {
+  Jan = 1,
+  Feb = 2,
+  Mar = 3,
+  Apr = 4,
+  May = 5,
+  Jun = 6,
+  Jul = 7,
+  Aug = 8,
+  Sep = 9,
+  Oct = 10,
+  Nov = 11,
+  Dec = 12
+}
+local SENSITIVE_KEYS = {
+  ["authorization"] = true,
+  ["api-key"] = true,
+  ["apikey"] = true,
+  ["api_key"] = true,
+  ["x-api-key"] = true
 }
 
 local function serialize_debug_value(value, seen)
@@ -166,6 +189,101 @@ local function serialize_debug_value(value, seen)
 
   seen[value] = nil
   return "{ " .. table.concat(parts, ", ") .. " }"
+end
+
+local function sanitize_key(key)
+  return string.lower(tostring(key)):gsub("[_%-%s]", "")
+end
+
+local function should_redact_key(key)
+  local normalized = sanitize_key(key)
+  return SENSITIVE_KEYS[string.lower(tostring(key))] == true
+    or normalized == "authorization"
+    or normalized == "apikey"
+    or normalized == "xapikey"
+end
+
+local function sanitize_value(value, seen)
+  if type(value) ~= "table" then
+    return value
+  end
+
+  seen = seen or {}
+  if seen[value] then
+    return "<cycle>"
+  end
+
+  seen[value] = true
+
+  local copy = {}
+  for key, entry in pairs(value) do
+    if should_redact_key(key) and entry ~= nil then
+      copy[key] = REDACTED_VALUE
+    else
+      copy[key] = sanitize_value(entry, seen)
+    end
+  end
+
+  seen[value] = nil
+  return copy
+end
+
+local function get_utc_offset_seconds(timestamp)
+  local local_time = os.date("*t", timestamp)
+  local utc_time = os.date("!*t", timestamp)
+  local_time.isdst = false
+  utc_time.isdst = false
+  return os.difftime(os.time(local_time), os.time(utc_time))
+end
+
+local function utc_timegm(parts)
+  local local_timestamp = os.time(parts)
+  if local_timestamp == nil then
+    return nil
+  end
+
+  return local_timestamp - get_utc_offset_seconds(local_timestamp)
+end
+
+local function parse_http_date(value)
+  if type(value) ~= "string" then
+    return nil
+  end
+
+  local day, month_name, year, hour, minute, second = value:match("^%a+,%s+(%d%d?)%s+(%a+)%s+(%d%d%d%d)%s+(%d%d):(%d%d):(%d%d)%s+GMT$")
+  if day == nil then
+    day, month_name, year, hour, minute, second = value:match("^%a+,%s+(%d%d?)%-(%a+)%-(%d%d)%s+(%d%d):(%d%d):(%d%d)%s+GMT$")
+    if year ~= nil then
+      local numeric_year = tonumber(year)
+      if numeric_year ~= nil then
+        year = numeric_year >= 70 and ("19" .. year) or ("20" .. year)
+      end
+    end
+  end
+
+  if day == nil then
+    day, month_name, year, hour, minute, second = value:match("^%a+%s+(%a+)%s+(%d%d?)%s+(%d%d):(%d%d):(%d%d)%s+(%d%d%d%d)$")
+    if day ~= nil then
+      local rewritten_day = month_name
+      month_name = day
+      day = rewritten_day
+    end
+  end
+
+  local month = HTTP_MONTHS[month_name]
+  if month == nil then
+    return nil
+  end
+
+  return utc_timegm({
+    year = tonumber(year),
+    month = month,
+    day = tonumber(day),
+    hour = tonumber(hour),
+    min = tonumber(minute),
+    sec = tonumber(second),
+    isdst = false
+  })
 end
 
 local Client = {}
@@ -227,11 +345,36 @@ function Client:_resolve_retry_delay_ms(response, attempt)
   if retry_after ~= nil then
     local retry_after_seconds = tonumber(retry_after)
     if retry_after_seconds ~= nil and retry_after_seconds >= 0 then
-      return math.min(math.floor((retry_after_seconds * 1000) + 0.5), CAD_V2_RATE_LIMIT_MAX_DELAY_MS)
+      return math.max(0, math.floor((retry_after_seconds * 1000) + 0.5)), "Retry-After"
+    end
+
+    local retry_after_timestamp = parse_http_date(retry_after)
+    if retry_after_timestamp ~= nil then
+      return math.max(0, math.floor((os.difftime(retry_after_timestamp, os.time()) * 1000) + 0.5)), "Retry-After"
     end
   end
 
-  return math.min(CAD_V2_RATE_LIMIT_DEFAULT_DELAY_MS * (2 ^ attempt), CAD_V2_RATE_LIMIT_MAX_DELAY_MS)
+  local rate_limit_reset = headers["ratelimit-reset"]
+  if rate_limit_reset ~= nil then
+    local reset_seconds = tonumber(rate_limit_reset)
+    if reset_seconds ~= nil and reset_seconds >= 0 then
+      return math.max(0, math.floor((reset_seconds * 1000) + 0.5)), "RateLimit-Reset"
+    end
+  end
+
+  local x_rate_limit_reset = headers["x-ratelimit-reset"]
+  if x_rate_limit_reset ~= nil then
+    local reset_seconds = tonumber(x_rate_limit_reset)
+    if reset_seconds ~= nil and reset_seconds >= 0 then
+      if reset_seconds >= 1000000000 then
+        return math.max(0, math.floor((os.difftime(reset_seconds, os.time()) * 1000) + 0.5)), "X-RateLimit-Reset"
+      end
+
+      return math.max(0, math.floor((reset_seconds * 1000) + 0.5)), "X-RateLimit-Reset"
+    end
+  end
+
+  return math.min(CAD_V2_RATE_LIMIT_DEFAULT_DELAY_MS * (2 ^ attempt), CAD_V2_RATE_LIMIT_MAX_AUTO_RETRY_DELAY_MS), "exponential backoff"
 end
 
 function Client:_sleep_ms(delay_ms)
@@ -245,8 +388,8 @@ function Client:_sleep_ms(delay_ms)
 end
 
 function Client:_assert_log_level(level)
-  if level ~= LOG_LEVELS.OFF and level ~= LOG_LEVELS.DEBUG then
-    error("logLevel must be OFF or DEBUG.")
+  if level ~= LOG_LEVELS.OFF and level ~= LOG_LEVELS.ERROR and level ~= LOG_LEVELS.DEBUG then
+    error("logLevel must be OFF, ERROR, or DEBUG.")
   end
 
   return level
@@ -261,6 +404,14 @@ function Client:_is_debug_enabled()
   return self._config.logLevel == LOG_LEVELS.DEBUG
 end
 
+function Client:_is_error_enabled()
+  return self._config.logLevel == LOG_LEVELS.ERROR or self._config.logLevel == LOG_LEVELS.DEBUG
+end
+
+function Client:_format_log_value(value)
+  return serialize_debug_value(sanitize_value(value))
+end
+
 function Client:_debug_log_http_request(request_options, attempt)
   if not self:_is_debug_enabled() then
     return
@@ -270,8 +421,8 @@ function Client:_debug_log_http_request(request_options, attempt)
   print("[Sonoran.lua][DEBUG]   attempt: " .. tostring((attempt or 0) + 1))
   print("[Sonoran.lua][DEBUG]   method: " .. tostring(request_options.method))
   print("[Sonoran.lua][DEBUG]   url: " .. tostring(request_options.url))
-  print("[Sonoran.lua][DEBUG]   headers: " .. serialize_debug_value(request_options.headers))
-  print("[Sonoran.lua][DEBUG]   body: " .. serialize_debug_value(request_options.body))
+  print("[Sonoran.lua][DEBUG]   headers: " .. self:_format_log_value(request_options.headers))
+  print("[Sonoran.lua][DEBUG]   body: " .. self:_format_log_value(request_options.logBody))
 end
 
 function Client:_debug_log_http_response(response, attempt)
@@ -283,8 +434,24 @@ function Client:_debug_log_http_response(response, attempt)
   print("[Sonoran.lua][DEBUG]   attempt: " .. tostring((attempt or 0) + 1))
   print("[Sonoran.lua][DEBUG]   ok: " .. tostring(response and response.ok))
   print("[Sonoran.lua][DEBUG]   status: " .. tostring(response and response.status))
-  print("[Sonoran.lua][DEBUG]   headers: " .. serialize_debug_value(response and response.headers))
-  print("[Sonoran.lua][DEBUG]   body: " .. serialize_debug_value(response and response.body))
+  print("[Sonoran.lua][DEBUG]   headers: " .. self:_format_log_value(response and response.headers))
+  print("[Sonoran.lua][DEBUG]   body: " .. self:_format_log_value(response and response.body))
+end
+
+function Client:_error_log_http_failure(request_options, response, parsed, attempt, message)
+  if not self:_is_error_enabled() then
+    return
+  end
+
+  print("[Sonoran.lua][ERROR] " .. tostring(message))
+  print("[Sonoran.lua][ERROR]   attempt: " .. tostring((attempt or 0) + 1))
+  print("[Sonoran.lua][ERROR]   method: " .. tostring(request_options.method))
+  print("[Sonoran.lua][ERROR]   url: " .. tostring(request_options.url))
+  print("[Sonoran.lua][ERROR]   request headers: " .. self:_format_log_value(request_options.headers))
+  print("[Sonoran.lua][ERROR]   request body: " .. self:_format_log_value(request_options.logBody))
+  print("[Sonoran.lua][ERROR]   response status: " .. tostring(response and response.status))
+  print("[Sonoran.lua][ERROR]   response headers: " .. self:_format_log_value(response and response.headers))
+  print("[Sonoran.lua][ERROR]   response body: " .. self:_format_log_value(parsed ~= nil and parsed or response and response.body))
 end
 
 function Client:_request(method, path, options)
@@ -314,6 +481,7 @@ function Client:_request(method, path, options)
     url = build_url(self._config.apiUrl, path, options.query, self._adapter.encodeURIComponent),
     headers = headers,
     body = encoded_body,
+    logBody = body,
     timeoutMs = self._config.timeoutMs
   }
 
@@ -336,13 +504,67 @@ function Client:_request(method, path, options)
     end
 
     if tonumber(response and response.status) == 429 and attempt < CAD_V2_RATE_LIMIT_MAX_RETRIES then
-      self:_sleep_ms(self:_resolve_retry_delay_ms(response, attempt))
+      local retry_delay_ms, retry_source = self:_resolve_retry_delay_ms(response, attempt)
+      if retry_delay_ms > CAD_V2_RATE_LIMIT_MAX_AUTO_RETRY_DELAY_MS then
+        self:_error_log_http_failure(
+          request_options,
+          response,
+          parsed,
+          attempt,
+          string.format(
+            "HTTP 429 rate limit received. Not retrying because %s requested %d ms, which exceeds the automatic retry limit of %d ms.",
+            tostring(retry_source),
+            retry_delay_ms,
+            CAD_V2_RATE_LIMIT_MAX_AUTO_RETRY_DELAY_MS
+          )
+        )
+      elseif retry_delay_ms > 0 and type(self._adapter.sleep) ~= "function" then
+        self:_error_log_http_failure(
+          request_options,
+          response,
+          parsed,
+          attempt,
+          string.format(
+            "HTTP 429 rate limit received. Not retrying because the active adapter cannot wait %d ms from %s.",
+            retry_delay_ms,
+            tostring(retry_source)
+          )
+        )
+      else
+        self:_error_log_http_failure(
+          request_options,
+          response,
+          parsed,
+          attempt,
+          string.format(
+            "HTTP 429 rate limit received. Retrying after %d ms from %s.",
+            retry_delay_ms,
+            tostring(retry_source)
+          )
+        )
+        self:_sleep_ms(retry_delay_ms)
+        goto continue
+      end
+    elseif tonumber(response and response.status) == 429 then
+      self:_error_log_http_failure(request_options, response, parsed, attempt, "HTTP 429 rate limit received. Automatic retries have been exhausted.")
+      return {
+        success = false,
+        reason = parsed ~= nil and parsed or "Request was rate limited."
+      }
     else
+      self:_error_log_http_failure(request_options, response, parsed, attempt, "HTTP request failed.")
       return {
         success = false,
         reason = parsed
       }
     end
+
+    return {
+      success = false,
+      reason = parsed ~= nil and parsed or "Request was rate limited."
+    }
+
+    ::continue::
   end
 
   return {
