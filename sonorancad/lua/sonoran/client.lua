@@ -335,12 +335,30 @@ function Client:_parse_response(response)
     end
   end
 
+  if type(raw_body) == "string" then
+    local trimmed = raw_body:match("^%s*(.-)%s*$")
+    if trimmed ~= "" and (starts_with(trimmed, "{") or starts_with(trimmed, "[")) then
+      local ok, parsed = pcall(self._adapter.decode, raw_body)
+      if ok then
+        return parsed
+      end
+    end
+  end
+
   return raw_body
 end
 
 function Client:_resolve_retry_delay_ms(response, attempt)
   local headers = normalize_headers(response and response.headers)
   local retry_after = headers["retry-after"]
+  local remaining_minute = tonumber(headers["x-ratelimit-remaining-minute"])
+
+  if remaining_minute ~= nil and remaining_minute <= 0 and retry_after ~= nil then
+    local retry_after_seconds = tonumber(retry_after)
+    if retry_after_seconds ~= nil and retry_after_seconds >= 0 then
+      return math.floor((retry_after_seconds * 1000) + 0.5)
+    end
+  end
 
   if retry_after ~= nil then
     local retry_after_seconds = tonumber(retry_after)
@@ -454,6 +472,20 @@ function Client:_error_log_http_failure(request_options, response, parsed, attem
   print("[Sonoran.lua][ERROR]   response body: " .. self:_format_log_value(parsed ~= nil and parsed or response and response.body))
 end
 
+function Client:_debug_log_rate_limit_retry(response, attempt, delay_ms)
+  if not self:_is_debug_enabled() then
+    return
+  end
+
+  local headers = normalize_headers(response and response.headers)
+  print("[Sonoran.lua][DEBUG] Rate limit retry")
+  print("[Sonoran.lua][DEBUG]   attempt: " .. tostring((attempt or 0) + 1))
+  print("[Sonoran.lua][DEBUG]   status: " .. tostring(response and response.status))
+  print("[Sonoran.lua][DEBUG]   x-ratelimit-remaining-minute: " .. tostring(headers["x-ratelimit-remaining-minute"]))
+  print("[Sonoran.lua][DEBUG]   retry-after: " .. tostring(headers["retry-after"]))
+  print("[Sonoran.lua][DEBUG]   delayMs: " .. tostring(delay_ms))
+end
+
 function Client:_request(method, path, options)
   options = options or {}
 
@@ -490,9 +522,9 @@ function Client:_request(method, path, options)
     local response = self._adapter.request(request_options)
     self:_debug_log_http_response(response, attempt)
     local parsed = self:_parse_response(response or {})
+    local status = tonumber(response and response.status) or 0
     local ok = response and response.ok
     if ok == nil then
-      local status = tonumber(response and response.status) or 0
       ok = status >= 200 and status < 300
     end
 
@@ -555,7 +587,8 @@ function Client:_request(method, path, options)
       self:_error_log_http_failure(request_options, response, parsed, attempt, "HTTP request failed.")
       return {
         success = false,
-        reason = parsed
+        reason = parsed,
+        message = message
       }
     end
 
@@ -569,7 +602,8 @@ function Client:_request(method, path, options)
 
   return {
     success = false,
-    reason = "Request was rate limited."
+    reason = "Request was rate limited.",
+    message = "Request was rate limited."
   }
 end
 
@@ -606,6 +640,8 @@ local function create_client(config, adapter)
 
   if config and config.logLevel ~= nil then
     instance:setLogLevel(config.logLevel)
+  elseif config and config.setLogLevel ~= nil then
+    instance:setLogLevel(config.setLogLevel)
   end
 
   local cad_proxy = setmetatable({}, {

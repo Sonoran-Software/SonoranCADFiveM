@@ -299,10 +299,7 @@ CreateThread(function()
     while Config.apiVersion == -1 do
         Wait(10)
     end
-    if Config.apiVersion < 3 then
-        debugLog("Too low version or API disabled, skip call caching")
-        return
-    elseif not Config.apiSendEnabled then
+    if not Config.apiSendEnabled then
         errorLog("Config.apiSendEnabled disabled via convar or config, skipping call caching. Check your config if this is unintentional.")
         return
     end
