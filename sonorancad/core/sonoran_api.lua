@@ -1,5 +1,7 @@
 local cadV2Client = nil
 local sonoranModule = nil
+local communityLinkCheckCache = {}
+local COMMUNITY_LINK_CHECK_CACHE_TTL_MS = 10 * 60 * 1000
 
 local function load_sonoran_module()
     if sonoranModule ~= nil then
@@ -128,6 +130,64 @@ local function clone_table(value)
         copy[key] = entry
     end
     return copy
+end
+
+local function get_cache_time_ms()
+    if type(GetGameTimer) == "function" then
+        return GetGameTimer()
+    end
+    return math.floor(os.time() * 1000)
+end
+
+local function get_community_link_cache_key(payload)
+    if type(payload) ~= "table" then
+        return tostring(payload)
+    end
+
+    local community_user_id = payload.communityUserId or ""
+    local account_uuid = payload.accountUuid or payload.accountId or payload.uuid or ""
+    local code = payload.code or payload.linkCode or payload.link_code or ""
+    if community_user_id ~= "" or account_uuid ~= "" or code ~= "" then
+        return ("%s|%s|%s"):format(tostring(community_user_id), tostring(account_uuid), tostring(code))
+    end
+
+    return payload_preview(payload)
+end
+
+local function clone_api_response(response)
+    if type(response) ~= "table" then
+        return response
+    end
+
+    local copy = clone_table(response)
+    if type(response.data) == "table" then
+        copy.data = clone_table(response.data)
+    end
+    if type(response.reason) == "table" then
+        copy.reason = clone_table(response.reason)
+    end
+    return copy
+end
+
+local function read_cached_community_link_response(payload, ttl_ms)
+    local cache_key = get_community_link_cache_key(payload)
+    local cached = communityLinkCheckCache[cache_key]
+    if type(cached) ~= "table" or type(cached.cachedAt) ~= "number" then
+        return nil
+    end
+
+    if (get_cache_time_ms() - cached.cachedAt) >= ttl_ms then
+        return nil
+    end
+
+    return clone_api_response(cached.response)
+end
+
+local function write_cached_community_link_response(payload, response)
+    communityLinkCheckCache[get_community_link_cache_key(payload)] = {
+        cachedAt = get_cache_time_ms(),
+        response = clone_api_response(response)
+    }
 end
 
 function CadApiReasonText(value)
@@ -785,8 +845,28 @@ function CadApiCreateCommunityLink(payload)
     return get_cad_client():createCommunityLinkV2(payload)
 end
 
-function CadApiCheckCommunityLink(payload)
-    return get_cad_client():checkCommunityLinkV2(payload)
+function CadApiCheckCommunityLink(payload, options)
+    payload = payload or {}
+    options = options or {}
+
+    local ttl_ms = tonumber(options.ttlMs) or COMMUNITY_LINK_CHECK_CACHE_TTL_MS
+    if ttl_ms < 0 then
+        ttl_ms = 0
+    end
+
+    if options.forceRefresh ~= true and ttl_ms > 0 then
+        local cached = read_cached_community_link_response(payload, ttl_ms)
+        if cached ~= nil then
+            return cached
+        end
+    end
+
+    local response = get_cad_client():checkCommunityLinkV2(payload)
+    if ttl_ms > 0 then
+        write_cached_community_link_response(payload, response)
+    end
+
+    return response
 end
 
 legacyApiHandlers = {

@@ -505,7 +505,7 @@
                 if (!entry || typeof entry !== "object") {
                     return false;
                 }
-                const hasIdentity = !!(entry.identId || entry.apiId || entry.communityUserId);
+                const hasIdentity = typeof entry.communityUserId === "string" && entry.communityUserId.length > 0;
                 const hasLocation = typeof entry.location === "string" && entry.location.length > 0;
                 return hasIdentity && hasLocation;
             });

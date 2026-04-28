@@ -139,9 +139,19 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
                     for i = batchSize, 1, -1 do
                         table.remove(PendingQueue, i)
                     end
-                    debugLog(("UNIT_LOCATION: Sending WS batch of %s (pending remaining: %s)"):format(#batch, #PendingQueue))
-                    exports['sonorancad']:sendUnitLocations(batch)
+                    local sendableBatch = {}
                     for _, entry in ipairs(batch) do
+                        if entry and type(entry.communityUserId) == "string" and entry.communityUserId ~= "" then
+                            table.insert(sendableBatch, entry)
+                        else
+                            debugLog("UNIT_LOCATION: Skipped queued update without linked communityUserId.")
+                        end
+                    end
+                    debugLog(("UNIT_LOCATION: Sending WS batch of %s (pending remaining: %s)"):format(#sendableBatch, #PendingQueue))
+                    if #sendableBatch > 0 then
+                        exports['sonorancad']:sendUnitLocations(sendableBatch)
+                    end
+                    for _, entry in ipairs(sendableBatch) do
                         if entry and entry.communityUserId then
                             local peerId = entry.peerId
                             if peerId == "" then

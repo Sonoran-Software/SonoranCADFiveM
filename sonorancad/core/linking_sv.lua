@@ -1,6 +1,7 @@
 local CadLinkCache = {}
 local CadLinkSessions = {}
 local LinkCodeReuseWindowMs = 5 * 60 * 1000
+local LinkMenuCheckIntervalMs = 10000
 
 local function is_non_empty_string(value)
     return type(value) == "string" and value ~= ""
@@ -29,9 +30,9 @@ local function get_link_command_name()
 end
 
 local function get_link_poll_interval_ms()
-    local interval = tonumber(Config.linkPollIntervalMs) or 10000
-    if interval < 1000 then
-        interval = 1000
+    local interval = LinkMenuCheckIntervalMs
+    if interval < LinkMenuCheckIntervalMs then
+        interval = LinkMenuCheckIntervalMs
     end
     return math.floor(interval)
 end
@@ -220,7 +221,7 @@ local function should_use_cached_negative_link(cached)
     return (GetGameTimer() - updated_at) < get_link_poll_interval_ms()
 end
 
-local function refresh_link_status_by_identifier(identifier, identifier_type, code)
+local function refresh_link_status_by_identifier(identifier, identifier_type, code, options)
     if not is_non_empty_string(identifier) then
         return {
             linked = false
@@ -232,7 +233,11 @@ local function refresh_link_status_by_identifier(identifier, identifier_type, co
         code = cached.code
     end
 
-    local response = CadApiCheckCommunityLink(build_link_payload(identifier, identifier_type, code))
+    options = options or {}
+    local response = CadApiCheckCommunityLink(build_link_payload(identifier, identifier_type, code), {
+        ttlMs = options.ttlMs,
+        forceRefresh = options.forceRefresh == true
+    })
     if not response.success then
         if is_unlinked_link_check_reason(response.reason) then
             return update_link_cache(identifier, identifier_type, {
@@ -609,7 +614,7 @@ AddEventHandler("SonoranCAD::links:Poll", function()
 
     local interval = get_link_poll_interval_ms()
     local now = GetGameTimer()
-    if type(session.lastCheckAt) == "number" and session.lastCheckAt > 0 and (now - session.lastCheckAt) < (interval - 250) then
+    if type(session.lastCheckAt) == "number" and session.lastCheckAt > 0 and (now - session.lastCheckAt) < interval then
         return
     end
 
@@ -617,7 +622,10 @@ AddEventHandler("SonoranCAD::links:Poll", function()
     session.popupOpen = true
     log_link_debug(("poll link status for player %s"):format(tostring(player)))
 
-    local status = refresh_link_status_by_identifier(identifier, identifier_type, session.linkCode)
+    local status = refresh_link_status_by_identifier(identifier, identifier_type, session.linkCode, {
+        ttlMs = interval,
+        forceRefresh = true
+    })
     local updated_session = build_player_session(identifier, identifier_type, status, session)
     updated_session.popupOpen = status.linked ~= true
     updated_session.lastCheckAt = now
