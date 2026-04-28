@@ -54,8 +54,7 @@ local function get_cad_client()
         communityId = Config.communityID,
         apiUrl = resolve_api_url(),
         defaultServerId = tonumber(tonumber(Config.serverId)) or 1,
-        setLogLevel = sonoran.logLevels.DEBUG
-        -- setLogLevel = Config.debug and sonoran.logLevels.DEBUG or sonoran.logLevels.OFF
+        setLogLevel = Config.debug and sonoran.logLevels.DEBUG or sonoran.logLevels.OFF
     })
 
     return cadV2Client
