@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: sync-sonoran-lua-v4
+  group: sync-sonoran-lua-master
   cancel-in-progress: false
 
 jobs:
@@ -18,10 +18,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout SonoranCADFiveM v4
+      - name: Checkout SonoranCADFiveM master
         uses: actions/checkout@v4
         with:
-          ref: v4
+          ref: master
           fetch-depth: 0
 
       - name: Checkout Sonoran.lua
@@ -48,4 +48,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add sonorancad/lua/sonoran
           git commit -m "chore: sync Sonoran.lua"
-          git push origin HEAD:v4
+          git push origin HEAD:master

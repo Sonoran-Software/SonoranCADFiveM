@@ -5,22 +5,69 @@ on:
     branches:
       - master
       - '**'  # This will trigger on all branches
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact semantic version to release on master (for example 4.0.1)
+        required: true
+        type: string
 
 jobs:
   release:
-    if: github.ref == 'refs/heads/master'  # Run only on master branch
+    if: github.ref == 'refs/heads/master' && (github.event_name != 'push' || github.actor != 'github-actions[bot]')
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout Code
         uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
 
-      - name: Extract Version
-        id: extract-version
+      - name: Determine Release Version
+        id: version
         run: |
-          VERSION=$(grep -oP "version '\K\d+\.\d+\.\d+" sonorancad/fxmanifest.lua)
+          CURRENT_VERSION=$(grep -oP "version '\K\d+\.\d+\.\d+" sonorancad/fxmanifest.lua)
+          if [ -z "$CURRENT_VERSION" ]; then
+            echo "Could not read current version from sonorancad/fxmanifest.lua"
+            exit 1
+          fi
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+            VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+          fi
+
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must be semantic version format X.Y.Z"
+            exit 1
+          fi
+
+          sed -Ei "s/version '[0-9]+\.[0-9]+\.[0-9]+'/version '$VERSION'/" sonorancad/fxmanifest.lua
+
+          UPDATED_VERSION=$(grep -oP "version '\K\d+\.\d+\.\d+" sonorancad/fxmanifest.lua)
+          if [ "$UPDATED_VERSION" != "$VERSION" ]; then
+            echo "Failed to update sonorancad/fxmanifest.lua to $VERSION"
+            exit 1
+          fi
+
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Grabbed version number of $VERSION, will be used for this release..."
+          echo "Current version was $CURRENT_VERSION"
+          echo "Using release version $VERSION"
+        shell: bash
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add sonorancad/fxmanifest.lua
+          if git diff --cached --quiet; then
+            echo "Version already set to ${{ steps.version.outputs.version }}; no commit required."
+          else
+            git commit -m "release: v${{ steps.version.outputs.version }}"
+            git push origin HEAD:master
+          fi
         shell: bash
 
       - name: Clone included submodules
@@ -40,7 +87,7 @@ jobs:
       - name: Cleanup & Zip Directories
         id: zip-dirs
         run: |
-          VERSION=${{ steps.extract-version.outputs.version }}
+          VERSION=${{ steps.version.outputs.version }}
           find sonorancad/plugins -mindepth 1 -type d -exec sh -c 'case "$0" in */readme.md|*/template) ;; *) rm -r "$0" ;; esac' {} \; & wait
           rsync -a --exclude="[sonorancad]" --exclude=".git" --exclude=".vscode" --exclude=".github" ./ ./[sonorancad]
           zip -r "sonorancad-$VERSION.zip" [sonorancad]/
@@ -52,11 +99,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION=${{ steps.extract-version.outputs.version }}
+          VERSION=${{ steps.version.outputs.version }}
           RELEASE_NAME="Release $VERSION"
           RELEASE_TAG="v$VERSION"
-          
-          # Check if the release already exists
+
           if curl --fail -sSL "https://api.github.com/repos/${{ github.repository }}/releases/tags/$RELEASE_TAG"; then
             echo "Deleting existing release $RELEASE_NAME"
             RELEASE_ID=$(curl -X GET "https://api.github.com/repos/${{ github.repository }}/releases/tags/$RELEASE_TAG" \
@@ -67,10 +113,8 @@ jobs:
             echo "Release $RELEASE_NAME does not exist"
           fi
 
-          # Check if the tag exists, and if it does, delete it
           if curl --fail -sSL "https://api.github.com/repos/${{ github.repository }}/git/refs/tags/$RELEASE_TAG"; then
             echo "Deleting existing tag $RELEASE_TAG"
-            REF_SHA=$(curl -sSL "https://api.github.com/repos/${{ github.repository }}/git/refs/tags/$RELEASE_TAG" | jq -r '.object.sha')
             curl -X DELETE "https://api.github.com/repos/${{ github.repository }}/git/refs/tags/$RELEASE_TAG" \
               -H "Authorization: token $GITHUB_TOKEN"
           else
@@ -86,7 +130,6 @@ jobs:
 
           RELEASE_ID=$(echo $RESPONSE | jq -r '.id')
           
-          # Upload the zip file as a release asset
           echo "Uploading zip to release $RELEASE_NAME"
           UPLOAD_URL="https://uploads.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets?name=sonorancad-$VERSION.zip"
           curl -H "Authorization: token $GITHUB_TOKEN" \

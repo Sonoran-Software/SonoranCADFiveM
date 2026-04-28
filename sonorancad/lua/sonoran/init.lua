@@ -29,6 +29,7 @@ Sonoran.productEnums = {
 }
 Sonoran.logLevels = {
   OFF = "OFF",
+  ERROR = "ERROR",
   DEBUG = "DEBUG"
 }
 
