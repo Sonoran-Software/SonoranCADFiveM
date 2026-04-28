@@ -396,7 +396,7 @@ function Client:_assert_log_level(level)
 end
 
 function Client:setLogLevel(level)
-  self._config.logLevel = self:_assert_log_level(level or LOG_LEVELS.OFF)
+  self._config.logLevel = self:_assert_log_level(level or LOG_LEVELS.ERROR)
   return self
 end
 
@@ -600,7 +600,7 @@ local function create_client(config, adapter)
       defaultServerId = config and config.defaultServerId or 1,
       headers = shallow_copy(config and config.headers or {}),
       timeoutMs = config and config.timeoutMs or 30000,
-      logLevel = LOG_LEVELS.OFF
+      logLevel = LOG_LEVELS.ERROR
     }
   }, Client)
 
