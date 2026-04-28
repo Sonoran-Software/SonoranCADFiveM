@@ -543,7 +543,15 @@ function Client:_request(method, path, options)
           )
         )
         self:_sleep_ms(retry_delay_ms)
-        goto continue
+      end
+
+      if retry_delay_ms <= CAD_V2_RATE_LIMIT_MAX_AUTO_RETRY_DELAY_MS and (retry_delay_ms <= 0 or type(self._adapter.sleep) == "function") then
+        -- Retry by falling through to the next loop iteration without returning.
+      else
+        return {
+          success = false,
+          reason = parsed ~= nil and parsed or "Request was rate limited."
+        }
       end
     elseif tonumber(response and response.status) == 429 then
       self:_error_log_http_failure(request_options, response, parsed, attempt, "HTTP 429 rate limit received. Automatic retries have been exhausted.")
@@ -559,12 +567,6 @@ function Client:_request(method, path, options)
       }
     end
 
-    return {
-      success = false,
-      reason = parsed ~= nil and parsed or "Request was rate limited."
-    }
-
-    ::continue::
   end
 
   return {

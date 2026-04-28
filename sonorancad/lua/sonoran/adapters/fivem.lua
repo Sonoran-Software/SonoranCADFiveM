@@ -4,6 +4,28 @@ local function encode_uri_component(value)
   end)
 end
 
+local function perform_request(options, callback)
+  local resource_name = GetCurrentResourceName and GetCurrentResourceName() or nil
+  if resource_name ~= nil and exports ~= nil and exports[resource_name] ~= nil and exports[resource_name].HandleHttpRequest ~= nil then
+    exports[resource_name]:HandleHttpRequest(
+      options.url,
+      callback,
+      options.method or "GET",
+      options.body,
+      options.headers or {}
+    )
+    return
+  end
+
+  PerformHttpRequest(
+    options.url,
+    callback,
+    options.method or "GET",
+    options.body,
+    options.headers or {}
+  )
+end
+
 return function()
   return {
     encode = function(value)
@@ -59,8 +81,8 @@ return function()
         end)
       end
 
-      PerformHttpRequest(
-        options.url,
+      perform_request(
+        options,
         function(status_code, body, headers)
           settle({
             ok = type(status_code) == "number" and status_code >= 200 and status_code < 300,
@@ -68,10 +90,7 @@ return function()
             headers = headers or {},
             body = body
           })
-        end,
-        options.method or "GET",
-        options.body,
-        options.headers or {}
+        end
       )
 
       return Citizen.Await(deferred)
