@@ -45,10 +45,18 @@ jobs:
           fi
 
           sed -Ei "s/version '[0-9]+\.[0-9]+\.[0-9]+'/version '$VERSION'/" sonorancad/fxmanifest.lua
+          jq --arg version "$VERSION" '.resource = $version' sonorancad/version.json > sonorancad/version.json.tmp
+          mv sonorancad/version.json.tmp sonorancad/version.json
 
           UPDATED_VERSION=$(grep -oP "version '\K\d+\.\d+\.\d+" sonorancad/fxmanifest.lua)
           if [ "$UPDATED_VERSION" != "$VERSION" ]; then
             echo "Failed to update sonorancad/fxmanifest.lua to $VERSION"
+            exit 1
+          fi
+
+          UPDATED_RESOURCE_VERSION=$(jq -r '.resource' sonorancad/version.json)
+          if [ "$UPDATED_RESOURCE_VERSION" != "$VERSION" ]; then
+            echo "Failed to update sonorancad/version.json to $VERSION"
             exit 1
           fi
 
@@ -61,7 +69,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add sonorancad/fxmanifest.lua
+          git add sonorancad/fxmanifest.lua sonorancad/version.json
           if git diff --cached --quiet; then
             echo "Version already set to ${{ steps.version.outputs.version }}; no commit required."
           else
