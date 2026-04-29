@@ -20,7 +20,8 @@ local config = {
     mode = "resource",
     nearestPostalEvent = "",
 
-    -- if not using nearest-postal, place a json file containing the postals in the plugin's folder and specify a name below
+    -- if not using nearest-postal, place a json file containing the postals in the /submodules/postals folder and specify a name below
+    -- ex: "my_custom_postals.json"
     customPostalCodesFile = ""
 }
 
