@@ -227,16 +227,6 @@ CreateThread(function()
                 TriggerClientEvent('SonoranCAD::bodycam::Init', -1, 1, Config.apiVersion)
             end)
             RegisterCommand(pluginConfig.command, function(source, args, rawCommand)
-                if Config.apiVersion < 4 then
-                    errorLog('Bodycam is only enabled with SonoranCAD Pro.')
-                    TriggerClientEvent('chat:addMessage', source, {
-                        args = {
-                            'Sonoran Bodycam',
-                            'Bodycam is only enabled with SonoranCAD Pro.'
-                        }
-                    })
-                    return
-                end
                 if pluginConfig.forceOffAce == nil then
                     pluginConfig.forceOffAce = "sonorancad.bodycam.forceoff"
                 end
