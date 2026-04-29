@@ -40,10 +40,6 @@ CreateThread(function()
 
         local result = tostring(versionResponse.data or "")
         Config.apiVersion = tonumber(string.sub(result, 1, 1)) or -1
-        if Config.apiVersion < 2 then
-            logError("API_PAID_ONLY")
-            Config.critError = true
-        end
         debugLog(("Set version %s from response %s"):format(Config.apiVersion, result))
         infoLog(("Loaded community ID %s with API URL: %s"):format(Config.communityID, Config.apiUrl))
 

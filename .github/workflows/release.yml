@@ -5,6 +5,9 @@ on:
     branches:
       - master
       - '**'  # This will trigger on all branches
+  repository_dispatch:
+    types:
+      - sonoran-lua-synced
   workflow_dispatch:
     inputs:
       version:
@@ -14,7 +17,10 @@ on:
 
 jobs:
   release:
-    if: github.ref == 'refs/heads/master' && (github.event_name != 'push' || github.actor != 'github-actions[bot]')
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/master' && github.actor != 'github-actions[bot]') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') ||
+      (github.event_name == 'repository_dispatch' && github.event.action == 'sonoran-lua-synced')
     runs-on: ubuntu-latest
     
     steps:
