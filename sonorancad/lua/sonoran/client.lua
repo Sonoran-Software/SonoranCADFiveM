@@ -62,6 +62,35 @@ local function stringify_table_values(value)
   return copy
 end
 
+local function normalize_replace_values(value, encode)
+  if type(value) ~= "table" then
+    return value
+  end
+
+  local copy = {}
+  for key, entry in pairs(value) do
+    if entry ~= nil then
+      if type(entry) == "table" then
+        copy[key] = encode(entry)
+      else
+        copy[key] = tostring(entry)
+      end
+    end
+  end
+
+  return copy
+end
+
+local function normalize_record_replace_values_body(body, encode)
+  if type(body) ~= "table" or type(body.replaceValues) ~= "table" then
+    return body
+  end
+
+  local copy = shallow_copy(body)
+  copy.replaceValues = normalize_replace_values(body.replaceValues, encode)
+  return copy
+end
+
 local function normalize_headers(headers)
   local normalized = {}
   for key, value in pairs(headers or {}) do
@@ -674,18 +703,18 @@ local function create_client(config, adapter)
     return self:_request("GET", "v2/general/templates")
   end
   instance.createRecordV2 = function(self, data)
-    return self:_request("POST", "v2/general/records", { body = data })
+    return self:_request("POST", "v2/general/records", { body = normalize_record_replace_values_body(data, self._adapter.encode) })
   end
   instance.updateRecordV2 = function(self, record_id, data)
     self:_assert_positive_integer(record_id, "recordId")
-    return self:_request("PATCH", "v2/general/records/" .. tostring(record_id), { body = data })
+    return self:_request("PATCH", "v2/general/records/" .. tostring(record_id), { body = normalize_record_replace_values_body(data, self._adapter.encode) })
   end
   instance.removeRecordV2 = function(self, record_id)
     self:_assert_positive_integer(record_id, "recordId")
     return self:_request("DELETE", "v2/general/records/" .. tostring(record_id))
   end
   instance.sendRecordDraftV2 = function(self, data)
-    return self:_request("POST", "v2/general/record-drafts", { body = data })
+    return self:_request("POST", "v2/general/record-drafts", { body = normalize_record_replace_values_body(data, self._adapter.encode) })
   end
   instance.lookupV2 = function(self, data)
     return self:_request("POST", "v2/general/lookups", { body = data })
