@@ -287,10 +287,14 @@ if pluginConfig.enabled then
                     local callCode = pluginConfig.callCodes[calloutData.CalloutName] or ""
                     local unit = GetUnitByPlayerId(source)
                     local unitId = ""
+                    local communityUserIds = {}
                     if unit == nil then
                         debugLog("Unit not found for player ID: " .. source)
                     else
                         unitId = GetPlayerCommunityUserId(source) or ""
+                        if unitId ~= "" then
+                            communityUserIds = { unitId }
+                        end
                     end
                     local postal = ''
                     if calloutData.Postal == 'Unknown postal' then
@@ -309,6 +313,7 @@ if pluginConfig.enabled then
                         ['priority'] = pluginConfig.callPriority,
                         ['block'] = postal,
                         ['postal'] = postal,
+                        ['communityUserIds'] = communityUserIds,
                         ['address'] = calloutData.StreetName,
                         ['title'] = calloutData.CalloutName,
                         ['code'] = callCode,

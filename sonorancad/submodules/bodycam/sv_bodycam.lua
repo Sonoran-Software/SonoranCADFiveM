@@ -53,9 +53,8 @@ CreateThread(function()
                     base = base .. "/"
                 end
                 local communityId = urlEncode(Config.communityID)
-                local apiKey = urlEncode(Config.apiKey)
                 local userId = urlEncode(getTurnUserId())
-                return ("%sapi/turn?id=%s&key=%s&userId=%s"):format(base, communityId, apiKey, userId)
+                return ("%sv2/general/turn?userId=%s"):format(base, userId)
             end
 
             local function replaceUrlHost(url)
@@ -190,7 +189,10 @@ CreateThread(function()
                     if cb then
                         cb(ok, turnCache)
                     end
-                end, "GET", "", { ["X-User-Agent"] = "SonoranCAD" })
+                end, "GET", "", {
+                    ["X-User-Agent"] = "SonoranCAD",
+                    ["Authorization"] = "Bearer " .. tostring(Config.apiKey)
+                })
             end
 
             RegisterNetEvent("SonoranCAD::bodycam::RequestTurnCredentials", function(requestId)
