@@ -1,7 +1,7 @@
 local CadLinkCache = {}
 local CadLinkSessions = {}
 local LinkCodeReuseWindowMs = 5 * 60 * 1000
-local LinkMenuCheckIntervalMs = 10000
+local LinkMenuCheckIntervalMs = 30000
 
 local function is_non_empty_string(value)
     return type(value) == "string" and value ~= ""
@@ -502,6 +502,35 @@ end
 local function send_link_status_to_client(player, session)
     TriggerClientEvent("SonoranCAD::links:Status", player, build_link_client_payload(session))
 end
+
+AddEventHandler("SonoranCAD::pushevents:CommunityLinkVerified", function(data)
+    if type(data) ~= "table" or not is_non_empty_string(data.communityUserId) then
+        return
+    end
+
+    for player, session in pairs(CadLinkSessions) do
+        if type(session) == "table" and session.linked ~= true and session.communityUserId == data.communityUserId then
+            -- Mark the cached/session state as linked immediately; polling remains a slow fallback.
+            update_link_cache(session.identifier, session.identifierType, {
+                linked = true,
+                code = session.linkCode,
+                url = session.linkUrl,
+                communityUserId = session.communityUserId,
+                raw = data
+            })
+            local updated_session = build_player_session(session.identifier, session.identifierType, {
+                linked = true,
+                code = session.linkCode,
+                url = session.linkUrl,
+                communityUserId = session.communityUserId
+            }, session)
+            updated_session.popupOpen = false
+            updated_session.lastCheckAt = GetGameTimer()
+            CadLinkSessions[player] = updated_session
+            send_link_status_to_client(player, updated_session)
+        end
+    end
+end)
 
 -- Associates a CAD SSO/community user identifier with the player's FiveM identifier.
 local function associate_sso_with_player(player, sso_id)
