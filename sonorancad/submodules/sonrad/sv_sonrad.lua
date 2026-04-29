@@ -191,6 +191,8 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
                                 end
                             end
                         end)
+                        -- Pace startup blip creation so repeater sync does not trip API create rate limits.
+                        Wait(2100)
                     end
                 end)
             end)
