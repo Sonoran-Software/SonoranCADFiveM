@@ -40,9 +40,6 @@ CreateThread(function()
 
         local result = tostring(versionResponse.data or "")
         Config.apiVersion = tonumber(string.sub(result, 1, 1)) or -1
-        if Config.apiVersion < 2 then
-            warnLog("Community is on a free API plan; premium API-backed features will remain disabled.")
-        end
         debugLog(("Set version %s from response %s"):format(Config.apiVersion, result))
         infoLog(("Loaded community ID %s with API URL: %s"):format(Config.communityID, Config.apiUrl))
 
