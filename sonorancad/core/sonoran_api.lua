@@ -284,10 +284,17 @@ local function invoke_legacy_handler(request_type, data)
     return response
 end
 
+local function isCallbackValid(value)
+    if type(value) == "function" then return true end
+    if type(value) == "table" and rawget(value, "__cfx_functionReference") then return true end
+
+    return false
+end
+
 function performApiRequest(data, request_type, callback)
     local response = invoke_legacy_handler(request_type, data)
 
-    if type(callback) == "function" then
+    if isCallbackValid(callback) then
         if response and response.success then
             callback(format_legacy_success(response), true, response)
         else
