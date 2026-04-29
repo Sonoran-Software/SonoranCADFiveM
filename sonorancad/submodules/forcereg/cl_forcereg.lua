@@ -121,6 +121,20 @@ if pluginConfig.enabled and pluginConfig.requireLink ~= false then
         TriggerEvent("SonoranCAD::links:ForceOpen", false)
     end)
 
+    RegisterNetEvent("SonoranCAD::links:Status")
+    AddEventHandler("SonoranCAD::links:Status", function(data)
+        if type(data) ~= "table" or data.linked ~= true then
+            return
+        end
+
+        if isNagging or isFreezePopup or isNoSpawn then
+            debugLog("Forcereg cleared restrictions after client link status updated to linked.")
+        end
+        isNagging = false
+        isFreezePopup = false
+        isNoSpawn = false
+    end)
+
     TriggerServerEvent("SonoranCAD::forcereg:CheckPlayer")
 
     CreateThread(function()

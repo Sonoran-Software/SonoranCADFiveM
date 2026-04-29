@@ -262,6 +262,13 @@ local PushEventHandler = {
 	EVENT_CHAR_SELECTED = function(body)
 		TriggerEvent('SonoranCAD::pushevents:CharacterSelected', body.data)
 		return true
+	end,
+	EVENT_COMMUNITY_LINK_VERIFIED = function(body)
+		if type(body.data) ~= 'table' or type(body.data.communityUserId) ~= 'string' or body.data.communityUserId == '' then
+			return false, 'missing communityUserId'
+		end
+		TriggerEvent('SonoranCAD::pushevents:CommunityLinkVerified', body.data)
+		return true
 	end
 }
 

@@ -249,9 +249,8 @@
 			function buildTurnUrl() {
 				const base = apiBaseUrl.endsWith("/") ? apiBaseUrl : `${apiBaseUrl}/`;
 				const id = encodeURIComponent(communityId || "");
-				const key = encodeURIComponent(apiKey || "");
 				const user = encodeURIComponent(userId || "");
-				return `${base}api/turn?id=${id}&key=${key}&userId=${user}`;
+				return `${base}v2/general/turn?id=${id}&userId=${user}`;
 			}
 
 			function replaceUrlHost(url) {
@@ -336,7 +335,13 @@
 				}
 				try {
 					statusEl.textContent = "Fetching TURN credentials...";
-					const response = await fetch(buildTurnUrl(), { method: "GET", cache: "no-store" });
+					const response = await fetch(buildTurnUrl(), {
+						method: "GET",
+						cache: "no-store",
+						headers: {
+							Authorization: `Bearer ${apiKey}`,
+						},
+					});
 					if (!response.ok) {
 						throw new Error(`HTTP ${response.status}`);
 					}

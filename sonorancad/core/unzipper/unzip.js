@@ -72,13 +72,6 @@
                 });
             }
 
-            if (worker.stderr) {
-                worker.stderr.on("data", (chunk) => {
-                    const output = chunk.toString().trim();
-                    if (output.length > 0) console.error(output);
-                });
-            }
-
             worker.once("message", (message) => {
                 if (message && message.ok) {
                     if (Array.isArray(message.ignored)) {
