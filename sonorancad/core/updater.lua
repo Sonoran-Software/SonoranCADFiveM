@@ -34,7 +34,7 @@ AddEventHandler("unzipCoreCompleted", function(success, error)
         Wait(5000)
         ExecuteCommand("ensure sonoran_updatehelper")
     else
-        errorLog("Failed to download core update. "..tostring(error))
+        errorLog(tostring(error or "Failed to download core update."))
     end
 end)
 

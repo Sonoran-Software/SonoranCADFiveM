@@ -590,8 +590,14 @@
 				} else if (communityId && apiKey) {
 					try {
 						const base = apiBaseUrl.endsWith("/") ? apiBaseUrl : `${apiBaseUrl}/`;
-						const turnUrl = `${base}api/turn?id=${encodeURIComponent(communityId)}&key=${encodeURIComponent(apiKey)}&userId=${encodeURIComponent(userId)}`;
-						const response = await fetch(turnUrl, { method: "GET", cache: "no-store" });
+						const turnUrl = `${base}v2/general/turn?userId=${encodeURIComponent(userId)}`;
+						const response = await fetch(turnUrl, {
+							method: "GET",
+							cache: "no-store",
+							headers: {
+								Authorization: `Bearer ${apiKey}`,
+							},
+						});
 						if (response.ok) {
 							const data = await response.json();
 							if (data && Array.isArray(data.iceServers) && data.iceServers.length) {
