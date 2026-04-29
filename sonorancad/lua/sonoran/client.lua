@@ -990,7 +990,7 @@ local function create_client(config, adapter)
   end
   instance.deleteBlipsV2 = function(self, ids, server_id)
     local resolved_server_id = self:_resolve_server_id(server_id)
-    return self:_request("DELETE", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/blips", {
+    return self:_request("POST", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/blips/delete", {
       body = { ids = ids }
     })
   end
