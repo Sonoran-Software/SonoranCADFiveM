@@ -218,10 +218,10 @@ if pluginConfig.enabled then
                         ['location'] = location,
                         ['description'] = description,
                         ['metaData'] = {
-                            ['x'] = calloutData.Coordinates.x,
-                            ['y'] = calloutData.Coordinates.y,
-                            ['plate'] = plate,
-                            ['postal'] = postal
+                            ['x'] = tostring(calloutData.Coordinates.x),
+                            ['y'] = tostring(calloutData.Coordinates.y),
+                            ['plate'] = tostring(plate),
+                            ['postal'] = tostring(postal)
                         }
                     }
                     if pluginConfig.clearRecordsAfter ~= 0 then
@@ -316,8 +316,8 @@ if pluginConfig.enabled then
                         ['units'] = {unitId},
                         ['notes'] = {}, -- required
                         ['metaData'] = {
-                            ['x'] = calloutData.Coordinates.x,
-                            ['y'] = calloutData.Coordinates.y
+                            ['x'] = tostring(calloutData.Coordinates.x),
+                            ['y'] = tostring(calloutData.Coordinates.y)
                         }
                     }
                     if pluginConfig.clearRecordsAfter ~= 0 then
