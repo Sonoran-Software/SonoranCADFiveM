@@ -110,7 +110,7 @@ function RunAutoUpdater(manualRun)
                         print("^3|                        ^5SonoranCAD Update Available                        ^3|")
                         print("^3|                             ^8Current : " .. compare.version2 .. "                               ^3|")
                         print("^3|                             ^2Latest  : " .. compare.version1 .. "                               ^3|")
-                        print("^3| Download at: ^4https://github.com/Sonoran-Software/SonoranCADFiveM          ^3|")
+                        print("^3| Download at: ^4https://sonoran.link/caddownload                         ^3|")
                         print("^3|===========================================================================|^7")
                         if Config.allowAutoUpdate == nil then
                             warnLog("You have not configured the automatic updater. Please set allowAutoUpdate in config.json to allow updates.")
