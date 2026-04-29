@@ -38,9 +38,11 @@ jobs:
           cp -R _sonoran_lua/lua/sonoran sonorancad/lua/sonoran
 
       - name: Commit synced files
+        id: sync_commit
         run: |
           if git diff --quiet -- sonorancad/lua/sonoran; then
             echo "No Sonoran.lua changes to sync."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -49,3 +51,16 @@ jobs:
           git add sonorancad/lua/sonoran
           git commit -m "chore: sync Sonoran.lua"
           git push origin HEAD:master
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch release workflow
+        if: steps.sync_commit.outputs.changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl --fail --silent --show-error \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            https://api.github.com/repos/${{ github.repository }}/dispatches \
+            -d '{"event_type":"sonoran-lua-synced"}'
