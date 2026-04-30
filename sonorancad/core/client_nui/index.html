@@ -451,6 +451,17 @@
 				notifyWatchingState(peerCalls.size > 0 || pendingCalls.size > 0);
 			}
 
+			function notifyBodycamStreamState(ready, reason) {
+				fetch(`https://${GetParentResourceName()}/bodycamStreamState`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json; charset=UTF-8" },
+					body: JSON.stringify({
+						ready: !!ready,
+						reason: reason || null,
+					}),
+				}).catch(function () {});
+			}
+
 			function safeJson(value) {
 				try {
 					return JSON.stringify(value);
@@ -834,10 +845,16 @@
 				const remotePeerId = payload && payload.remotePeerId ? payload.remotePeerId : null;
 				if (!remotePeerId) {
 					console.error("Bodycam stream: remotePeerId not configured.");
+					notifyBodycamStreamState(false, "missing_remote_peer_id");
 					return;
 				}
 				if (peerStream.mediaStream) {
 					console.warn("Bodycam stream: capture already active.");
+					peerStream.remotePeerId = remotePeerId;
+					if (window.BodycamRecordingManager) {
+						window.BodycamRecordingManager.setSourceStream(peerStream.mediaStream);
+					}
+					notifyBodycamStreamState(true, "already_active");
 					return;
 				}
 
@@ -856,11 +873,13 @@
 				const fps = payload && payload.fps ? payload.fps : 30;
 				if (!window.BodycamGameRenderer) {
 					console.error("Bodycam stream: BodycamGameRenderer not initialized.");
+					notifyBodycamStreamState(false, "renderer_uninitialized");
 					return;
 				}
 				const canvas = BodycamGameRenderer.getCanvas();
 				if (typeof canvas.captureStream !== "function") {
 					console.error("Bodycam stream: canvas.captureStream not supported.");
+					notifyBodycamStreamState(false, "capture_stream_unsupported");
 					return;
 				}
 
@@ -869,6 +888,7 @@
 				const videoTracks = videoStream.getVideoTracks();
 				if (!videoTracks.length) {
 					console.error("Bodycam stream: no video tracks available from canvas.");
+					notifyBodycamStreamState(false, "missing_video_tracks");
 					return;
 				}
 				BodycamGameRenderer.setVideoTrack(videoTracks[0]);
@@ -912,6 +932,7 @@
 				if (window.BodycamRecordingManager) {
 					window.BodycamRecordingManager.setSourceStream(peerStream.mediaStream);
 				}
+				notifyBodycamStreamState(true, "stream_ready");
 
 				tracks.forEach((track) => {
 					track.onended = function () {
@@ -936,6 +957,7 @@
 			}
 
 			async function stopBodycamStream() {
+				notifyBodycamStreamState(false, "stopped");
 				peerCalls.forEach(function (call) {
 					try {
 						call.close();
@@ -1068,6 +1090,10 @@
 				} else if (event.data.type === "bodycamRecordingControl") {
 					if (window.BodycamRecordingManager) {
 						window.BodycamRecordingManager.control(event.data);
+					}
+				} else if (event.data.type === "bodycamUploadConfig") {
+					if (window.BodycamRecordingManager) {
+						window.BodycamRecordingManager.setUploadConfig(event.data);
 					}
 				} else if (event.data.type === "bodycamOverlay") {
 					setOverlayVisibility(event.data.visible, event.data.location);
