@@ -115,6 +115,33 @@ local function normalize_record_replace_values_body(body, encode)
   return copy
 end
 
+local function wrap_singleton_array(value)
+  if value == nil then
+    return nil
+  end
+
+  if type(value) == "table" and is_array(value) then
+    return value
+  end
+
+  return { value }
+end
+
+local function normalize_station_config(config_value)
+  if type(config_value) ~= "table" then
+    return config_value
+  end
+
+  local raw_config = config_value.config
+  local config = type(raw_config) == "table" and shallow_copy(raw_config) or shallow_copy(config_value)
+
+  config.locations = wrap_singleton_array(config.locations)
+  config.tones = wrap_singleton_array(config.tones)
+  config.unitColors = wrap_singleton_array(config.unitColors)
+
+  return config
+end
+
 local function normalize_headers(headers)
   local normalized = {}
   for key, value in pairs(headers or {}) do
@@ -1030,7 +1057,7 @@ local function create_client(config, adapter)
   instance.setStationsV2 = function(self, config_value, server_id)
     local resolved_server_id = self:_resolve_server_id(server_id)
     return self:_request("PUT", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/stations", {
-      body = { config = config_value }
+      body = { config = normalize_station_config(config_value) }
     })
   end
   instance.getBlipsV2 = function(self, server_id)
