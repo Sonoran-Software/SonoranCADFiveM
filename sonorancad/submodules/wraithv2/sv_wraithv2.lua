@@ -253,7 +253,7 @@ if pluginConfig.enabled then
 					TriggerClientEvent('SonoranCAD::wraithv2:PlaySound', source, 'registration')
 				end
 			end
-		end, communityUserId)
+		end )
 	end)
 
 end
