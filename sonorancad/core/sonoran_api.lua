@@ -1042,3 +1042,8 @@ legacyApiHandlers = {
         return CadApiCheckCommunityLink(get_legacy_request_payload(data))
     end
 }
+
+-- Alias for v1 API endpoints
+legacyApiHandlers.UNIT_PANIC = legacyApiHandlers.PANIC
+legacyApiHandlers.CALL_911 = legacyApiHandlers.CREATE_911_CALL
+legacyApiHandlers.LOOKUP_VALUE = legacyApiHandlers.LOOKUP_BY_VALUE
