@@ -74,7 +74,7 @@ if pluginConfig.enabled then
 	AddEventHandler('wk:onPlateLocked', function(cam, plate, index, vehicle, cbType, returnEvent)
 		debugLog(('plate lock: %s - %s - %s - %s - %s'):format(cam, plate, index, cbType, returnEvent))
 		local source = source
-		local ids = GetIdentifiers(source)
+		local communityUserId = GetPlayerCommunityUserId(source)
 		plate = plate:match('^%s*(.-)%s*$')
 		wraithLastPlates.locked = {cam = cam, plate = plate, index = index, vehicle = cam.vehicle}
 		cadGetInformation(plate, function(regData, vehData, charData, boloData, warrantData)
@@ -156,7 +156,7 @@ if pluginConfig.enabled then
 					TriggerClientEvent('SonoranCAD::wraithv2:PlaySound', source, 'registration')
 				end
 			end
-		end, ids[Config.primaryIdentifier])
+		end, communityUserId)
 	end)
 
 	RegisterNetEvent('wk:onPlateScanned')
@@ -173,6 +173,7 @@ if pluginConfig.enabled then
 		end
 		debugLog(('plate scan: %s - %s - %s - %s - %s'):format(cam, plate, index, cbType, returnEvent))
 		local source = source
+		local communityUserId = GetPlayerCommunityUserId(source)
 		plate = plate:match('^%s*(.-)%s*$')
 		wraithLastPlates.scanned = {cam = cam, plate = plate, index = index, vehicle = cam.vehicle}
 		TriggerEvent('SonoranCAD::wraithv2:PlateScanned', source, reg, cam, plate, index)
@@ -252,7 +253,7 @@ if pluginConfig.enabled then
 					TriggerClientEvent('SonoranCAD::wraithv2:PlaySound', source, 'registration')
 				end
 			end
-		end)
+		end )
 	end)
 
 end

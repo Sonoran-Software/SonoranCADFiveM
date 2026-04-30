@@ -1,5 +1,6 @@
 local PluginHttpHandlers = {}
 local PluginFilePaths = {}
+local PluginHttpRoutes = {}
 
 function RegisterPluginHttpEvent(eventName, func)
 	if PluginHttpHandlers[eventName] ~= nil then
@@ -7,6 +8,35 @@ function RegisterPluginHttpEvent(eventName, func)
 		return
 	end
 	PluginHttpHandlers[eventName] = func
+end
+
+function RegisterPluginHttpRoute(method, routePath, func)
+	local normalizedMethod = tostring(method or 'GET'):upper()
+	local normalizedPath = tostring(routePath or '/')
+	if normalizedPath:sub(1, 1) ~= '/' then
+		normalizedPath = '/' .. normalizedPath
+	end
+	local key = normalizedMethod .. ':' .. normalizedPath
+	if PluginHttpRoutes[key] ~= nil then
+		errorLog('Failed to register plugin route ' .. key .. ': Already Exists')
+		return
+	end
+	PluginHttpRoutes[key] = func
+end
+
+local function parseQueryParams(path)
+	local params = {}
+	local query = path and path:match('%?(.*)$') or nil
+	if not query or query == '' then
+		return params
+	end
+	for key, value in query:gmatch('([^&=?]-)=([^&=?]*)') do
+		value = value:gsub('+', ' '):gsub('%%(%x%x)', function(h)
+			return string.char(tonumber(h, 16))
+		end)
+		params[key] = value
+	end
+	return params
 end
 
 local PushEventHandler = {
@@ -370,17 +400,45 @@ end
 
 SetHttpHandler(function(req, res)
 	local path = req.path
+	local pathOnly = path:match('^[^?]+') or path
 	local method = req.method
+	local queryParams = parseQueryParams(path)
+	local normalizedPathOnly = pathOnly
+	if normalizedPathOnly:sub(1, 11) == '/sonorancad' then
+		normalizedPathOnly = normalizedPathOnly:sub(12)
+		if normalizedPathOnly == '' then
+			normalizedPathOnly = '/'
+		end
+	end
+	local routeHandler = PluginHttpRoutes[(method and method:upper() or 'GET') .. ':' .. normalizedPathOnly]
 	local base = ''
 	local file = ''
-	for word in path:gmatch('[^/]+') do
+	for word in normalizedPathOnly:gmatch('[^/]+') do
 		if base == '' then
 			base = word
 		elseif file == '' then
 			file = word
 		end
 	end
-	if method == 'POST' and path == '/info' then
+	if routeHandler ~= nil then
+		if method == 'OPTIONS' then
+			local ok, err = pcall(routeHandler, req, res, nil, queryParams, normalizedPathOnly)
+			if not ok then
+				errorLog(('Plugin HTTP route failed for %s %s: %s'):format(tostring(method), tostring(normalizedPathOnly), tostring(err)))
+				res.writeHead(500)
+				res.send(json.encode({ error = 'plugin route failure' }))
+			end
+			return
+		end
+		req.setDataHandler(function(body)
+			local ok, err = pcall(routeHandler, req, res, body or '', queryParams, normalizedPathOnly)
+			if not ok then
+				errorLog(('Plugin HTTP route failed for %s %s: %s'):format(tostring(method), tostring(normalizedPathOnly), tostring(err)))
+				res.writeHead(500)
+				res.send(json.encode({ error = 'plugin route failure' }))
+			end
+		end)
+	elseif method == 'POST' and normalizedPathOnly == '/info' then
 		req.setDataHandler(function(body)
 			if not body then
 				res.send(json.encode({
@@ -431,7 +489,7 @@ SetHttpHandler(function(req, res)
 				}))
 			end
 		end)
-	elseif method == 'POST' and path == '/console' then
+	elseif method == 'POST' and normalizedPathOnly == '/console' then
 		req.setDataHandler(function(body)
 			if not body then
 				res.send(json.encode({
@@ -467,7 +525,7 @@ SetHttpHandler(function(req, res)
 				}))
 			end
 		end)
-	elseif method == 'POST' and path == '/event' then
+	elseif method == 'POST' and normalizedPathOnly == '/event' then
 		req.setDataHandler(function(data)
 			if not data then
 				res.send(json.encode({
@@ -491,7 +549,7 @@ SetHttpHandler(function(req, res)
 				handlePushEventPayload(body, data, res, 'http')
 			end)
 		end)
-	elseif method == 'POST' and path == '/pluginevent' then
+	elseif method == 'POST' and normalizedPathOnly == '/pluginevent' then
 		req.setDataHandler(function(data)
 			if not data then
 				res.send(json.encode({
@@ -525,7 +583,7 @@ SetHttpHandler(function(req, res)
 		else
 			res.send(data)
 		end
-	elseif method == 'GET' and path:find('^/bodycam') then
+	elseif method == 'GET' and normalizedPathOnly:find('^/bodycam') then
 		-- Extract the query string from the path
 		local queryString = path:match('?.*$')
 		local params = {}

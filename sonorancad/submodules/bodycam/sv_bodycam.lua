@@ -15,6 +15,9 @@ CreateThread(function()
             local turnUserId = nil
             local turnHostOverride = nil
             local turnPortOverride = nil
+            local uploadTokenBySource = {}
+            local uploadSourceByToken = {}
+            local httpUploadSessions = {}
 
             local peerStreamConfig = pluginConfig.peerStream or {}
             if type(peerStreamConfig) == "table" then
@@ -34,6 +37,273 @@ CreateThread(function()
                     return string.format("%%%02X", string.byte(c))
                 end)
             end
+
+            local function randomTokenPart(length)
+                local chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+                local out = {}
+                for i = 1, length do
+                    local idx = math.random(1, #chars)
+                    out[i] = chars:sub(idx, idx)
+                end
+                return table.concat(out)
+            end
+
+            local function ensureUploadToken(src)
+                if uploadTokenBySource[src] ~= nil then
+                    return uploadTokenBySource[src]
+                end
+                local token = ('bodycam-%s-%s-%s'):format(tostring(src), tostring(os.time()), randomTokenPart(24))
+                uploadTokenBySource[src] = token
+                uploadSourceByToken[token] = src
+                return token
+            end
+
+            local function clearUploadToken(src)
+                local token = uploadTokenBySource[src]
+                if token ~= nil then
+                    uploadSourceByToken[token] = nil
+                    uploadTokenBySource[src] = nil
+                end
+            end
+
+            local function sendBodycamUploadConfig(target)
+                TriggerClientEvent('SonoranCAD::bodycam::UploadConfig', target, Config.proxyUrl, ensureUploadToken(target))
+            end
+
+            local function decodeUploadMetadata(rawMetadata)
+                if type(rawMetadata) ~= 'string' or rawMetadata == '' then
+                    return {}
+                end
+                local ok, decoded = pcall(json.decode, rawMetadata)
+                if ok and type(decoded) == 'table' then
+                    return decoded
+                end
+                return {}
+            end
+
+            local function cleanupHttpUploadSession(uploadId)
+                local session = uploadId and httpUploadSessions[uploadId] or nil
+                if session and session.filePath then
+                    os.remove(session.filePath)
+                end
+                if uploadId then
+                    httpUploadSessions[uploadId] = nil
+                end
+            end
+
+            local function validateUploadToken(params, routePath)
+                local token = params and params.token or nil
+                local src = token and uploadSourceByToken[token] or nil
+                if src == nil then
+                    warnLog(('Bodycam upload rejected: invalid token path=%s token=%s'):format(
+                        tostring(routePath or '/bodycam-upload'),
+                        tostring(token or 'nil')
+                    ))
+                end
+                return src
+            end
+
+            local function sendBodycamHttpResponse(res, statusCode, payload)
+                res.writeHead(statusCode, {
+                    ['Content-Type'] = 'application/json; charset=utf-8',
+                    ['Access-Control-Allow-Origin'] = '*',
+                    ['Access-Control-Allow-Methods'] = 'POST, OPTIONS',
+                    ['Access-Control-Allow-Headers'] = 'Content-Type'
+                })
+                if statusCode == 204 then
+                    res.send('')
+                    return
+                end
+                res.send(json.encode(payload or {}))
+            end
+
+            RegisterPluginHttpRoute('OPTIONS', '/bodycam-upload/init', function(_, res)
+                debugLog('Bodycam upload init route OPTIONS preflight received.')
+                sendBodycamHttpResponse(res, 204, {})
+            end)
+
+            RegisterPluginHttpRoute('OPTIONS', '/bodycam-upload/chunk', function(_, res)
+                debugLog('Bodycam upload chunk route OPTIONS preflight received.')
+                sendBodycamHttpResponse(res, 204, {})
+            end)
+
+            RegisterPluginHttpRoute('OPTIONS', '/bodycam-upload/complete', function(_, res)
+                debugLog('Bodycam upload complete route OPTIONS preflight received.')
+                sendBodycamHttpResponse(res, 204, {})
+            end)
+
+            RegisterPluginHttpRoute('POST', '/bodycam-upload/init', function(_, res, body, params, routePath)
+                local src = validateUploadToken(params, routePath)
+                debugLog(('Bodycam upload init received: path=%s src=%s fileName=%s totalChunks=%s'):format(
+                    tostring(routePath or '/bodycam-upload'),
+                    tostring(src or 'nil'),
+                    tostring(params and params.fileName or 'nil'),
+                    tostring(params and params.totalChunks or 'nil')
+                ))
+                if src == nil then
+                    sendBodycamHttpResponse(res, 401, {
+                        ok = false,
+                        reason = 'invalid_upload_token'
+                    })
+                    return
+                end
+
+                local totalChunks = tonumber(params and params.totalChunks or 0) or 0
+                if totalChunks < 1 then
+                    sendBodycamHttpResponse(res, 400, {
+                        ok = false,
+                        reason = 'invalid_total_chunks'
+                    })
+                    return
+                end
+
+                local uploadId = ('chunked-%s-%s-%s'):format(tostring(src), tostring(os.time()), randomTokenPart(8))
+                local fileName = params and params.fileName or ('bodycam-%s.webm'):format(os.time())
+                local filePath = exports[GetCurrentResourceName()]:CreateTempBodycamRecordingFile(uploadId, fileName)
+                if type(filePath) ~= 'string' or filePath == '' then
+                    errorLog(('Bodycam upload temp file creation failed: uploadId=%s fileName=%s'):format(
+                        tostring(uploadId),
+                        tostring(fileName)
+                    ))
+                    sendBodycamHttpResponse(res, 500, {
+                        ok = false,
+                        reason = 'temp_file_create_failed'
+                    })
+                    return
+                end
+
+                httpUploadSessions[uploadId] = {
+                    src = src,
+                    uploadId = uploadId,
+                    fileName = fileName,
+                    filePath = filePath,
+                    totalChunks = totalChunks,
+                    receivedChunks = 0,
+                    durationMs = tonumber(params and params.durationMs or 0) or 0,
+                    size = tonumber(params and params.size or 0) or 0,
+                    sourceType = params and params.sourceType or 'manual',
+                    trigger = params and params.trigger or nil,
+                    stopReason = params and params.stopReason or nil,
+                    metadata = decodeUploadMetadata(params and params.metadata or nil)
+                }
+
+                sendBodycamHttpResponse(res, 202, {
+                    ok = true,
+                    uploadId = uploadId
+                })
+            end)
+
+            RegisterPluginHttpRoute('POST', '/bodycam-upload/chunk', function(_, res, body, params, routePath)
+                local src = validateUploadToken(params, routePath)
+                local uploadId = params and params.uploadId or nil
+                local session = uploadId and httpUploadSessions[uploadId] or nil
+                local chunkIndex = tonumber(params and params.chunkIndex or 0) or 0
+                debugLog(('Bodycam upload chunk received: path=%s src=%s uploadId=%s chunkIndex=%s bodyBytes=%s'):format(
+                    tostring(routePath or '/bodycam-upload/chunk'),
+                    tostring(src or 'nil'),
+                    tostring(uploadId or 'nil'),
+                    tostring(chunkIndex),
+                    tostring(type(body) == 'string' and #body or 0)
+                ))
+                if src == nil then
+                    sendBodycamHttpResponse(res, 401, {
+                        ok = false,
+                        reason = 'invalid_upload_token'
+                    })
+                    return
+                end
+                if session == nil or session.src ~= src then
+                    sendBodycamHttpResponse(res, 404, {
+                        ok = false,
+                        reason = 'unknown_upload'
+                    })
+                    return
+                end
+                if type(body) ~= 'string' or body == '' then
+                    sendBodycamHttpResponse(res, 400, {
+                        ok = false,
+                        reason = 'missing_body'
+                    })
+                    return
+                end
+
+                local fileHandle = io.open(session.filePath, 'ab')
+                if not fileHandle then
+                    cleanupHttpUploadSession(uploadId)
+                    errorLog(('Bodycam upload temp file append failed: uploadId=%s filePath=%s'):format(
+                        tostring(uploadId),
+                        tostring(session.filePath)
+                    ))
+                    sendBodycamHttpResponse(res, 500, {
+                        ok = false,
+                        reason = 'temp_file_open_failed'
+                    })
+                    return
+                end
+                fileHandle:write(body)
+                fileHandle:close()
+
+                session.receivedChunks = session.receivedChunks + 1
+                sendBodycamHttpResponse(res, 202, {
+                    ok = true,
+                    uploadId = uploadId,
+                    receivedChunks = session.receivedChunks
+                })
+            end)
+
+            RegisterPluginHttpRoute('POST', '/bodycam-upload/complete', function(_, res, _, params, routePath)
+                local src = validateUploadToken(params, routePath)
+                local uploadId = params and params.uploadId or nil
+                local session = uploadId and httpUploadSessions[uploadId] or nil
+                debugLog(('Bodycam upload complete received: path=%s src=%s uploadId=%s receivedChunks=%s/%s'):format(
+                    tostring(routePath or '/bodycam-upload/complete'),
+                    tostring(src or 'nil'),
+                    tostring(uploadId or 'nil'),
+                    tostring(session and session.receivedChunks or 'nil'),
+                    tostring(session and session.totalChunks or 'nil')
+                ))
+                if src == nil then
+                    sendBodycamHttpResponse(res, 401, {
+                        ok = false,
+                        reason = 'invalid_upload_token'
+                    })
+                    return
+                end
+                if session == nil or session.src ~= src then
+                    sendBodycamHttpResponse(res, 404, {
+                        ok = false,
+                        reason = 'unknown_upload'
+                    })
+                    return
+                end
+                if session.receivedChunks ~= session.totalChunks then
+                    cleanupHttpUploadSession(uploadId)
+                    sendBodycamHttpResponse(res, 400, {
+                        ok = false,
+                        reason = 'incomplete_upload',
+                        receivedChunks = session.receivedChunks,
+                        totalChunks = session.totalChunks
+                    })
+                    return
+                end
+
+                httpUploadSessions[uploadId] = nil
+                TriggerEvent('SonoranCAD::bodycam::UploadSavedRecording', src, {
+                    uploadId = uploadId,
+                    fileName = session.fileName,
+                    durationMs = session.durationMs,
+                    size = session.size,
+                    sourceType = session.sourceType,
+                    trigger = session.trigger,
+                    stopReason = session.stopReason,
+                    metadata = session.metadata
+                }, session.filePath)
+
+                sendBodycamHttpResponse(res, 202, {
+                    ok = true,
+                    uploadId = uploadId
+                })
+            end)
 
             local function getTurnUserId()
                 if turnUserId ~= nil then
@@ -224,7 +494,10 @@ CreateThread(function()
                 end
                 Config.proxyUrl = ('https://%s/sonorancad/'):format(GetConvar('web_baseUrl',''))
                 debugLog(('Set proxyUrl to %s'):format(Config.proxyUrl))
-                TriggerClientEvent('SonoranCAD::bodycam::Init', -1, 1, Config.apiVersion)
+                TriggerClientEvent('SonoranCAD::bodycam::Init', -1, 1, Config.apiVersion, Config.proxyUrl, nil)
+                for _, playerId in ipairs(GetPlayers()) do
+                    sendBodycamUploadConfig(tonumber(playerId))
+                end
             end)
             RegisterCommand(pluginConfig.command, function(source, args, rawCommand)
                 if pluginConfig.forceOffAce == nil then
@@ -276,7 +549,9 @@ CreateThread(function()
                         debugLog('API version not set, waiting for it to be set...')
                         while Config.apiVersion == -1 do Wait(1000) end
                     end
-                    TriggerClientEvent('SonoranCAD::bodycam::Init', source, 1, Config.apiVersion)
+                    local uploadToken = ensureUploadToken(source)
+                    TriggerClientEvent('SonoranCAD::bodycam::Init', source, 1, Config.apiVersion, Config.proxyUrl, uploadToken)
+                    sendBodycamUploadConfig(source)
                 end
             end)
 
@@ -328,6 +603,15 @@ CreateThread(function()
                 end
 
                 TriggerClientEvent('SonoranCAD::bodycam::Toggle', source, manualActivation, toggle)
+            end)
+
+            AddEventHandler('playerDropped', function()
+                for uploadId, session in pairs(httpUploadSessions) do
+                    if session and session.src == source then
+                        cleanupHttpUploadSession(uploadId)
+                    end
+                end
+                clearUploadToken(source)
             end)
         end
     end)

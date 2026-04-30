@@ -593,7 +593,7 @@ function CadApiLookup(payload)
         partial = payload.partial == true,
         first = tostring(payload.first or ""),
         last = tostring(payload.last or ""),
-        mi = tostring(payload.mi or "")
+        mi = tostring(payload.mi or ""),
     }
 
     if payload.notifyCommunityUserId ~= nil and tostring(payload.notifyCommunityUserId) ~= "" then
@@ -613,7 +613,6 @@ function CadApiLookup(payload)
     if payload.subdivision ~= nil and tostring(payload.subdivision) ~= "" then
         request_payload.subdivision = tostring(payload.subdivision)
     end
-
     return get_cad_client():lookupV2(request_payload)
 end
 
