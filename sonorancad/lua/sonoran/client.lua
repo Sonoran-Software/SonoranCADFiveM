@@ -48,6 +48,30 @@ local function strip_keys(value, keys)
   return copy
 end
 
+local function normalize_v2_target_aliases(value)
+  if type(value) ~= "table" then
+    return value
+  end
+
+  local copy = shallow_copy(value)
+
+  if copy.communityUserId == nil and copy.apiId ~= nil then
+    copy.communityUserId = copy.apiId
+  end
+  if copy.communityUserIds == nil and copy.apiIds ~= nil then
+    copy.communityUserIds = copy.apiIds
+  end
+  if copy.notifyCommunityUserId == nil and copy.notifyApiId ~= nil then
+    copy.notifyCommunityUserId = copy.notifyApiId
+  end
+
+  copy.apiId = nil
+  copy.apiIds = nil
+  copy.notifyApiId = nil
+
+  return copy
+end
+
 local function stringify_table_values(value)
   if type(value) ~= "table" then
     return value
@@ -684,10 +708,10 @@ local function create_client(config, adapter)
     return self:_request("GET", "v2/general/api-ids/" .. self:_encode_path_segment(api_id))
   end
   instance.applyPermissionKeyV2 = function(self, data)
-    return self:_request("POST", "v2/general/permission-keys/applications", { body = data })
+    return self:_request("POST", "v2/general/permission-keys/applications", { body = normalize_v2_target_aliases(data) })
   end
   instance.banUserV2 = function(self, data)
-    return self:_request("POST", "v2/general/account-bans", { body = data })
+    return self:_request("POST", "v2/general/account-bans", { body = normalize_v2_target_aliases(data) })
   end
   instance.setPenalCodesV2 = function(self, codes)
     return self:_request("PUT", "v2/general/penal-codes", { body = { codes = codes } })
@@ -703,30 +727,30 @@ local function create_client(config, adapter)
     return self:_request("GET", "v2/general/templates")
   end
   instance.createRecordV2 = function(self, data)
-    return self:_request("POST", "v2/general/records", { body = normalize_record_replace_values_body(data, self._adapter.encode) })
+    return self:_request("POST", "v2/general/records", { body = normalize_v2_target_aliases(normalize_record_replace_values_body(data, self._adapter.encode)) })
   end
   instance.updateRecordV2 = function(self, record_id, data)
     self:_assert_positive_integer(record_id, "recordId")
-    return self:_request("PATCH", "v2/general/records/" .. tostring(record_id), { body = normalize_record_replace_values_body(data, self._adapter.encode) })
+    return self:_request("PATCH", "v2/general/records/" .. tostring(record_id), { body = normalize_v2_target_aliases(normalize_record_replace_values_body(data, self._adapter.encode)) })
   end
   instance.removeRecordV2 = function(self, record_id)
     self:_assert_positive_integer(record_id, "recordId")
     return self:_request("DELETE", "v2/general/records/" .. tostring(record_id))
   end
   instance.sendRecordDraftV2 = function(self, data)
-    return self:_request("POST", "v2/general/record-drafts", { body = normalize_record_replace_values_body(data, self._adapter.encode) })
+    return self:_request("POST", "v2/general/record-drafts", { body = normalize_v2_target_aliases(normalize_record_replace_values_body(data, self._adapter.encode)) })
   end
   instance.lookupV2 = function(self, data)
-    return self:_request("POST", "v2/general/lookups", { body = data })
+    return self:_request("POST", "v2/general/lookups", { body = normalize_v2_target_aliases(data) })
   end
   instance.lookupByValueV2 = function(self, data)
-    return self:_request("POST", "v2/general/lookups/by-value", { body = data })
+    return self:_request("POST", "v2/general/lookups/by-value", { body = normalize_v2_target_aliases(data) })
   end
   instance.lookupCustomV2 = function(self, data)
     return self:_request("POST", "v2/general/lookups/custom", { body = data })
   end
   instance.getAccountV2 = function(self, query)
-    return self:_request("GET", "v2/general/accounts/account", { query = query or {} })
+    return self:_request("GET", "v2/general/accounts/account", { query = normalize_v2_target_aliases(query or {}) })
   end
   instance.getAccountsV2 = function(self, query)
     return self:_request("GET", "v2/general/accounts", { query = query or {} })
@@ -738,7 +762,7 @@ local function create_client(config, adapter)
     return self:_request("POST", "v2/general/links/check", { body = data })
   end
   instance.setAccountPermissionsV2 = function(self, data)
-    return self:_request("PATCH", "v2/general/accounts/permissions", { body = data })
+    return self:_request("PATCH", "v2/general/accounts/permissions", { body = normalize_v2_target_aliases(data) })
   end
   instance.heartbeatV2 = function(self, server_id, player_count)
     local resolved_server_id = self:_resolve_server_id(server_id)
@@ -748,6 +772,9 @@ local function create_client(config, adapter)
   end
   instance.getVersionV2 = function(self)
     return self:_request("GET", "v2/general/version")
+  end
+  instance.getTurnCredentialsV2 = function(self, query)
+    return self:_request("GET", "v2/general/turn", { query = query or {} })
   end
   instance.getServersV2 = function(self)
     return self:_request("GET", "v2/general/servers")
@@ -771,30 +798,30 @@ local function create_client(config, adapter)
     return self:_request("PUT", "v2/general/postals", { body = { postals = postals } })
   end
   instance.sendPhotoV2 = function(self, data)
-    return self:_request("POST", "v2/general/photos", { body = data })
+    return self:_request("POST", "v2/general/photos", { body = normalize_v2_target_aliases(data) })
   end
   instance.getInfoV2 = function(self)
     return self:_request("GET", "v2/general/info")
   end
 
   instance.getCharactersV2 = function(self, query)
-    return self:_request("GET", "v2/civilian/characters", { query = query or {} })
+    return self:_request("GET", "v2/civilian/characters", { query = normalize_v2_target_aliases(query or {}) })
   end
   instance.removeCharacterV2 = function(self, character_id)
     self:_assert_positive_integer(character_id, "characterId")
     return self:_request("DELETE", "v2/civilian/characters/" .. tostring(character_id))
   end
   instance.setSelectedCharacterV2 = function(self, data)
-    return self:_request("PUT", "v2/civilian/selected-character", { body = data })
+    return self:_request("PUT", "v2/civilian/selected-character", { body = normalize_v2_target_aliases(data) })
   end
   instance.getCharacterLinksV2 = function(self, query)
-    return self:_request("GET", "v2/civilian/character-links", { query = query or {} })
+    return self:_request("GET", "v2/civilian/character-links", { query = normalize_v2_target_aliases(query or {}) })
   end
   instance.addCharacterLinkV2 = function(self, sync_id, data)
-    return self:_request("PUT", "v2/civilian/character-links/" .. self:_encode_path_segment(sync_id), { body = data })
+    return self:_request("PUT", "v2/civilian/character-links/" .. self:_encode_path_segment(sync_id), { body = normalize_v2_target_aliases(data) })
   end
   instance.removeCharacterLinkV2 = function(self, sync_id, data)
-    return self:_request("DELETE", "v2/civilian/character-links/" .. self:_encode_path_segment(sync_id), { body = data })
+    return self:_request("DELETE", "v2/civilian/character-links/" .. self:_encode_path_segment(sync_id), { body = normalize_v2_target_aliases(data) })
   end
 
   instance.getUnitsV2 = function(self, query)
@@ -825,27 +852,33 @@ local function create_client(config, adapter)
   end
   instance.updateUnitLocationsV2 = function(self, data)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
+    local updates = {}
+    for index, update in ipairs(data and data.updates or {}) do
+      updates[index] = normalize_v2_target_aliases(update)
+    end
     return self:_request("PATCH", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/unit-locations", {
-      body = { updates = data and data.updates or nil }
+      body = { updates = updates }
     })
   end
   instance.setUnitPanicV2 = function(self, data)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
     return self:_request("PATCH", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/units/panic", {
-      body = strip_keys(data, { "serverId" })
+      body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
     })
   end
   instance.setUnitStatusV2 = function(self, data)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
     return self:_request("PATCH", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/units/status", {
-      body = strip_keys(data, { "serverId" })
+      body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
     })
   end
   instance.kickUnitV2 = function(self, data)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
-    return self:_request("DELETE", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/units/kick", {
+    local target = normalize_v2_target_aliases(data or {})
+    return self:_request("POST", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/units/kick", {
       body = {
-        communityUserId = data and data.communityUserId or nil,
+        communityUserId = target and target.communityUserId or nil,
+        roblox = target and target.roblox or nil,
         reason = data and data.reason or nil
       }
     })
@@ -892,13 +925,13 @@ local function create_client(config, adapter)
       "PUT",
       "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/identifier-groups/" .. self:_encode_path_segment(data.groupName),
       {
-        body = strip_keys(data, { "serverId", "groupName" })
+        body = normalize_v2_target_aliases(strip_keys(data, { "serverId", "groupName" }))
       }
     )
   end
   instance.createEmergencyCallV2 = function(self, data)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
-    local body = strip_keys(data, { "serverId" })
+    local body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
     body.metaData = stringify_table_values(body.metaData)
     return self:_request("POST", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/calls/911", {
       body = body
@@ -912,27 +945,27 @@ local function create_client(config, adapter)
   instance.createDispatchCallV2 = function(self, data)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
     return self:_request("POST", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls", {
-      body = strip_keys(data, { "serverId" })
+      body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
     })
   end
   instance.updateDispatchCallV2 = function(self, call_id, data)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
     self:_assert_positive_integer(call_id, "callId")
     return self:_request("PATCH", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/" .. tostring(call_id), {
-      body = strip_keys(data, { "serverId" })
+      body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
     })
   end
   instance.attachUnitsToDispatchCallV2 = function(self, call_id, data)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
     self:_assert_positive_integer(call_id, "callId")
     return self:_request("POST", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/" .. tostring(call_id) .. "/attachments", {
-      body = strip_keys(data, { "serverId" })
+      body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
     })
   end
   instance.detachUnitsFromDispatchCallV2 = function(self, data)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
     return self:_request("DELETE", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/attachments", {
-      body = strip_keys(data, { "serverId" })
+      body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
     })
   end
   instance.setDispatchPostalV2 = function(self, call_id, postal, server_id)
