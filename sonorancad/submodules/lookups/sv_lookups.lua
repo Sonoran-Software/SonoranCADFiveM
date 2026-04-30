@@ -77,6 +77,7 @@ if pluginConfig.enabled then
         data["plate"] = data["plate"] == nil and "" or data["plate"]:match("^%s*(.-)%s*$")
         data["types"] = data["types"] == nil and {2,3,4,5} or data["types"]
         data["partial"] = data["partial"] == true
+        data["notifyCommunityUserId"] = autoLookup ~= nil and autoLookup or nil
 
         if data.first == "" and data.last == "" and data.mi == "" and data.plate == "" then
             --not a valid request, just return a blank lookup
