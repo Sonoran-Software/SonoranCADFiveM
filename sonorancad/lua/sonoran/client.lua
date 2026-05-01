@@ -72,6 +72,41 @@ local function normalize_v2_target_aliases(value)
   return copy
 end
 
+local function build_multipart_form_data(fields, file_name, file_content, content_type)
+  if type(file_name) ~= "string" or file_name == "" then
+    error("fileName is required when uploading a bodycam recording.")
+  end
+
+  if type(file_content) ~= "string" then
+    error("fileContent must be a string when uploading a bodycam recording.")
+  end
+
+  local boundary = "----SonoranLuaBodycamBoundary7MA4YWxkTrZu0gW"
+  local parts = {}
+
+  local function append(value)
+    parts[#parts + 1] = value
+  end
+
+  for key, value in pairs(fields or {}) do
+    if value ~= nil then
+      append("--" .. boundary .. "\r\n")
+      append('Content-Disposition: form-data; name="' .. tostring(key) .. '"\r\n\r\n')
+      append(tostring(value))
+      append("\r\n")
+    end
+  end
+
+  append("--" .. boundary .. "\r\n")
+  append('Content-Disposition: form-data; name="file"; filename="' .. file_name .. '"\r\n')
+  append("Content-Type: " .. tostring(content_type or "video/webm") .. "\r\n\r\n")
+  append(file_content)
+  append("\r\n")
+  append("--" .. boundary .. "--\r\n")
+
+  return boundary, table.concat(parts)
+end
+
 local function stringify_table_values(value)
   if type(value) ~= "table" then
     return value
@@ -125,21 +160,6 @@ local function wrap_singleton_array(value)
   end
 
   return { value }
-end
-
-local function normalize_station_config(config_value)
-  if type(config_value) ~= "table" then
-    return config_value
-  end
-
-  local raw_config = config_value.config
-  local config = type(raw_config) == "table" and shallow_copy(raw_config) or shallow_copy(config_value)
-
-  config.locations = wrap_singleton_array(config.locations)
-  config.tones = wrap_singleton_array(config.tones)
-  config.unitColors = wrap_singleton_array(config.unitColors)
-
-  return config
 end
 
 local function normalize_headers(headers)
@@ -550,8 +570,12 @@ function Client:_request(method, path, options)
   end
 
   local body = options.body
+  local raw_body = options.rawBody
   local encoded_body
-  if body ~= nil then
+  if raw_body ~= nil then
+    headers["Content-Type"] = options.contentType or "application/octet-stream"
+    encoded_body = raw_body
+  elseif body ~= nil then
     headers["Content-Type"] = "application/json"
     encoded_body = self._adapter.encode(body)
   end
@@ -561,7 +585,7 @@ function Client:_request(method, path, options)
     url = build_url(self._config.apiUrl, path, options.query, self._adapter.encodeURIComponent),
     headers = headers,
     body = encoded_body,
-    logBody = body,
+    logBody = options.logBody ~= nil and options.logBody or body,
     timeoutMs = self._config.timeoutMs
   }
 
@@ -827,6 +851,28 @@ local function create_client(config, adapter)
   instance.sendPhotoV2 = function(self, data)
     return self:_request("POST", "v2/general/photos", { body = normalize_v2_target_aliases(data) })
   end
+  instance.uploadBodycamRecordingV2 = function(self, data)
+    local payload = normalize_v2_target_aliases(shallow_copy(data or {}))
+    local file_name = payload.fileName
+    local file_content = payload.fileContent
+    local content_type = payload.contentType or "video/webm"
+
+    payload.fileName = nil
+    payload.fileContent = nil
+    payload.contentType = nil
+
+    local boundary, multipart_body = build_multipart_form_data(payload, file_name, file_content, content_type)
+    return self:_request("POST", "v2/general/bodycam-recordings", {
+      rawBody = multipart_body,
+      contentType = "multipart/form-data; boundary=" .. boundary,
+      logBody = {
+        fields = payload,
+        fileName = file_name,
+        contentType = content_type,
+        fileSize = type(file_content) == "string" and #file_content or nil
+      }
+    })
+  end
   instance.getInfoV2 = function(self)
     return self:_request("GET", "v2/general/info")
   end
@@ -1057,7 +1103,7 @@ local function create_client(config, adapter)
   instance.setStationsV2 = function(self, config_value, server_id)
     local resolved_server_id = self:_resolve_server_id(server_id)
     return self:_request("PUT", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/stations", {
-      body = { config = normalize_station_config(config_value) }
+      body = config_value
     })
   end
   instance.getBlipsV2 = function(self, server_id)
