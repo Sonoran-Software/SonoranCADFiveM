@@ -752,6 +752,13 @@ function CadApiSetStations(payload)
     payload = payload or {}
     local config = payload.config or payload
 
+    if type(config) == "string" and config ~= "" then
+        local ok, decoded = pcall(json.decode, config)
+        if ok and type(decoded) == "table" then
+            config = decoded
+        end
+    end
+
     if type(config) == "table" and config[1] ~= nil and type(config[1]) == "table" and config.locations == nil then
         config = clone_table(config[1])
     end
