@@ -211,11 +211,11 @@ function returnAgeFromDobString(dobString)
         month = tonumber(dobString:sub(6,7))
         day = tonumber(dobString:sub(9,10))
     else
-        errorLog("Unsupported DOB format: " .. tostring(config.DOBFormat))
+        warnLog("Unsupported DOB format: " .. tostring(config.DOBFormat))
     end
 
     if type(day) ~= "number" or type(month) ~= "number" or type(year) ~= "number" then
-        errorLog("Invalid DOB in ERS config age calculation: " .. tostring(dobString))
+        warnLog("Invalid DOB in ERS config age calculation: " .. tostring(dobString) .. " | This invalid format will result in age being returned as blank in SonoranCAD, your character will still be added to SonoranCAD. Please ensure DOBFormat is set correctly and DOB is in the correct format in your custom ERS callout.")
         return ""
     end
 
