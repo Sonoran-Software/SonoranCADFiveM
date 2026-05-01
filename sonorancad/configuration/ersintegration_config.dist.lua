@@ -72,20 +72,24 @@ local config = {
             end,
             -- Civilian Information
             ["first"] = function(vehicleData)
-                return vehicleData.owner_name:match("^(%S+)")
+                local ownerName = tostring(vehicleData.owner_name or "")
+                return ownerName:match("^(%S+)") or ""
             end,
             ["last"] = function(vehicleData)
-                return vehicleData.owner_name:match("%s(.+)$")
+                local ownerName = tostring(vehicleData.owner_name or "")
+                return ownerName:match("%s(.+)$") or ""
             end,
             -- Vehicle Information
             ["plate"] = "license_plate",
             ["make"] = "make",
             ["model"] = "model",
             ["color"] = function(vehicleData)
-                if vehicleData.color_secondary and vehicleData.color_secondary ~= "" then
-                    return vehicleData.color .. ", " .. vehicleData.color_secondary
+                local primaryColor = tostring(vehicleData.color or "")
+                local secondaryColor = tostring(vehicleData.color_secondary or "")
+                if secondaryColor ~= "" then
+                    return primaryColor .. ", " .. secondaryColor
                 else
-                    return vehicleData.color
+                    return primaryColor
                 end
             end,
             ["year"] = "build_year",
@@ -189,6 +193,7 @@ local config = {
 if config.enabled then Config.RegisterPluginConfig(config.pluginName, config) end
 
 function returnAgeFromDobString(dobString)
+    dobString = tostring(dobString or "12/12/2000") -- Default DOB if none provided
     local day, month, year
 
     if config.DOBFormat == "en" then -- dd/mm/yyyy
@@ -207,6 +212,11 @@ function returnAgeFromDobString(dobString)
         day = tonumber(dobString:sub(9,10))
     else
         errorLog("Unsupported DOB format: " .. tostring(config.DOBFormat))
+    end
+
+    if type(day) ~= "number" or type(month) ~= "number" or type(year) ~= "number" then
+        errorLog("Invalid DOB in ERS config age calculation: " .. tostring(dobString))
+        return ""
     end
 
     local today = os.date("*t")
