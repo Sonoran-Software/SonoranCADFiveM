@@ -38,6 +38,8 @@ local StartPeerStream
 local FlushPendingRecordingStart
 local SchedulePendingRecordingStartRetry
 local BODYCAM_UPLOAD_CHUNK_SIZE = 240000
+-- Use FiveM's default latent-event throttle for large client->server bodycam uploads.
+local BODYCAM_UPLOAD_LATENT_BPS = 0
 
 local function nowMs()
     return GetGameTimer()
@@ -681,7 +683,8 @@ CreateThread(function()
                     cb({ ok = false, reason = 'missing_chunk_data' })
                     return
                 end
-                TriggerServerEvent('SonoranCAD::bodycam::UploadRecordingChunk', uploadId, chunkIndex, base64Chunk)
+                -- Send recording data over the latent channel to avoid blocking reliable net events.
+                TriggerLatentServerEvent('SonoranCAD::bodycam::UploadRecordingChunk', BODYCAM_UPLOAD_LATENT_BPS, uploadId, chunkIndex, base64Chunk)
                 cb({ ok = true })
             end)
 
