@@ -234,7 +234,7 @@ Citizen.CreateThread(function()
     while Config.apiVersion == -1 do
         Wait(1000)
     end
-    if (Config.noUnitTimer == "true" or Config.noUnitTimer == true) or Config.apiVersion < 3 then
+    if (Config.noUnitTimer == "true" or Config.noUnitTimer == true) then
         debugLog("Disabling active units routine")
         return
     elseif not Config.apiSendEnabled then

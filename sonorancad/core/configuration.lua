@@ -529,10 +529,7 @@ CreateThread(function()
     if Config.critError then return end
     local serverId = tonumber(Config.serverId)
     while Config.apiVersion == -1 do Wait(10) end
-    if Config.apiVersion < 3 then
-        debugLog('Too low version or API disabled, ignore this')
-        return
-    elseif not Config.apiSendEnabled then
+    if not Config.apiSendEnabled then
         errorLog('Config.apiSendEnabled disabled via convar or config, skipping server registration. Check your config if this is unintentional.')
         return
     end

@@ -16,132 +16,199 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
         local UnitCache = {}
         local TowerCache = {}
 
+        BlipMan = {
+            addBlip = function(coords, radius, colorHex, subType, toolTip, icon, dataTable, cb)
+                local data = {
+                    ["serverId"] = tonumber(GetConvar("sonoran_serverId", 1)),
+                    ["subType"] = subType,
+                    ["coordinates"] = {
+                        ["x"] = coords.x,
+                        ["y"] = coords.y,
+                        ["z"] = coords.z or 0.0
+                    },
+                    ["radius"] = radius,
+                    ["icon"] = icon,
+                    ["color"] = colorHex,
+                    ["tooltip"] = toolTip,
+                    ["data"] = dataTable
+                }
 
-        if Config.apiVersion > 3 then
-            BlipMan = {
-                addBlip = function(coords, radius, colorHex, subType, toolTip, icon, dataTable, cb)
-                    local data = {
+                local response = CadApiCreateBlips({data})
+                if not response.success then
+                    CadApiLogFailure("ADD_BLIP", response, data)
+                elseif cb ~= nil then
+                    cb(json.encode(response.data))
+                end
+            end,
+
+            addBlips = function(blips, cb)
+                local response = CadApiCreateBlips(blips)
+                if not response.success then
+                    CadApiLogFailure("ADD_BLIP", response, blips)
+                elseif cb ~= nil then
+                    cb(json.encode(response.data))
+                end
+            end,
+
+            removeBlip = function(ids, cb)
+                local payload = {["ids"] = ids}
+                local response = CadApiDeleteBlips(payload)
+                if not response.success then
+                    CadApiLogFailure("REMOVE_BLIP", response, payload)
+                elseif cb ~= nil then
+                    cb(tostring(response.data and json.encode(response.data) or "OK"))
+                end
+            end,
+
+            modifyBlips = function(dataTable, cb)
+                local response = CadApiUpdateBlips(dataTable)
+                if not response.success then
+                    CadApiLogFailure("MODIFY_BLIP", response, dataTable)
+                elseif cb ~= nil then
+                    cb(tostring(response.data and json.encode(response.data) or "OK"))
+                end
+            end,
+
+            getBlips = function(cb)
+                local response = CadApiGetBlips(tonumber(GetConvar("sonoran_serverId", 1)))
+                if not response.success then
+                    CadApiLogFailure("GET_BLIPS", response,  tonumber(GetConvar("sonoran_serverId", 1)))
+                elseif cb ~= nil then
+                    cb(json.encode(response.data or {}))
+                end
+            end,
+
+            removeWithSubtype = function(subType, cb)
+                BlipMan.getBlips(function(res)
+                    local dres = json.decode(res)
+                    local ids = {}
+                    for _, v in ipairs(dres) do
+                        if v.subType == subType then
+                            table.insert(ids, #ids + 1, v.id)
+                        end
+                    end
+                    if #ids < 1 then
+                        if cb ~= nil then
+                            cb("No blips found with subtype: " .. subType)
+                        end
+                        return
+                    end
+                    BlipMan.removeBlip(ids, cb)
+                end)
+            end,
+        }
+
+        function GetTower(coords)
+            for i = 1, #TowerCache do
+                if TowerCache[i].PropPosition == coords then
+                    return TowerCache[i], i
+                end
+            end
+            return nil, nil
+        end
+        function GetTowerFromId(id)
+            for i, t in ipairs(TowerCache) do
+                if t.Id == id then
+                    return t, i
+                end
+            end
+        end
+        function GetTowerCapacity(tower)
+            if #tower.DishStatus < 1 then
+                return 1.0
+            end
+
+            local n = 0.0
+            for i = 1, #tower.DishStatus do
+                if tower.DishStatus[i] == 'alive' then
+                    n = n + 1.0
+                end
+            end
+            return n / #tower.DishStatus
+        end
+
+        RegisterNetEvent("SonoranCAD::sonrad:SyncTowers")
+        AddEventHandler("SonoranCAD::sonrad:SyncTowers", function(Towers)
+            BlipMan.removeWithSubtype("repeater", function(res)
+                debugLog(res)
+
+                TowerCache = Towers
+
+                local BlipQueue = {}
+
+                debugLog(json.encode(TowerCache))
+                for _,tower in ipairs(TowerCache) do
+
+                    if tower.NotPhysical then
+                        -- Handling for Mobile Repeaters
+                        title = "Mobile Repeater"
+                        color = "#ff00f6"
+                        status = "MOBILE"
+                    else
+                        -- Handling for Stationary Repeaters
+                        title = "Radio Tower"
+                        color = "#00a6ff"
+                        status = "HEALTHY"
+                    end
+
+                    local CurrentBlip = {
                         ["serverId"] = tonumber(GetConvar("sonoran_serverId", 1)),
-                        ["subType"] = subType,
+                        ["subType"] = "repeater",
                         ["coordinates"] = {
-                            ["x"] = coords.x,
-                            ["y"] = coords.y,
-                            ["z"] = coords.z or 0.0
+                            ["x"] = tower.PropPosition.x,
+                            ["y"] = tower.PropPosition.y
                         },
-                        ["radius"] = radius,
-                        ["icon"] = icon,
-                        ["color"] = colorHex,
-                        ["tooltip"] = toolTip,
-                        ["data"] = dataTable
+                        ["radius"] = tower.Range * 0.7937,
+                        ["icon"] = "https://sonoransoftware.com/assets/images/icons/email/radio.png",
+                        ["color"] = color,
+                        ["tooltip"] =  title,
+                        ["data"] = {
+                            {
+                                ["title"] = "Status",
+                                ["text"] = status,
+                            }
+                        }
                     }
 
-                    local response = CadApiCreateBlips({data})
-                    if not response.success then
-                        CadApiLogFailure("ADD_BLIP", response, data)
-                    elseif cb ~= nil then
-                        cb(json.encode(response.data))
-                    end
-                end,
-
-                addBlips = function(blips, cb)
-                    local response = CadApiCreateBlips(blips)
-                    if not response.success then
-                        CadApiLogFailure("ADD_BLIP", response, blips)
-                    elseif cb ~= nil then
-                        cb(json.encode(response.data))
-                    end
-                end,
-
-                removeBlip = function(ids, cb)
-                    local payload = {["ids"] = ids}
-                    local response = CadApiDeleteBlips(payload)
-                    if not response.success then
-                        CadApiLogFailure("REMOVE_BLIP", response, payload)
-                    elseif cb ~= nil then
-                        cb(tostring(response.data and json.encode(response.data) or "OK"))
-                    end
-                end,
-
-                modifyBlips = function(dataTable, cb)
-                    local response = CadApiUpdateBlips(dataTable)
-                    if not response.success then
-                        CadApiLogFailure("MODIFY_BLIP", response, dataTable)
-                    elseif cb ~= nil then
-                        cb(tostring(response.data and json.encode(response.data) or "OK"))
-                    end
-                end,
-
-                getBlips = function(cb)
-                    local response = CadApiGetBlips(tonumber(GetConvar("sonoran_serverId", 1)))
-                    if not response.success then
-                        CadApiLogFailure("GET_BLIPS", response,  tonumber(GetConvar("sonoran_serverId", 1)))
-                    elseif cb ~= nil then
-                        cb(json.encode(response.data or {}))
-                    end
-                end,
-
-                removeWithSubtype = function(subType, cb)
-                    BlipMan.getBlips(function(res)
-                        local dres = json.decode(res)
-                        local ids = {}
-                        for _, v in ipairs(dres) do
-                            if v.subType == subType then
-                                table.insert(ids, #ids + 1, v.id)
-                            end
-                        end
-                        if #ids < 1 then
-                            if cb ~= nil then
-                                cb("No blips found with subtype: " .. subType)
-                            end
+                    table.insert(BlipQueue, #BlipQueue + 1, CurrentBlip)
+                end
+                for i=1, #BlipQueue do
+                    print("Processing blip queue for tower " .. i .. " of " .. #BlipQueue)
+                    local queuedBlip = BlipQueue[i]
+                    debugLog("Queueing blip for tower at coords: " .. queuedBlip.coordinates.x .. ", " .. queuedBlip.coordinates.y)
+                    BlipMan.addBlip(queuedBlip.coordinates, queuedBlip.radius, queuedBlip.color, queuedBlip.subType, queuedBlip.tooltip, queuedBlip.icon, queuedBlip.data, function(res)
+                        local createdBlips = json.decode(res)
+                        local createdBlip = type(createdBlips) == "table" and createdBlips[1] or nil
+                        if not createdBlip or not createdBlip.id then
+                            warnLog("Failed to assign repeater blip ID for tower at coords: " .. queuedBlip.coordinates.x .. ", " .. queuedBlip.coordinates.y)
                             return
                         end
-                        BlipMan.removeBlip(ids, cb)
+                        for towerIndex=1, #TowerCache do
+                            if TowerCache[towerIndex].PropPosition.x == queuedBlip.coordinates.x and TowerCache[towerIndex].PropPosition.y == queuedBlip.coordinates.y then
+                                TowerCache[towerIndex].BlipID = createdBlip.id
+                                debugLog("Assigned blip ID " .. createdBlip.id .. " to tower at coords: " .. queuedBlip.coordinates.x .. ", " .. queuedBlip.coordinates.y)
+                            end
+                        end
                     end)
-                end,
-            }
-
-            function GetTower(coords)
-                for i = 1, #TowerCache do
-                    if TowerCache[i].PropPosition == coords then
-                        return TowerCache[i], i
-                    end
+                    -- Pace startup blip creation so repeater sync does not trip API create rate limits.
+                    Wait(2100)
                 end
-                return nil, nil
-            end
-            function GetTowerFromId(id)
-                for i, t in ipairs(TowerCache) do
-                    if t.Id == id then
-                        return t, i
-                    end
-                end
-            end
-            function GetTowerCapacity(tower)
-                if #tower.DishStatus < 1 then
-                    return 1.0
-                end
+            end)
+        end)
 
-                local n = 0.0
-                for i = 1, #tower.DishStatus do
-                    if tower.DishStatus[i] == 'alive' then
-                        n = n + 1.0
-                    end
-                end
-                return n / #tower.DishStatus
-            end
-
-            RegisterNetEvent("SonoranCAD::sonrad:SyncTowers")
-            AddEventHandler("SonoranCAD::sonrad:SyncTowers", function(Towers)
-                BlipMan.removeWithSubtype("repeater", function(res)
-                    debugLog(res)
-
-                    TowerCache = Towers
-
-                    local BlipQueue = {}
-
-                    debugLog(json.encode(TowerCache))
-                    for _,tower in ipairs(TowerCache) do
-
-                        if tower.NotPhysical then
+        CreateThread(function()
+            while true do
+                Wait(5000)
+                for i=1, #TowerCache do
+                    print("Batch processing tower " .. i .. " of " .. #TowerCache)
+                    if TowerCache[i].Modified then
+                        print('change found for tower ' .. i .. '... sending update to SonoranCAD')
+                        debugLog("Change found during batch... Sending")
+                        TowerCache[i].Modified = false
+                        local color = nil
+                        local status = nil
+                        local title = nil
+                        if TowerCache[i].NotPhysical then
                             -- Handling for Mobile Repeaters
                             title = "Mobile Repeater"
                             color = "#ff00f6"
@@ -152,173 +219,105 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
                             color = "#00a6ff"
                             status = "HEALTHY"
                         end
-
-                        local CurrentBlip = {
-                            ["serverId"] = tonumber(GetConvar("sonoran_serverId", 1)),
+                        local data = {{
+                            ["id"] = TowerCache[i].BlipID,
                             ["subType"] = "repeater",
                             ["coordinates"] = {
-                                ["x"] = tower.PropPosition.x,
-                                ["y"] = tower.PropPosition.y
+                                ["x"] = TowerCache[i].PropPosition.x,
+                                ["y"] = TowerCache[i].PropPosition.y
                             },
-                            ["radius"] = tower.Range * 0.7937,
+                            ["radius"] = TowerCache[i].Range * 0.7937,
                             ["icon"] = "https://sonoransoftware.com/assets/images/icons/email/radio.png",
                             ["color"] = color,
-                            ["tooltip"] =  title,
+                            ["tooltip"] = title,
                             ["data"] = {
                                 {
-                                    ["title"] = "Status",
-                                    ["text"] = status,
+                                    ["title"] = "Health",
+                                    ["text"] = status
                                 }
                             }
-                        }
-
-                        table.insert(BlipQueue, #BlipQueue + 1, CurrentBlip)
-                    end
-                    for i=1, #BlipQueue do
-                        local queuedBlip = BlipQueue[i]
-                        debugLog("Queueing blip for tower at coords: " .. queuedBlip.coordinates.x .. ", " .. queuedBlip.coordinates.y)
-                        BlipMan.addBlip(queuedBlip.coordinates, queuedBlip.radius, queuedBlip.color, queuedBlip.subType, queuedBlip.tooltip, queuedBlip.icon, queuedBlip.data, function(res)
-                            local createdBlips = json.decode(res)
-                            local createdBlip = type(createdBlips) == "table" and createdBlips[1] or nil
-                            if not createdBlip or not createdBlip.id then
-                                warnLog("Failed to assign repeater blip ID for tower at coords: " .. queuedBlip.coordinates.x .. ", " .. queuedBlip.coordinates.y)
-                                return
-                            end
-                            for towerIndex=1, #TowerCache do
-                                if TowerCache[towerIndex].PropPosition.x == queuedBlip.coordinates.x and TowerCache[towerIndex].PropPosition.y == queuedBlip.coordinates.y then
-                                    TowerCache[towerIndex].BlipID = createdBlip.id
-                                    debugLog("Assigned blip ID " .. createdBlip.id .. " to tower at coords: " .. queuedBlip.coordinates.x .. ", " .. queuedBlip.coordinates.y)
-                                end
-                            end
+                        }}
+                        BlipMan.modifyBlips(data, function(res)
+                            debugLog(res)
                         end)
-                        -- Pace startup blip creation so repeater sync does not trip API create rate limits.
                         Wait(2100)
-                    end
-                end)
-            end)
-
-            CreateThread(function()
-                while true do
-                    Wait(5000)
-                    for i=1, #TowerCache do
-                        if TowerCache[i].Modified then
-                            debugLog("Change found during batch... Sending")
-                            TowerCache[i].Modified = false
-                            local color = nil
-                            local status = nil
-                            local title = nil
-                            if TowerCache[i].NotPhysical then
-                                -- Handling for Mobile Repeaters
-                                title = "Mobile Repeater"
-                                color = "#ff00f6"
-                                status = "MOBILE"
-                            else
-                                -- Handling for Stationary Repeaters
-                                title = "Radio Tower"
-                                color = "#00a6ff"
-                                status = "HEALTHY"
-                            end
-                            local data = {{
-                                ["id"] = TowerCache[i].BlipID,
-                                ["subType"] = "repeater",
-                                ["coordinates"] = {
-                                    ["x"] = TowerCache[i].PropPosition.x,
-                                    ["y"] = TowerCache[i].PropPosition.y
-                                },
-                                ["radius"] = TowerCache[i].Range * 0.7937,
-                                ["icon"] = "https://sonoransoftware.com/assets/images/icons/email/radio.png",
-                                ["color"] = color,
-                                ["tooltip"] = title,
-                                ["data"] = {
-                                    {
-                                        ["title"] = "Health",
-                                        ["text"] = status
-                                    }
-                                }
-                            }}
-                            BlipMan.modifyBlips(data, function(res)
-                                debugLog(res)
-                            end)
-                        else
-                            --debugLog("No changes during batch... Ignoring")
-                        end
-                    end
-                end
-            end)
-
-            RegisterNetEvent("SonoranCAD::sonrad:SyncOneTower")
-            AddEventHandler("SonoranCAD::sonrad:SyncOneTower", function(towerId, newTower)
-                local oldTower, towerIndex = GetTowerFromId(towerId)
-                if not oldTower then
-                    debugLog("Tower not found in cache... Ignoring")
-                    return
-                end
-                local BlipID = oldTower.BlipID
-                if not newTower or newTower == nil then
-                    table.remove(TowerCache, towerIndex)
-                    debugLog('New tower was nil... removing from TowerCache at index: '.. towerIndex)
-                else
-                    if oldTower.PropPosition.x == newTower.PropPosition.x and oldTower.PropPosition.y == newTower.PropPosition.y then
-                        --debugLog("No Changes During Sync... Ignoring" .. towerIndex)
                     else
-                        debugLog("Changes found during sync... Queuing" .. towerIndex)
-                        TowerCache[towerIndex] = newTower
-                        TowerCache[towerIndex].BlipID = BlipID
-                        TowerCache[towerIndex].Modified = true
+                        --debugLog("No changes during batch... Ignoring")
                     end
                 end
-            end)
+            end
+        end)
 
-            RegisterNetEvent("SonoranCAD::sonrad:SetDishStatus")
-            AddEventHandler("SonoranCAD::sonrad:SetDishStatus", function(towerId, dishStatus)
-                local tower = GetTowerFromId(towerId)
-                if not tower then return end
-                tower.DishStatus = dishStatus
-                local pct = GetTowerCapacity(tower)
-                local color = nil
-                local status = nil
-                if pct == 1 then
-                    -- Tower is alive and well.
-                    debugLog("TOWER IS HEALTHY")
-                    color = "#00a6ff"
-                    status = "HEALTHY"
-                elseif pct == 0 then
-                    -- Tower is offline
-                    debugLog("TOWER IS OFFLINE")
-                    color = "#ff0000"
-                    status = "OFFLINE"
+        RegisterNetEvent("SonoranCAD::sonrad:SyncOneTower")
+        AddEventHandler("SonoranCAD::sonrad:SyncOneTower", function(towerId, newTower)
+            local oldTower, towerIndex = GetTowerFromId(towerId)
+            if not oldTower then
+                debugLog("Tower not found in cache... Ignoring")
+                return
+            end
+            local BlipID = oldTower.BlipID
+            if not newTower or newTower == nil then
+                table.remove(TowerCache, towerIndex)
+                debugLog('New tower was nil... removing from TowerCache at index: '.. towerIndex)
+            else
+                if oldTower.PropPosition.x == newTower.PropPosition.x and oldTower.PropPosition.y == newTower.PropPosition.y then
+                    --debugLog("No Changes During Sync... Ignoring" .. towerIndex)
                 else
-                    -- Tower is degraded
-                    debugLog("TOWER IS DEGRADED")
-                    color = "#ff8c00"
-                    status = "DEGRADED"
+                    debugLog("Changes found during sync... Queuing" .. towerIndex)
+                    TowerCache[towerIndex] = newTower
+                    TowerCache[towerIndex].BlipID = BlipID
+                    TowerCache[towerIndex].Modified = true
                 end
+            end
+        end)
 
-                local data = {{
-                    ["id"] = tower.BlipID,
-                    ["subType"] = "repeater",
-                    ["coordinates"] = {
-                        ["x"] = tower.PropPosition.x,
-                        ["y"] = tower.PropPosition.y
-                    },
-                    ["radius"] = tower.Range * 0.7937,
-                    ["icon"] = "https://sonoransoftware.com/assets/images/icons/email/radio.png",
-                    ["color"] = color,
-                    ["tooltip"] =  "Radio Tower",
-                    ["data"] = {
-                        {
-                            ["title"] = "Health",
-                            ["text"] = status,
-                        }
+        RegisterNetEvent("SonoranCAD::sonrad:SetDishStatus")
+        AddEventHandler("SonoranCAD::sonrad:SetDishStatus", function(towerId, dishStatus)
+            local tower = GetTowerFromId(towerId)
+            if not tower then return end
+            tower.DishStatus = dishStatus
+            local pct = GetTowerCapacity(tower)
+            local color = nil
+            local status = nil
+            if pct == 1 then
+                -- Tower is alive and well.
+                debugLog("TOWER IS HEALTHY")
+                color = "#00a6ff"
+                status = "HEALTHY"
+            elseif pct == 0 then
+                -- Tower is offline
+                debugLog("TOWER IS OFFLINE")
+                color = "#ff0000"
+                status = "OFFLINE"
+            else
+                -- Tower is degraded
+                debugLog("TOWER IS DEGRADED")
+                color = "#ff8c00"
+                status = "DEGRADED"
+            end
+
+            local data = {{
+                ["id"] = tower.BlipID,
+                ["subType"] = "repeater",
+                ["coordinates"] = {
+                    ["x"] = tower.PropPosition.x,
+                    ["y"] = tower.PropPosition.y
+                },
+                ["radius"] = tower.Range * 0.7937,
+                ["icon"] = "https://sonoransoftware.com/assets/images/icons/email/radio.png",
+                ["color"] = color,
+                ["tooltip"] =  "Radio Tower",
+                ["data"] = {
+                    {
+                        ["title"] = "Health",
+                        ["text"] = status,
                     }
-                }}
-                BlipMan.modifyBlips(data, function(res)
-                    debugLog(res)
-                end)
+                }
+            }}
+            BlipMan.modifyBlips(data, function(res)
+                debugLog(res)
             end)
-        else
-            debugLog("Disabling blip management, API version too low.")
-        end
+        end)
 
 
         CreateThread(function()

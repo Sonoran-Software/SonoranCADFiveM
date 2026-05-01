@@ -5,8 +5,8 @@
     Creator: Sonoran Software
     Description: Integrates Knight ERS callouts to SonoranCAD
 ]]
-local pluginConfig = Config.GetPluginConfig("ersintegration")
-local postalConfig = Config.GetPluginConfig("postals")
+local pluginConfig = Config.GetPluginConfig("ersintegration") or {}
+local postalConfig = Config.GetPluginConfig("postals") or {}
 
 if pluginConfig.enabled then
     function startErs()
@@ -28,7 +28,66 @@ if pluginConfig.enabled then
         Used to escape spaces in strings by replacing them with underscores
         ]]
         local function escapeSpaces(str)
-            return str:gsub(" ", "_")
+            return tostring(str or ""):gsub(" ", "_")
+        end
+
+        local function asTable(value)
+            if type(value) == "table" then
+                return value
+            end
+
+            return nil
+        end
+
+        local function safeString(value, default)
+            if value == nil then
+                return default or ""
+            end
+
+            return tostring(value)
+        end
+
+        local function getCoordinates(coords)
+            if type(coords) ~= "table" then
+                return nil
+            end
+
+            local x = tonumber(coords.x or coords.X)
+            local y = tonumber(coords.y or coords.Y)
+            local z = tonumber(coords.z or coords.Z)
+            if x == nil or y == nil then
+                return nil
+            end
+
+            return { x = x, y = y, z = z or 0.0 }
+        end
+
+        local function getPostal(calloutData)
+            local postal = safeString(calloutData.Postal, "")
+            if postal ~= "" and postal ~= "Unknown postal" then
+                return postal
+            end
+
+            if not postalConfig.enabled then
+                return "Unknown postal"
+            end
+
+            local coords = getCoordinates(calloutData.Coordinates)
+            if coords == nil then
+                return "Unknown postal"
+            end
+
+            local postalResource = exports[postalConfig.nearestPostalResourceName]
+            if postalResource == nil or type(postalResource.getPostalServer) ~= "function" then
+                return "Unknown postal"
+            end
+
+            local nearestPostal = postalResource:getPostalServer({coords.x, coords.y})
+            if type(nearestPostal) ~= "table" or nearestPostal.code == nil then
+                return "Unknown postal"
+            end
+
+            return tostring(nearestPostal.code)
         end
         --[[
         @function generateUniqueCalloutKey
@@ -37,13 +96,14 @@ if pluginConfig.enabled then
         Used to generate the unique key for a callout creation for tracking
         ]]
         local function generateUniqueCalloutKey(callout)
+            local coords = getCoordinates(callout and callout.Coordinates) or { x = 0.0, y = 0.0, z = 0.0 }
             return string.format(
                 "%s_%s_%.2f_%.2f_%.2f",
-                callout.calloutId,
-                escapeSpaces(callout.StreetName),
-                callout.Coordinates.x,
-                callout.Coordinates.y,
-                callout.Coordinates.z
+                safeString(callout and callout.calloutId, "unknown"),
+                escapeSpaces(callout and callout.StreetName),
+                coords.x,
+                coords.y,
+                coords.z
             )
         end
         --[[
@@ -55,20 +115,20 @@ if pluginConfig.enabled then
         local function generateUniquePedDataKey(pedData)
             return string.format(
                 "%s_%s_%s_%s",
-                pedData.uniqueId,
-                pedData.FirstName,
-                pedData.LastName,
-                escapeSpaces(pedData.Address)
+                safeString(pedData and pedData.uniqueId, "unknown"),
+                safeString(pedData and pedData.FirstName, "unknown"),
+                safeString(pedData and pedData.LastName, "unknown"),
+                escapeSpaces(pedData and pedData.Address)
             )
         end
 
         local function generateUniqueVehDataKey(vehData)
             return string.format(
                 "%s_%s_%s_%s",
-                escapeSpaces(vehData.license_plate),
-                vehData.model,
-                vehData.color,
-                vehData.build_year
+                escapeSpaces(vehData and vehData.license_plate),
+                safeString(vehData and vehData.model, "unknown"),
+                safeString(vehData and vehData.color, "unknown"),
+                safeString(vehData and vehData.build_year, "unknown")
             )
         end
         --[[
@@ -78,11 +138,15 @@ if pluginConfig.enabled then
         Used to generate the call note for a callout
         ]]
         function generateCallNote(callout)
+            if type(callout) ~= "table" then
+                return "No additional units required."
+            end
+
             -- Start with basic callout information
             local note = ''
 
             -- Append potential weapons information
-            if callout.PedWeaponData and #callout.PedWeaponData > 0 then
+            if type(callout.PedWeaponData) == "table" and #callout.PedWeaponData > 0 then
                 note = note .. "Potential weapons: " .. table.concat(callout.PedWeaponData, ", ") .. ". "
             else
                 note = note .. "No weapons reported. "
@@ -90,7 +154,7 @@ if pluginConfig.enabled then
 
             -- Determine the required units from the callout
             local requiredUnits = {}
-            local units = callout.CalloutUnitsRequired or {}
+            local units = asTable(callout.CalloutUnitsRequired) or {}
             if units.policeRequired then table.insert(requiredUnits, "Police") end
             if units.ambulanceRequired then table.insert(requiredUnits, "Ambulance") end
             if units.fireRequired then table.insert(requiredUnits, "Fire") end
@@ -116,9 +180,15 @@ if pluginConfig.enabled then
             local replaceValues = {}
             for cadKey, source in pairs(config) do
                 if type(source) == "function" then
-                    replaceValues[cadKey] = source(data)
+                    local ok, value = pcall(source, data)
+                    if ok then
+                        replaceValues[cadKey] = value or ""
+                    else
+                        errorLog("ERS replace value mapping failed for key " .. tostring(cadKey) .. ": " .. tostring(value))
+                        replaceValues[cadKey] = ""
+                    end
                 elseif type(source) == "string" then
-                    replaceValues[cadKey] = data[source]
+                    replaceValues[cadKey] = data[source] or ""
                 else
                     error("Invalid mapping configuration for key: " .. tostring(cadKey))
                 end
@@ -130,9 +200,15 @@ if pluginConfig.enabled then
             local result = {}
             for cadKey, ersKeyOrFunc in pairs(valueMap) do
                 if type(ersKeyOrFunc) == "string" then
-                    result[cadKey] = pedData[ersKeyOrFunc]
+                    result[cadKey] = pedData[ersKeyOrFunc] or ""
                 elseif type(ersKeyOrFunc) == "function" then
-                    result[cadKey] = ersKeyOrFunc(pedData, extraContext)
+                    local ok, value = pcall(ersKeyOrFunc, pedData, extraContext)
+                    if ok then
+                        result[cadKey] = value or ""
+                    else
+                        errorLog("ERS license mapping failed for key " .. tostring(cadKey) .. ": " .. tostring(value))
+                        result[cadKey] = ""
+                    end
                 end
             end
             return result
@@ -140,6 +216,9 @@ if pluginConfig.enabled then
 
         function mapFlagsToBoloOptions(flags)
             local boloFlags = {}
+            if type(flags) ~= "table" then
+                return boloFlags
+            end
 
             -- Define what original flags count toward each BOLO category
             local mapping = {
@@ -181,6 +260,17 @@ if pluginConfig.enabled then
         ]]
         if pluginConfig.create911Call then
             AddEventHandler('ErsIntegration::OnIsOfferedCallout', function(calloutData)
+                if type(calloutData) ~= "table" then
+                    errorLog("ERS 911 callout payload was malformed.")
+                    return
+                end
+
+                local coords = getCoordinates(calloutData.Coordinates)
+                if coords == nil then
+                    errorLog("ERS 911 callout missing valid coordinates.")
+                    return
+                end
+
                 local uniqueKey = generateUniqueCalloutKey(calloutData)
                 debugLog('Generated unqiue key for callout: '.. uniqueKey)
                 if pluginConfig.clearRecordsAfter ~= 0 and processedCalloutOffered[uniqueKey] then
@@ -192,24 +282,15 @@ if pluginConfig.enabled then
                     end
                 end
                 if processedCalloutOffered[uniqueKey] then
-                    debugLog("Callout " .. calloutData.calloutId .. " already processed. Skipping 911 call.")
+                    debugLog("Callout " .. safeString(calloutData.calloutId, "unknown") .. " already processed. Skipping 911 call.")
                 else
-                    local caller = calloutData.FirstName .. " " .. calloutData.LastName
-                    local location = calloutData.StreetName
-                    local description = calloutData.Description
-                    local postal = ''
-                    if calloutData.Postal == 'Unknown postal' then
-                        if postalConfig.enabled then
-                            postal = exports[postalConfig.nearestPostalResourceName]:getPostalServer({calloutData.Coordinates.x, calloutData.Coordinates.y}).code
-                        else
-                            postal = "Unknown postal"
-                        end
-                    else
-                        postal = calloutData.Postal
-                    end
+                    local caller = (safeString(calloutData.FirstName) .. " " .. safeString(calloutData.LastName)):gsub("^%s+", ""):gsub("%s+$", "")
+                    local location = safeString(calloutData.StreetName)
+                    local description = safeString(calloutData.Description)
+                    local postal = getPostal(calloutData)
                     local plate = ""
                     if calloutData.VehiclePlate ~= nil then
-                        plate = calloutData.VehiclePlate
+                        plate = safeString(calloutData.VehiclePlate)
                     end
                     local data = {
                         ['serverId'] = tonumber(Config.serverId),
@@ -218,8 +299,8 @@ if pluginConfig.enabled then
                         ['location'] = location,
                         ['description'] = description,
                         ['metaData'] = {
-                            ['x'] = tostring(calloutData.Coordinates.x),
-                            ['y'] = tostring(calloutData.Coordinates.y),
+                            ['x'] = tostring(coords.x),
+                            ['y'] = tostring(coords.y),
                             ['plate'] = tostring(plate),
                             ['postal'] = tostring(postal)
                         }
@@ -247,6 +328,17 @@ if pluginConfig.enabled then
         ]]
         if pluginConfig.createEmergencyCall then
             AddEventHandler('ErsIntegration::OnAcceptedCalloutOffer', function(calloutData)
+                if type(calloutData) ~= "table" then
+                    errorLog("ERS accepted callout payload was malformed.")
+                    return
+                end
+
+                local coords = getCoordinates(calloutData.Coordinates)
+                if coords == nil then
+                    errorLog("ERS accepted callout missing valid coordinates.")
+                    return
+                end
+
                 local uniqueKey = generateUniqueCalloutKey(calloutData)
                 if pluginConfig.clearRecordsAfter ~= 0 and processedCalloutAccepted[uniqueKey] then
                     local entry   = processedCalloutAccepted[uniqueKey]
@@ -257,9 +349,14 @@ if pluginConfig.enabled then
                     end
                 end
                 if processedCalloutAccepted[uniqueKey] then
-                    debugLog("Callout " .. calloutData.calloutId .. " already processed. Skipping emergency call... adding new units")
+                    debugLog("Callout " .. safeString(calloutData.calloutId, "unknown") .. " already processed. Skipping emergency call... adding new units")
                     if pluginConfig.autoAddCall then
-                        local callId = processedCalloutAccepted[uniqueKey]
+                        local existingCall = processedCalloutAccepted[uniqueKey]
+                        local callId = tonumber(existingCall.id or existingCall)
+                        if callId == nil then
+                            errorLog("ERS accepted callout had an invalid saved call ID for key: " .. uniqueKey)
+                            return
+                        end
                         local unit = GetUnitByPlayerId(source)
                         if unit == nil then
                             debugLog("Unit not found for player ID: " .. source)
@@ -283,8 +380,8 @@ if pluginConfig.enabled then
                         end
                     end
                 else
-                    debugLog("Processing callout " .. calloutData.calloutId .. " for emergency call.")
-                    local callCode = pluginConfig.callCodes[calloutData.CalloutName] or ""
+                    debugLog("Processing callout " .. safeString(calloutData.calloutId, "unknown") .. " for emergency call.")
+                    local callCode = type(pluginConfig.callCodes) == "table" and (pluginConfig.callCodes[calloutData.CalloutName] or "") or ""
                     local unit = GetUnitByPlayerId(source)
                     local unitId = ""
                     local communityUserIds = {}
@@ -296,16 +393,7 @@ if pluginConfig.enabled then
                             communityUserIds = { unitId }
                         end
                     end
-                    local postal = ''
-                    if calloutData.Postal == 'Unknown postal' then
-                        if postalConfig.enabled then
-                            postal = exports[postalConfig.nearestPostalResourceName]:getPostalServer({calloutData.Coordinates.x, calloutData.Coordinates.y}).code
-                        else
-                            postal = "Unknown postal"
-                        end
-                    else
-                        postal = calloutData.Postal
-                    end
+                    local postal = getPostal(calloutData)
                     local data = {
                         ['serverId'] = tonumber(Config.serverId),
                         ['origin'] = 0,
@@ -314,15 +402,15 @@ if pluginConfig.enabled then
                         ['block'] = postal,
                         ['postal'] = postal,
                         ['communityUserIds'] = communityUserIds,
-                        ['address'] = calloutData.StreetName,
-                        ['title'] = calloutData.CalloutName,
+                        ['address'] = safeString(calloutData.StreetName),
+                        ['title'] = safeString(calloutData.CalloutName),
                         ['code'] = callCode,
-                        ['description'] = calloutData.Description,
+                        ['description'] = safeString(calloutData.Description),
                         ['units'] = {unitId},
                         ['notes'] = {}, -- required
                         ['metaData'] = {
-                            ['x'] = tostring(calloutData.Coordinates.x),
-                            ['y'] = tostring(calloutData.Coordinates.y)
+                            ['x'] = tostring(coords.x),
+                            ['y'] = tostring(coords.y)
                         }
                     }
                     if pluginConfig.clearRecordsAfter ~= 0 then
@@ -338,7 +426,7 @@ if pluginConfig.enabled then
                             -- Save the callId in the processedCalloutOffered table using the unique key
                             processedCalloutAccepted[uniqueKey] = {id = tostring(callId), timestamp = os.time()}
                             if processedCalloutOffered[uniqueKey] ~= nil then
-                                local payload = { serverId = tonumber(Config.serverId), callId = processedCalloutOffered[uniqueKey].id}
+                                local payload = { serverId = tonumber(Config.serverId), callId = tonumber(processedCalloutOffered[uniqueKey].id)}
                                 local removeResponse = CadApiDeleteEmergencyCall(payload.callId, payload.serverId)
                                 if not removeResponse.success then
                                     CadApiLogFailure("REMOVE_911", removeResponse, payload)
@@ -357,6 +445,11 @@ if pluginConfig.enabled then
             CALLOUT, PED AND VEHICLE DATA CREATION
         ]]
         AddEventHandler('SonoranCAD::ErsIntegration::BuildChars', function(pedData)
+            if type(pedData) ~= "table" then
+                errorLog("ERS character payload was malformed.")
+                return
+            end
+
             local uniqueKey = generateUniquePedDataKey(pedData)
             if pluginConfig.clearRecordsAfter ~= 0 and processedPedData[uniqueKey] then
                 local entry   = processedPedData[uniqueKey]
@@ -367,7 +460,7 @@ if pluginConfig.enabled then
                 end
             end
             if processedPedData[uniqueKey] then
-                debugLog("Ped " .. pedData.FirstName .. " " .. pedData.LastName .. " already processed.")
+                debugLog("Ped " .. safeString(pedData.FirstName, "unknown") .. " " .. safeString(pedData.LastName, "unknown") .. " already processed.")
                 return
             end
             -- CIVILIAN RECORD
@@ -393,7 +486,8 @@ if pluginConfig.enabled then
             end
             -- LICENSE RECORD
             for _, v in pairs (pluginConfig.customRecords.licenseTypeConfigs) do
-                if pedData[v.license] ~= "No license" then
+                local licenseValue = pedData[v.license]
+                if licenseValue ~= nil and licenseValue ~= "" and licenseValue ~= "No license" then
                     local licenseData = {
                         ['user'] = '00000000-0000-0000-0000-000000000000',
                         ['useDictionary'] = true,
@@ -412,7 +506,8 @@ if pluginConfig.enabled then
             end
             -- WARRANT RECORD
             local hasWarrant = false
-            for _, flag in pairs(pedData.FlagsOrMarkers) do
+            local flagsOrMarkers = asTable(pedData.FlagsOrMarkers) or {}
+            for _, flag in pairs(flagsOrMarkers) do
                 if flag then
                     hasWarrant = true
                     break
@@ -428,12 +523,12 @@ if pluginConfig.enabled then
                 if pluginConfig.clearRecordsAfter ~= 0 then
                     boloData.deleteAfterMinutes = pluginConfig.clearRecordsAfter
                 end
-                local warrantTypes = mapFlagsToBoloOptions(pedData.FlagsOrMarkers)
+                local warrantTypes = mapFlagsToBoloOptions(flagsOrMarkers)
                 local pedReplaceData = generateReplaceValues(pedData, pluginConfig.customRecords.civilianValues)
                 for k, v in pairs(pedReplaceData) do
                     boloData.replaceValues[k] = v
                 end
-                boloData.replaceValues[pluginConfig.customRecords.warrantDescription] = pedData.FlagsOrMarkers.flag_description or ""
+                boloData.replaceValues[pluginConfig.customRecords.warrantDescription] = safeString(flagsOrMarkers.flag_description)
                 boloData.replaceValues[pluginConfig.customRecords.warrantFlags] = json.encode(warrantTypes)
                 local response = CadApiCreateRecord(boloData)
                 if not response.success then
@@ -442,6 +537,11 @@ if pluginConfig.enabled then
             end
         end)
         AddEventHandler('SonoranCAD::ErsIntegration::BuildVehs', function(vehData)
+            if type(vehData) ~= "table" then
+                errorLog("ERS vehicle payload was malformed.")
+                return
+            end
+
             local uniqueKey = generateUniqueVehDataKey(vehData)
             if pluginConfig.clearRecordsAfter ~= 0 and processedVehData[uniqueKey] then
                 local entry   = processedVehData[uniqueKey]
@@ -452,7 +552,7 @@ if pluginConfig.enabled then
                 end
             end
             if processedVehData[uniqueKey] then
-                debugLog("Vehicle " .. vehData.model .. " " .. vehData.license_plate .. " already processed.")
+                debugLog("Vehicle " .. safeString(vehData.model, "unknown") .. " " .. safeString(vehData.license_plate, "unknown") .. " already processed.")
                 return
             end
             local data = {
@@ -499,9 +599,17 @@ if pluginConfig.enabled then
             Wait(5000)
             debugLog('Loading ERS Callouts...')
             local calloutData = exports.night_ers.getCallouts()
+            if type(calloutData) ~= "table" then
+                errorLog("ERS callout list was malformed.")
+                calloutData = {}
+            end
             for uid, callout in pairs(calloutData) do
+                if type(callout) ~= "table" then
+                    warnLog("Skipping malformed ERS callout with id: " .. tostring(uid))
+                    goto continue
+                end
                 -- Retain only the first description if it exists, otherwise set to an empty table
-                if callout.CalloutDescriptions and #callout.CalloutDescriptions > 0 then
+                if type(callout.CalloutDescriptions) == "table" and #callout.CalloutDescriptions > 0 then
                     callout.CalloutDescriptions = { callout.CalloutDescriptions[1] }
                 else
                     callout.CalloutDescriptions = {}
@@ -510,7 +618,7 @@ if pluginConfig.enabled then
                 -- Set CalloutLocations to an empty array
                 callout.CalloutLocations = {}
 
-                if callout.PedWeaponData == nil or #callout.PedWeaponData == 0 then
+                if type(callout.PedWeaponData) ~= "table" or #callout.PedWeaponData == 0 then
                     callout.PedWeaponData = {}
                 end
 
@@ -518,6 +626,7 @@ if pluginConfig.enabled then
                 data.id = uid
                 data.data = callout
                 table.insert(ersCallouts, data)
+                ::continue::
             end
             local data = {
                 ['serverId'] = tonumber(Config.serverId),
@@ -535,13 +644,25 @@ if pluginConfig.enabled then
             PUSH EVENT HANDLER
         ]]
         TriggerEvent('SonoranCAD::RegisterPushEvent', 'EVENT_NEW_CALLOUT', function(data)
+            if type(data) ~= "table" or type(data.data) ~= "table" or type(data.data.callout) ~= "table" or type(data.data.callout.data) ~= "table" then
+                errorLog("Push event callout payload was malformed.")
+                return
+            end
+
             local calloutData = data.data
-            local locations = vec3(calloutData.callout.data.CalloutLocations[1].X, calloutData.callout.data.CalloutLocations[1].Y, 41.0)
-            calloutData.callout.data.CalloutLocations = {[1] = vector3(locations.x, locations.y, locations.z)}
+            local locations = asTable(calloutData.callout.data.CalloutLocations)
+            local firstLocation = locations and locations[1]
+            local coords = getCoordinates(firstLocation)
+            if coords == nil then
+                errorLog("Push event callout was missing a valid location.")
+                return
+            end
+
+            calloutData.callout.data.CalloutLocations = {[1] = vector3(coords.x, coords.y, 41.0)}
             local calloutID = exports.night_ers:createCallout(calloutData.callout)
-            calloutData.callout.newId = calloutID.calloutId
-            TriggerClientEvent('ErsIntegration::BuildCallout', -1, calloutData.callout)
-            if calloutID then
+            if type(calloutID) == "table" and calloutID.calloutId then
+                calloutData.callout.newId = calloutID.calloutId
+                TriggerClientEvent('ErsIntegration::BuildCallout', -1, calloutData.callout)
                 debugLog("Callout " .. calloutID.calloutId .. " created.")
                 TriggerClientEvent('SonoranCAD::ErsIntegration::RequestCallout', -1, calloutID.calloutId)
             else
