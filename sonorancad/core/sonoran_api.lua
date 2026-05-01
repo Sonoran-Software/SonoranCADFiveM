@@ -750,7 +750,13 @@ end
 
 function CadApiSetStations(payload)
     payload = payload or {}
-    return get_cad_client():setStationsV2(payload.config or payload, payload.serverId or tonumber(Config.serverId))
+    local config = payload.config or payload
+
+    if type(config) == "table" and config[1] ~= nil and type(config[1]) == "table" and config.locations == nil then
+        config = clone_table(config[1])
+    end
+
+    return get_cad_client():setStationsV2(config, payload.serverId or tonumber(Config.serverId))
 end
 
 function CadApiGetBlips(payload)
