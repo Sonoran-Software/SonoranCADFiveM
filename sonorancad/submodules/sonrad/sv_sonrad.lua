@@ -200,9 +200,7 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
             while true do
                 Wait(5000)
                 for i=1, #TowerCache do
-                    print("Batch processing tower " .. i .. " of " .. #TowerCache)
                     if TowerCache[i].Modified then
-                        print('change found for tower ' .. i .. '... sending update to SonoranCAD')
                         debugLog("Change found during batch... Sending")
                         TowerCache[i].Modified = false
                         local color = nil
