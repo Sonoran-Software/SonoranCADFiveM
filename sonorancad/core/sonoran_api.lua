@@ -1,16 +1,16 @@
 local cadV2Client = nil
-local sonoranModule = nil
+sonoranModule = nil
 local communityLinkCheckCache = {}
 local COMMUNITY_LINK_CHECK_CACHE_TTL_MS = 10 * 60 * 1000
 
-local function get_sonoran_log_level(sonoran)
+function get_sonoran_log_level(sonoran)
     if Config ~= nil and Config.debugMode == true then
         return sonoran.logLevels.DEBUG
     end
     return sonoran.logLevels.ERROR
 end
 
-local function load_sonoran_module()
+function load_sonoran_module()
     if sonoranModule ~= nil then
         return sonoranModule
     end

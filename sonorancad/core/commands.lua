@@ -226,6 +226,8 @@ SonoranCAD Help
         end
         infoLog(("Debug mode toggled to %s"):format(convarString))
         TriggerClientEvent("SonoranCAD::core:debugModeToggle", -1, Config.debugMode)
+        local sonoran = sonoranModule or load_sonoran_module()
+        GetCadClient():setLogLevel(get_sonoran_log_level(sonoran))
     elseif args[1] == "info" then
         print(dumpInfo())
     elseif args[1] == "support" and args[2] ~= nil then
