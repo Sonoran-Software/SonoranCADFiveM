@@ -911,12 +911,11 @@ function CadApiUploadSupportLogs(payload)
         end
     end
 
-    if tonumber(response_status) == 200 and response_body ~= nil then
-        local decoded = SafeJsonDecode(response_body, "support upload response", nil)
-        if type(decoded) == "table" then
-            return {success = decoded.success == true, data = decoded, reason = decoded.success == true and nil or decoded.error}
-        end
-        return {success = true, data = response_body}
+    if tonumber(response_status) == 200 then
+        return {
+            success = true,
+            data = response_body
+        }
     end
 
     return {

@@ -146,6 +146,10 @@ Configuration Information
 %s
 
 ---------------------------------------
+Structured Error Buffer
+-----------------------
+%s
+---------------------------------------
 Console Buffer
 ------
 %s
@@ -153,20 +157,14 @@ Console Buffer
 Last 50 Debug Messages
 ----------------------
 %s
----------------------------------------
-Structured Error Buffer
------------------------
-%s
     ]]):format(dumpInfo(), GetConsoleBuffer(), table.concat(getDebugBuffer(), "\n"), encodedErrors)
+    ]]):format(dumpInfo(), encodedErrors, GetConsoleBuffer(), table.concat(getDebugBuffer(), "\n"))
     Config.debugMode = false
     if SetCadClientLogLevel ~= nil then
         SetCadClientLogLevel()
     end
     local response = CadApiUploadSupportLogs(sanitizeForJson(cadOutput))
-    local uploadSucceeded = response.success == true and (
-        response.data == "LOGS UPDATED" or
-        (type(response.data) == "table" and response.data.success == true)
-    )
+    local uploadSucceeded = response.success == true
     if uploadSucceeded then
         infoLog("Support logs have been successfully uploaded. Debug mode was disabled during the upload.")
         if requester > 0 then
