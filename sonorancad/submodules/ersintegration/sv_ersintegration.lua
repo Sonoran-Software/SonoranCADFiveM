@@ -48,10 +48,9 @@ if pluginConfig.enabled then
         end
 
         local function getCoordinates(coords)
-            if type(coords) ~= "table" then
+            if type(coords) ~= "vector3" then
                 return nil
             end
-
             local x = tonumber(coords.x or coords.X)
             local y = tonumber(coords.y or coords.Y)
             local z = tonumber(coords.z or coords.Z)
@@ -357,20 +356,14 @@ if pluginConfig.enabled then
                             errorLog("ERS accepted callout had an invalid saved call ID for key: " .. uniqueKey)
                             return
                         end
-                        local unit = GetUnitByPlayerId(source)
-                        if unit == nil then
-                            debugLog("Unit not found for player ID: " .. source)
-                            return
-                        end
-                        local unitId = GetPlayerCommunityUserId(source)
-                        if unitId == nil then
-                            debugLog("Unit is not linked to CAD for player ID: " .. source)
+                        local unitData = getPlayerCadStatus(source, "ERS Integration", { unit = true, link = true })
+                        if not unitData.success then
                             return
                         end
                         local data = {
                             ['serverId'] = tonumber(Config.serverId),
                             ['callId'] = callId,
-                            ['units'] = {unitId}
+                            ['units'] = {unitData.link}
                         }
                         local response = CadApiAttachUnitsToDispatchCall(data)
                         if not response.success then
@@ -382,16 +375,9 @@ if pluginConfig.enabled then
                 else
                     debugLog("Processing callout " .. safeString(calloutData.calloutId, "unknown") .. " for emergency call.")
                     local callCode = type(pluginConfig.callCodes) == "table" and (pluginConfig.callCodes[calloutData.CalloutName] or "") or ""
-                    local unit = GetUnitByPlayerId(source)
-                    local unitId = ""
-                    local communityUserIds = {}
-                    if unit == nil then
-                        debugLog("Unit not found for player ID: " .. source)
-                    else
-                        unitId = GetPlayerCommunityUserId(source) or ""
-                        if unitId ~= "" then
-                            communityUserIds = { unitId }
-                        end
+                    local unitData = getPlayerCadStatus(source, "ERS Integration", { unit = true, link = true })
+                    if not unitData.success then
+                        return
                     end
                     local postal = getPostal(calloutData)
                     local data = {
@@ -401,12 +387,12 @@ if pluginConfig.enabled then
                         ['priority'] = pluginConfig.callPriority,
                         ['block'] = postal,
                         ['postal'] = postal,
-                        ['communityUserIds'] = communityUserIds,
+                        ['communityUserIds'] = { unitData.link },
                         ['address'] = safeString(calloutData.StreetName),
                         ['title'] = safeString(calloutData.CalloutName),
                         ['code'] = callCode,
                         ['description'] = safeString(calloutData.Description),
-                        ['units'] = {unitId},
+                        ['units'] = { unitData.unit },
                         ['notes'] = {}, -- required
                         ['metaData'] = {
                             ['x'] = tostring(coords.x),
