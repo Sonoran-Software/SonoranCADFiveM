@@ -19,8 +19,7 @@ Config = {
     enableCanary = false,
     latestVersion = '',
     apiVersion = -1,
-    plugins = {},
-    proxyUrl = ''
+    plugins = {}
 }
 
 updaterIgnore = {}

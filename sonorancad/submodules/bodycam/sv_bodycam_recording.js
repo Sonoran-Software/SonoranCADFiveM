@@ -28,7 +28,7 @@ function readConfigFile() {
 			return JSON.parse(raw);
 		}
 	} catch (err) {
-		log("warn", supportHint("ERR-BC-111"));
+		log("warn", supportHint("WRN-CORE-900"));
 	}
 	return {};
 }
@@ -157,10 +157,10 @@ async function uploadSavedBodycamClip(src, session) {
 	log("debug", `Upload prerequisites for ${src}: apiKey=${!!apiKey} communityUserId=${!!communityUserId} unit=${!!unit} uploadId=${session.uploadId}`);
 
 	if (!apiKey) {
-		log("warn", supportHint("ERR-BC-111"));
+		log("warn", supportHint("ERR-BC-107"));
 		emitNet("SonoranCAD::bodycam::UploadResult", src, {
 			ok: false,
-			errorCode: "ERR-BC-111",
+			errorCode: "ERR-BC-107",
 			reason: "missing_api_key",
 		});
 		return;

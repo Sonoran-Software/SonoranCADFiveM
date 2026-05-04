@@ -842,15 +842,14 @@ CreateThread(function()
                 end
             end)
 
-            RegisterNetEvent('SonoranCAD::bodycam::UploadConfig', function(proxyUrl, uploadToken)
+            RegisterNetEvent('SonoranCAD::bodycam::UploadConfig', function(uploadToken)
                 SendNUIMessage({
                     type = 'bodycamUploadConfig',
-                    proxyUrl = proxyUrl,
                     uploadToken = uploadToken
                 })
             end)
 
-            RegisterNetEvent('SonoranCAD::bodycam::Init', function(isReady, apiVersion, proxyUrl, uploadToken)
+            RegisterNetEvent('SonoranCAD::bodycam::Init', function(isReady, apiVersion, uploadToken)
                 if isReady == 0 then
                     CreateThread(function()
                         debugLog('Bodycam not ready, retrying in 10s')
@@ -864,7 +863,6 @@ CreateThread(function()
                 end
                 SendNUIMessage({
                     type = 'bodycamUploadConfig',
-                    proxyUrl = proxyUrl,
                     uploadToken = uploadToken
                 })
 

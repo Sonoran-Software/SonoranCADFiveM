@@ -226,7 +226,6 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
                 ['vehicle'] = vehiclePayload
             }
             if bodycamPeerId then
-                payload['proxyUrl'] = Config.proxyUrl
                 payload['peerId'] = bodycamPeerId
             end
             LocationCache[source] = payload

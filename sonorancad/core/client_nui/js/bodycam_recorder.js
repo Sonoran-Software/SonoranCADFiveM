@@ -152,7 +152,6 @@
 			recordingSession: null,
 			pipelineReady: false,
 			uploadConfig: {
-				proxyUrl: null,
 				uploadToken: null,
 			},
 		};
@@ -730,18 +729,13 @@
 		}
 
 		function setUploadConfig(message) {
-			const nextProxyUrl = message && Object.prototype.hasOwnProperty.call(message, "proxyUrl")
-				? (message.proxyUrl || null)
-				: state.uploadConfig.proxyUrl;
 			const nextUploadToken = message && Object.prototype.hasOwnProperty.call(message, "uploadToken")
 				? (message.uploadToken || null)
 				: state.uploadConfig.uploadToken;
 			state.uploadConfig = {
-				proxyUrl: nextProxyUrl,
 				uploadToken: nextUploadToken,
 			};
 			logRecorder("info", "Recorder upload config updated.", {
-				hasProxyUrl: !!state.uploadConfig.proxyUrl,
 				hasUploadToken: !!state.uploadConfig.uploadToken,
 			});
 		}

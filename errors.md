@@ -283,11 +283,6 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 - `Meaning`: TURN credentials for bodycam streaming could not be retrieved.
 - `Potential Fix`: Verify the CAD API is reachable, the API key is valid, and TURN-related config overrides are correct.
 
-### ERR-BC-111
-- `Key`: `BODYCAM_BASEURL_MISSING`
-- `Meaning`: Bodycam services cannot be exposed because the base/proxy URL is missing.
-- `Potential Fix`: Use `exec sonorancad.cfg`, verify the required web/proxy configuration is present, and make sure the configured base URL resolves to the externally reachable server endpoint.
-
 ### ERR-BC-112
 - `Key`: `BODYCAM_RECORDING_ACTIVE`
 - `Meaning`: A start-recording request was ignored because a recording was already in progress.

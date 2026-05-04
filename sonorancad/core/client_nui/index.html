@@ -844,7 +844,7 @@
 			async function startBodycamStream(payload) {
 				const remotePeerId = payload && payload.remotePeerId ? payload.remotePeerId : null;
 				if (!remotePeerId) {
-					console.warn("Bodycam stream: ERR-BC-111 remotePeerId not configured. More: https://sonorancad.com/error/ERR-BC-111");
+					console.warn("Bodycam stream: WRN-CORE-900 remotePeerId not configured. More: https://sonorancad.com/error/WRN-CORE-900");
 					notifyBodycamStreamState(false, "missing_remote_peer_id");
 					return;
 				}

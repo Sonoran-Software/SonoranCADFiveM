@@ -15,7 +15,38 @@
     update - attempt to auto-update
 ]]
 
-function dumpInfo()
+local function sanitizeForJson(value, seen)
+    local valueType = type(value)
+    if valueType == "nil" or valueType == "boolean" or valueType == "number" or valueType == "string" then
+        return value
+    end
+    if valueType == "function" or valueType == "thread" or valueType == "userdata" then
+        return ("<%s>"):format(valueType)
+    end
+    if valueType ~= "table" then
+        return tostring(value)
+    end
+
+    seen = seen or {}
+    if seen[value] then
+        return "<recursive-table>"
+    end
+    seen[value] = true
+
+    local sanitized = {}
+    for k, v in pairs(value) do
+        local sanitizedKey = sanitizeForJson(k, seen)
+        if type(sanitizedKey) ~= "string" and type(sanitizedKey) ~= "number" then
+            sanitizedKey = tostring(sanitizedKey)
+        end
+        sanitized[sanitizedKey] = sanitizeForJson(v, seen)
+    end
+
+    seen[value] = nil
+    return sanitized
+end
+
+ function dumpInfo()
     local version = GetResourceMetadata(GetCurrentResourceName(), "version", 0)
     local pluginList, loadedPlugins, disabledPlugins = GetPluginLists()
     local pluginVersions = {}
@@ -34,7 +65,8 @@ function dumpInfo()
         if (k == "plugins") then goto continue end
         if type(v) == "function" then goto continue end
         if type(v) == "table" then
-            table.insert(coreConfig, ("%s = %s"):format(k, json.encode(v)))
+            local encoded = SafeJsonEncode(sanitizeForJson(v), ("support dump core config %s"):format(tostring(k)), "{}")
+            table.insert(coreConfig, ("%s = %s"):format(k, encoded or "{}"))
             goto continue
         end
         if type(v) == "thread" then goto continue end
@@ -91,14 +123,14 @@ local function sendSupportLogs(key, requester)
     end
     local plugins = {}
     for name, config in pairs(Config.plugins) do
-        pluginData = {}
+        local pluginData = {}
         pluginData.name = name
         pluginData.version = config.version
-        pluginData.config = config
+        pluginData.config = sanitizeForJson(config)
         table.insert(plugins, pluginData)
     end
     cadOutput.plugins = plugins
-    cadOutput.errors = getSupportErrorBuffer()
+    cadOutput.errors = sanitizeForJson(getSupportErrorBuffer())
     local encodedErrors = "[]"
     if cadOutput.errors ~= nil then
         local ok, serialized = pcall(json.encode, cadOutput.errors)
@@ -130,7 +162,7 @@ Structured Error Buffer
     if SetCadClientLogLevel ~= nil then
         SetCadClientLogLevel()
     end
-    local response = CadApiUploadSupportLogs(cadOutput)
+    local response = CadApiUploadSupportLogs(sanitizeForJson(cadOutput))
     if response.success and response.data == "LOGS UPDATED" then
         infoLog("Support logs have been successfully uploaded. Debug mode was disabled during the upload.")
         if requester > 0 then

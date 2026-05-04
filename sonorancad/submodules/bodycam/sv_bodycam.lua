@@ -67,7 +67,7 @@ CreateThread(function()
             end
 
             local function sendBodycamUploadConfig(target)
-                TriggerClientEvent('SonoranCAD::bodycam::UploadConfig', target, Config.proxyUrl, ensureUploadToken(target))
+                TriggerClientEvent('SonoranCAD::bodycam::UploadConfig', target, ensureUploadToken(target))
             end
 
             local function decodeUploadMetadata(rawMetadata)
@@ -498,11 +498,7 @@ CreateThread(function()
             end)
 
             CreateThread(function()
-                if not Config.proxyUrl or Config.proxyUrl == '' then
-                    logError('BODYCAM_BASEURL_MISSING')
-                end
-                debugLog(('Set proxyUrl to %s'):format(Config.proxyUrl))
-                TriggerClientEvent('SonoranCAD::bodycam::Init', -1, 1, Config.apiVersion, Config.proxyUrl, nil)
+                TriggerClientEvent('SonoranCAD::bodycam::Init', -1, 1, Config.apiVersion, nil)
                 for _, playerId in ipairs(GetPlayers()) do
                     sendBodycamUploadConfig(tonumber(playerId))
                 end
@@ -539,20 +535,16 @@ CreateThread(function()
                     while Config.apiVersion == -1 do Wait(1000) end
                 end
                 local uploadToken = ensureUploadToken(source)
-                TriggerClientEvent('SonoranCAD::bodycam::Init', source, 1, Config.apiVersion, Config.proxyUrl, uploadToken)
+                TriggerClientEvent('SonoranCAD::bodycam::Init', source, 1, Config.apiVersion, uploadToken)
                 sendBodycamUploadConfig(source)
             end)
 
             RegisterNetEvent('SonoranCAD::core::PlayerReady', function()
-                if not Config.proxyUrl or Config.proxyUrl == '' then
-                    TriggerClientEvent('SonoranCAD::bodycam:Init', source, 0, Config.apiVersion)
-                else
-                    if Config.apiVersion == -1 then
-                        debugLog('API Version not set, waiting for it to be set...')
-                        while Config.apiVersion == -1 do Wait(1000) end
-                    end
-                    TriggerClientEvent('SonoranCAD::bodycam:Init', source, 0, Config.apiVersion)
+                if Config.apiVersion == -1 then
+                    debugLog('API Version not set, waiting for it to be set...')
+                    while Config.apiVersion == -1 do Wait(1000) end
                 end
+                    TriggerClientEvent('SonoranCAD::bodycam:Init', source, 0, Config.apiVersion)
             end)
 
             RegisterNetEvent('SonoranCAD::bodycam::RequestSound', function()

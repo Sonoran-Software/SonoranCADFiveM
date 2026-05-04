@@ -108,7 +108,6 @@ local ErrorCodes = {
     ['BODYCAM_UPLOAD_CHUNK_FAILED'] = { code = "ERR-BC-108", message = "A bodycam upload chunk could not be written." },
     ['BODYCAM_UPLOAD_INCOMPLETE'] = { code = "ERR-BC-109", message = "The bodycam upload did not receive all expected chunks." },
     ['BODYCAM_TURN_FAILED'] = { code = "ERR-BC-110", message = "TURN credentials for bodycam streaming could not be retrieved." },
-    ['BODYCAM_BASEURL_MISSING'] = { code = "ERR-BC-111", message = "The bodycam proxy/base URL is missing, so bodycam services are unavailable. Use exec sonorancad.cfg and make sure the required web/proxy configuration is present before starting sonorancad." },
     ['BODYCAM_RECORDING_ACTIVE'] = { code = "ERR-BC-112", message = "A bodycam recording is already active." },
     ['BODYCAM_RECORDING_BLOCKED'] = { code = "ERR-BC-113", message = "Bodycam recording is blocked by the current state or privacy override." },
     ['BODYCAM_RECORDING_INACTIVE'] = { code = "ERR-BC-114", message = "No bodycam recording is currently active." },
