@@ -106,9 +106,7 @@
                     end
                 else
                     -- Throwing an error message due to no call description stated
-                    TriggerClientEvent("chat:addMessage", source, {
-                        args = {"^0[ ^1Error ^0] ", "You need to specify a call description."}
-                    })
+                    sendClientError(source, "CALL_MISSING_DETAILS")
                 end
             end
 
@@ -180,8 +178,9 @@
             end)
 
             AddEventHandler("SonoranCAD::callcommands:SendPanic", function(playerId)
-                local communityUserId = GetPlayerCommunityUserId(playerId)
-                if communityUserId then
+                local playerCadStatus = getPlayerCadStatus(playerId, "Panic", { link = true, unit = true })
+                if playerCadStatus.success then
+                    local communityUserId = playerCadStatus.link
                     local response = CadApiSetUnitPanic({
                         ['isPanic'] = true,
                         ['communityUserId'] = communityUserId
@@ -256,7 +255,8 @@
                         debugLog("sending call!")
                         local response = CadApiCreateEmergencyCall(data)
                         if not response.success then
-                            errorLog("Emergency call creation failed: " .. CadApiReasonText(response.reason))
+                            CadApiLogFailure("NEW_911", response, data)
+                            sendClientError(source, "CALL_SEND_FAILED")
                             return
                         end
                         if response.callId ~= nil then

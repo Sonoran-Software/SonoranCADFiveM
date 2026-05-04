@@ -19,8 +19,7 @@ Config = {
     enableCanary = false,
     latestVersion = '',
     apiVersion = -1,
-    plugins = {},
-    proxyUrl = ''
+    plugins = {}
 }
 
 updaterIgnore = {}
@@ -130,10 +129,19 @@ Config.GetPluginConfig = function(pluginName)
                 disableReason = 'Missing configuration file'
             }
         else
-            local configChunk = correctConfig:match("local config = {.-\n}") .. "\nreturn config"
-            if not configChunk then
+            local matchedConfig = correctConfig:match("local config = {.-\n}")
+            if not matchedConfig then
                 errorLog("No config table found in the string.")
+                Config.plugins[pluginName] = {
+                    enabled = false,
+                    disableReason = 'Invalid config format'
+                }
+                return {
+                    enabled = false,
+                    disableReason = 'Invalid config format'
+                }
             end
+            local configChunk = matchedConfig .. "\nreturn config"
             local tempEnv = {}
             setmetatable(tempEnv, { __index = _G })  -- Allow access to global functions if needed
             local loadedPlugin, pluginError = load(configChunk, 'config', 't', tempEnv)
@@ -247,10 +255,19 @@ Config.LoadPlugin = function(pluginName, cb)
                 disableReason = 'Missing configuration file'
             })
         else
-            local configChunk = correctConfig:match("local config = {.-\n}") .. "\nreturn config"
-            if not configChunk then
+            local matchedConfig = correctConfig:match("local config = {.-\n}")
+            if not matchedConfig then
                 errorLog("No config table found in the string.")
+                Config.plugins[pluginName] = {
+                    enabled = false,
+                    disableReason = 'Invalid config format'
+                }
+                return cb({
+                    enabled = false,
+                    disableReason = 'Invalid config format'
+                })
             end
+            local configChunk = matchedConfig .. "\nreturn config"
             local tempEnv = {}
             setmetatable(tempEnv, { __index = _G })  -- Allow access to global functions if needed
             local loadedPlugin, pluginError = load(configChunk, 'config', 't', tempEnv)
@@ -263,7 +280,7 @@ Config.LoadPlugin = function(pluginName, cb)
                         enabled = false,
                         disableReason = 'Failed to load'
                     }
-                    return {enabled = false, disableReason = 'Failed to load'}
+                    return cb({enabled = false, disableReason = 'Failed to load'})
                 end
                 if res and type(res) == "table" then
                     -- Assign the extracted config to Config.plugins[pluginName]
@@ -277,10 +294,10 @@ Config.LoadPlugin = function(pluginName, cb)
                         enabled = false,
                         disableReason = 'Invalid or missing config'
                     }
-                    return {
+                    return cb({
                         enabled = false,
                         disableReason = 'Invalid or missing config'
-                    }
+                    })
                 end
                 if Config.critError then
                     Config.plugins[pluginName].enabled = false
@@ -326,7 +343,7 @@ if not updateIgnoreContent then
     end
 end
 if updateIgnoreContent then
-    local parsed = json.decode(updateIgnoreContent)
+    local parsed = SafeJsonDecode(updateIgnoreContent, "updateIgnore", nil)
     if parsed and type(parsed) == "table" then
         updaterIgnore = parsed
     else
@@ -340,27 +357,30 @@ end
 local conf = LoadResourceFile(GetCurrentResourceName(),
                               '/configuration/config.json')
 if conf == nil then
-    errorLog(
-        'CONFIG_ERROR: Unable to load configuration file. Ensure the file is named correctly (config.json). Check for extra extensions (like config.json.json).')
+    logError('CONFIG_ERROR',
+        'Unable to load configuration file. Ensure the file is named correctly (config.json). Check for extra extensions (like config.json.json).')
     Config.critError = true
     Config.apiSendEnabled = false
     return
 end
-local parsedConfig = json.decode(conf)
+local parsedConfigOk, parsedConfig = pcall(json.decode, conf)
+if not parsedConfigOk then
+    parsedConfig = nil
+end
 if parsedConfig == nil then
-    errorLog(
-        'CONFIG_ERROR: Unable to parse configuration file. Ensure it is valid JSON.')
+    logError('CONFIG_ERROR',
+        'Unable to parse configuration file. Ensure it is valid JSON.')
     Config.critError = true
     Config.apiSendEnabled = false
     return
 end
-for k, v in pairs(json.decode(conf)) do
+for k, v in pairs(parsedConfig) do
     local cvar = GetConvar('sonoran_' .. k, 'NONE')
     local cvar_setter = GetConvar('sonoran_' .. k .. '_setter', 'NONE')
     local val = nil
     if k == 'apiKey' then
         if cvar == 'NONE' then
-            warnLog(('Configuration: apiKey convar value NOT initialized - has sonorancad.cfg been executed?'))
+            warnLog('APIKEY_CONVAR_UNINITIALIZED', 'Configuration: apiKey convar value NOT initialized - has sonorancad.cfg been executed?')
         elseif cvar == 'protection_initialized' then
             SetConvar('sonoran_' .. k, tostring(v))
         end
@@ -589,7 +609,7 @@ CreateThread(function()
     end
     PerformHttpRequest('https://api.ipify.org?format=json',
                        function(errorCode, resultData, resultHeaders)
-        local r = json.decode(resultData)
+        local r = SafeJsonDecode(resultData, "ipify lookup", nil)
         if r ~= nil and r.ip ~= nil then
             debugLog(
                 ('IP DETECT - IP: %s - Detected: %s - Outbound set: %s - Outbound IP: %s'):format(

@@ -67,7 +67,7 @@ CreateThread(function()
             end
 
             local function sendBodycamUploadConfig(target)
-                TriggerClientEvent('SonoranCAD::bodycam::UploadConfig', target, Config.proxyUrl, ensureUploadToken(target))
+                TriggerClientEvent('SonoranCAD::bodycam::UploadConfig', target, ensureUploadToken(target))
             end
 
             local function decodeUploadMetadata(rawMetadata)
@@ -240,8 +240,23 @@ CreateThread(function()
                     })
                     return
                 end
-                fileHandle:write(body)
-                fileHandle:close()
+                local writeOk, writeErr = pcall(function()
+                    fileHandle:write(body)
+                    fileHandle:close()
+                end)
+                if not writeOk then
+                    cleanupHttpUploadSession(uploadId)
+                    errorLog(('Bodycam upload temp file write failed: uploadId=%s filePath=%s err=%s'):format(
+                        tostring(uploadId),
+                        tostring(session.filePath),
+                        tostring(writeErr)
+                    ))
+                    sendBodycamHttpResponse(res, 500, {
+                        ok = false,
+                        reason = 'temp_file_write_failed'
+                    })
+                    return
+                end
 
                 session.receivedChunks = session.receivedChunks + 1
                 sendBodycamHttpResponse(res, 202, {
@@ -437,7 +452,7 @@ CreateThread(function()
                 PerformHttpRequest(url, function(statusCode, res, headers)
                     local ok = false
                     if statusCode == 200 and res and res ~= "" then
-                        local parsed = json.decode(res)
+                        local parsed = SafeJsonDecode(res, "bodycam TURN credentials", nil)
                         if type(parsed) == "table" and type(parsed.iceServers) == "table" then
                             local ttl = tonumber(parsed.ttl) or TURN_REFRESH_SECONDS
                             if ttl < TURN_MIN_REFRESH_SECONDS then
@@ -447,7 +462,11 @@ CreateThread(function()
                             turnCache.ttl = ttl
                             turnCache.expiresAt = os.time() + ttl
                             ok = true
+                        else
+                            warnLog(("Bodycam TURN request returned invalid payload. status=%s"):format(tostring(statusCode)))
                         end
+                    elseif statusCode ~= 200 then
+                        warnLog(("Bodycam TURN request failed with HTTP %s"):format(tostring(statusCode)))
                     end
                     turnCache.fetching = false
                     scheduleTurnRefresh()
@@ -479,22 +498,7 @@ CreateThread(function()
             end)
 
             CreateThread(function()
-                -- attempt to fetch web_baseUrl
-                local baseUrl = ''
-                local counter = 0
-                while baseUrl == '' do
-                    Wait(1000)
-                    baseUrl = GetConvar('web_baseUrl', '')
-
-                    -- Every 60 seconds, log a warning
-                    counter = counter + 1
-                    if counter % 60 == 0 then
-                        warnLog('Still waiting for web_baseUrl convar to be set...bodycam will not work until this is set.')
-                    end
-                end
-                Config.proxyUrl = ('https://%s/sonorancad/'):format(GetConvar('web_baseUrl',''))
-                debugLog(('Set proxyUrl to %s'):format(Config.proxyUrl))
-                TriggerClientEvent('SonoranCAD::bodycam::Init', -1, 1, Config.apiVersion, Config.proxyUrl, nil)
+                TriggerClientEvent('SonoranCAD::bodycam::Init', -1, 1, Config.apiVersion, nil)
                 for _, playerId in ipairs(GetPlayers()) do
                     sendBodycamUploadConfig(tonumber(playerId))
                 end
@@ -517,12 +521,7 @@ CreateThread(function()
                 elseif args[1] == 'forceoff' then
                     if source ~= 0 and pluginConfig.forceOffAce ~= "" then
                         if not IsPlayerAceAllowed(source, pluginConfig.forceOffAce) then
-                            TriggerClientEvent('chat:addMessage', source, {
-                                args = {
-                                    'Sonoran Bodycam',
-                                    'You do not have permission to use forceoff.'
-                                }
-                            })
+                            sendClientError(source, "BODYCAM_FORCEOFF_PERMISSION")
                             return
                         end
                     end
@@ -531,31 +530,21 @@ CreateThread(function()
             end, false)
 
             RegisterNetEvent('SonoranCAD::bodycam::Request', function()
-                if not Config.proxyUrl or Config.proxyUrl == '' then
-                    -- tell client we're not ready
-                    TriggerClientEvent('SonoranCAD::bodycam::Init', source, 0, Config.apiVersion)
-                else
-                    -- tell client we're ready
-                    if Config.apiVersion == -1 then
-                        debugLog('API version not set, waiting for it to be set...')
-                        while Config.apiVersion == -1 do Wait(1000) end
-                    end
-                    local uploadToken = ensureUploadToken(source)
-                    TriggerClientEvent('SonoranCAD::bodycam::Init', source, 1, Config.apiVersion, Config.proxyUrl, uploadToken)
-                    sendBodycamUploadConfig(source)
+                if Config.apiVersion == -1 then
+                    debugLog('API version not set, waiting for it to be set...')
+                    while Config.apiVersion == -1 do Wait(1000) end
                 end
+                local uploadToken = ensureUploadToken(source)
+                TriggerClientEvent('SonoranCAD::bodycam::Init', source, 1, Config.apiVersion, uploadToken)
+                sendBodycamUploadConfig(source)
             end)
 
             RegisterNetEvent('SonoranCAD::core::PlayerReady', function()
-                if not Config.proxyUrl or Config.proxyUrl == '' then
-                    TriggerClientEvent('SonoranCAD::bodycam:Init', source, 0, Config.apiVersion)
-                else
-                    if Config.apiVersion == -1 then
-                        debugLog('API Version not set, waiting for it to be set...')
-                        while Config.apiVersion == -1 do Wait(1000) end
-                    end
-                    TriggerClientEvent('SonoranCAD::bodycam:Init', source, 0, Config.apiVersion)
+                if Config.apiVersion == -1 then
+                    debugLog('API Version not set, waiting for it to be set...')
+                    while Config.apiVersion == -1 do Wait(1000) end
                 end
+                    TriggerClientEvent('SonoranCAD::bodycam:Init', source, 0, Config.apiVersion)
             end)
 
             RegisterNetEvent('SonoranCAD::bodycam::RequestSound', function()
@@ -583,7 +572,12 @@ CreateThread(function()
 
                 if pluginConfig.requireUnitDuty and unit == nil then
                     if manualActivation then
-                        getPlayerCadStatus(source, "Bodycam", { unit = true })
+                        local cadState = isPlayerInCAD(source)
+                        if cadState.linked then
+                            sendClientError(source, "BODYCAM_NOT_ON_DUTY")
+                        else
+                            sendClientError(source, "PLAYER_NOT_IN_CAD")
+                        end
                     end
                     return
                 end

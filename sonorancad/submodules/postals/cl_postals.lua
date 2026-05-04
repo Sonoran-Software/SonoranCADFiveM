@@ -34,14 +34,16 @@ CreateThread(function()
                         local _code = postalData[_nearestIndex].code
 						return _code
 					else
-						assert(false, 'Custom postal file not found. Cannot use postals plugin.')
+						showClientError('POSTALS_FILE_INVALID', 'Custom postal file not found.')
+						return nil
 					end
 				else
 					if exports[pluginConfig.nearestPostalResourceName] ~= nil then
 						local p = exports[pluginConfig.nearestPostalResourceName]:getPostal()
 						return p
 					else
-						assert(false, 'Required postal resource is not loaded. Cannot use postals plugin.')
+						showClientError('POSTALS_RESOURCE_UNAVAILABLE', 'Required postal resource is not loaded.')
+						return nil
 					end
 				end
 			end

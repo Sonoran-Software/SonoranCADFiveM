@@ -5,23 +5,23 @@
 	function createGameRenderer() {
 		const THREE = window.THREE;
 		if (!THREE) {
-			console.error("Bodycam renderer: THREE not available. Load @citizenfx/three first.");
+			console.warn("Bodycam renderer: ERR-CORE-906 THREE not available. More: https://sonorancad.com/error/ERR-CORE-906");
 			return null;
 		}
 		if (typeof THREE.CfxTexture !== "function") {
-			console.error("Bodycam renderer: CfxTexture not available on THREE.");
+			console.warn("Bodycam renderer: ERR-CORE-906 CfxTexture not available on THREE. More: https://sonorancad.com/error/ERR-CORE-906");
 			return null;
 		}
 
 		const app = document.getElementById("app");
 		const captureCanvas = document.getElementById("bodycamStreamCanvas");
 		if (!captureCanvas) {
-			console.error("Bodycam renderer: #bodycamStreamCanvas not found.");
+			console.warn("Bodycam renderer: ERR-CORE-906 #bodycamStreamCanvas not found. More: https://sonorancad.com/error/ERR-CORE-906");
 			return null;
 		}
 		const ctx = captureCanvas.getContext("2d", { alpha: false });
 		if (!ctx) {
-			console.error("Bodycam renderer: 2D context unavailable.");
+			console.warn("Bodycam renderer: ERR-CORE-906 2D context unavailable. More: https://sonorancad.com/error/ERR-CORE-906");
 			return null;
 		}
 
@@ -141,7 +141,7 @@
 					}
 				}
 				if (!loggedNonZero) {
-					console.warn("Bodycam renderer: frame buffer still empty.");
+					console.warn("Bodycam renderer: WRN-CORE-900 frame buffer still empty. More: https://sonorancad.com/error/WRN-CORE-900");
 				}
 			}
 		}
@@ -163,7 +163,7 @@
 			} catch (err) {
 				if (!renderErrorLogged) {
 					renderErrorLogged = true;
-					console.error("Bodycam renderer: render loop error.", err);
+					console.warn("Bodycam renderer: ERR-CORE-906 render loop error. More: https://sonorancad.com/error/ERR-CORE-906");
 				}
 				stop();
 				return;

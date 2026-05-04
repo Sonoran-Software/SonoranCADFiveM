@@ -22,10 +22,10 @@ if pluginConfig.enabled then
                 if pluginConfig.statusCodes[string.upper(args[1])] ~= nil or statuses[tonumber(args[1])] ~= nil then
                     TriggerServerEvent("SonoranCAD::unitstatus:UpdateStatus", args[1])
                 else
-                    TriggerEvent("chat:addMessage", {args = {"^0^5^*[SonoranCAD]^r ", "^7Status changed failed: unknown status."}})
+                    showClientError("UNITSTATUS_INVALID_STATUS")
                 end
             else
-                TriggerEvent("chat:addMessage", {args = {"^0^5^*[SonoranCAD]^r ", "^7Missing argument."}})
+                showClientError("INVALID_COMMAND_ARGUMENT", "Missing argument.")
             end
         end)
         TriggerEvent('chat:addSuggestion', '/' .. pluginConfig.setStatusCommand, 'Sets your status in the CAD', {
@@ -39,7 +39,7 @@ if pluginConfig.enabled then
         if success then
             TriggerEvent("chat:addMessage", {args = {"^0^5^*[SonoranCAD]^r ", ("^7Status successfully changed to ^5%s^7."):format(statuses[status])}})
         else
-            TriggerEvent("chat:addMessage", {args = {"^0^5^*[SonoranCAD]^r ", "^7Status changed failed."}})
+            showClientError("CAD_API_REQUEST_FAILED", "Status change failed.")
         end
     end)
 

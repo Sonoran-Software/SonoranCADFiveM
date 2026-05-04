@@ -20,8 +20,21 @@ if pluginConfig.enabled then
         else
             statusNumber = tonumber(pluginConfig.statusCodes[string.upper(status)])
         end
-        assert(statusNumber ~= nil, ("Status %s was not found in config"):format(status))
+        if statusNumber == nil then
+            if player ~= nil then
+                sendClientError(player, "UNITSTATUS_INVALID_STATUS", nil)
+            end
+            errorLog("UNITSTATUS_INVALID_STATUS", ("Status %s was not found in config"):format(tostring(status)))
+            return
+        end
         local communityUserId = player ~= nil and GetPlayerCommunityUserId(player) or unitIdentity
+        if player ~= nil then
+            local playerCadStatus = getPlayerCadStatus(player, "Unit Status", { link = true, unit = true })
+            if not playerCadStatus.success then
+                return
+            end
+            communityUserId = playerCadStatus.link
+        end
         local payload = {
             ["communityUserId"] = communityUserId,
             ["status"] = statusNumber,
@@ -43,7 +56,7 @@ if pluginConfig.enabled then
     AddEventHandler("SonoranCAD::unitstatus:UpdateStatus", function(status)
         local source = source
         if not IsPlayerAceAllowed(source, "command.setstatus") and pluginConfig.enableAceCheck then
-            TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^1Error ^0] ", "Access denied."}})
+            sendClientError(source, "PERMISSION_DENIED", "Access denied.")
             return
         end
         local ids = GetIdentifiers(source)

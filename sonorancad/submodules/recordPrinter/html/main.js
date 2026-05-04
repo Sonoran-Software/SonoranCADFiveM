@@ -18,7 +18,7 @@ $(function () {
 		try {
 			$.post("https://sonorancad/RecordPrinter:MinimizeChanged", JSON.stringify({ minimized: isMinimized }));
 		} catch (err) {
-			console.warn("recordPrinter: failed to notify minimize state", err);
+			console.warn("recordPrinter: WRN-CORE-900 failed to notify minimize state. More: https://sonorancad.com/error/WRN-CORE-900", err);
 		}
 	}
 
@@ -35,7 +35,7 @@ $(function () {
 			try {
 				pdfLoadingTask.destroy();
 			} catch (err) {
-				console.warn("recordPrinter: failed to cancel existing PDF task:", err);
+				console.warn("recordPrinter: WRN-CORE-900 failed to cancel existing PDF task. More: https://sonorancad.com/error/WRN-CORE-900", err);
 			}
 		}
 		pdfLoadingTask = null;
@@ -71,7 +71,7 @@ $(function () {
 				return page
 					.render({ canvasContext: context, viewport: viewport })
 					.promise.catch(function (err) {
-						console.error("recordPrinter: failed to render page", pageNumber, err);
+						console.warn("recordPrinter: ERR-CORE-906 failed to render page. More: https://sonorancad.com/error/ERR-CORE-906");
 						if (token === pdfRenderToken) {
 							$pageWrapper.empty().append(
 								$("<div>")
@@ -101,7 +101,7 @@ $(function () {
 				try {
 					pdf.cleanup();
 				} catch (cleanupErr) {
-					console.warn("recordPrinter: cleanup warning", cleanupErr);
+					console.warn("recordPrinter: WRN-CORE-900 cleanup warning. More: https://sonorancad.com/error/WRN-CORE-900", cleanupErr);
 				}
 				return pdf.destroy();
 			});
@@ -174,7 +174,7 @@ $(function () {
 		}
 
 		if (!window.pdfjsLib || typeof pdfjsLib.getDocument !== "function") {
-			console.warn("recordPrinter: pdf.js is not available; cannot render document.");
+			console.warn("recordPrinter: WRN-CORE-900 pdf.js is not available; cannot render document. More: https://sonorancad.com/error/WRN-CORE-900");
 			clearPdfViewer("PDF viewer not available.", true);
 			return;
 		}
@@ -203,7 +203,7 @@ $(function () {
 				if (currentToken !== pdfRenderToken) {
 					return;
 				}
-				console.error("recordPrinter: failed to load pdf:", err);
+				console.warn("recordPrinter: ERR-CORE-906 failed to load pdf. More: https://sonorancad.com/error/ERR-CORE-906");
 				clearPdfViewer("Unable to load document.", true);
 			})
 			.finally(function () {
@@ -266,7 +266,7 @@ $(function () {
 			try {
 				$.post("https://sonorancad/RecordPrinter:ForceReleaseFocus", JSON.stringify({}));
 			} catch (err) {
-				console.warn("recordPrinter: failed to request focus release", err);
+				console.warn("recordPrinter: WRN-CORE-900 failed to request focus release. More: https://sonorancad.com/error/WRN-CORE-900", err);
 			}
 		}
 	}

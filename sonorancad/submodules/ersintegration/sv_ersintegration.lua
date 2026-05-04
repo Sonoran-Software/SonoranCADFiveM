@@ -189,7 +189,8 @@ if pluginConfig.enabled then
                 elseif type(source) == "string" then
                     replaceValues[cadKey] = data[source] or ""
                 else
-                    error("Invalid mapping configuration for key: " .. tostring(cadKey))
+                    errorLog("ERS_MAPPING_FAILED", "Invalid ERS mapping configuration for key: " .. tostring(cadKey))
+                    replaceValues[cadKey] = ""
                 end
             end
             return replaceValues

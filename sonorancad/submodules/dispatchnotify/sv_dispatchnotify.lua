@@ -125,7 +125,10 @@ if pluginConfig.enabled then
         elseif pluginConfig.unitDutyMethod == "permissions" then
             return IsPlayerAceAllowed(player, "sonorancad.dispatchnotify")
         elseif pluginConfig.unitDutyMethod == "esxjob" then
-            assert(isPluginLoaded("esxsupport") or isPluginLoaded("frameworksupport"), "frameworksupport plugin is required to use the esx/qb-core on duty method.")
+            if not (isPluginLoaded("esxsupport") or isPluginLoaded("frameworksupport")) then
+                warnLog("dispatchnotify requires frameworksupport or esxsupport when unitDutyMethod is esxjob. Treating player as off duty.")
+                return false
+            end
             local job = GetCurrentJob(player)
             debugLog(("Player %s has job %s, return %s"):format(player, job, pluginConfig.esxJobsAllowed[GetCurrentJob(player)] ))
             if pluginConfig.esxJobsAllowed[GetCurrentJob(player)] then
@@ -696,8 +699,15 @@ if pluginConfig.enabled then
 
     AddEventHandler("SonoranCAD::dispatchnotify:CallEdit:Tracking", function(callId, tracking, primary)
         local call = GetCallCache()[callId]
-        assert(call ~= nil, "Call not found, failed to process.")
+        if call == nil then
+            debugLog(("dispatchnotify tracking update ignored; call %s not found"):format(tostring(callId)))
+            return
+        end
         local unit = GetUnitCache()[GetUnitById(primary)]
+        if unit == nil then
+            debugLog(("dispatchnotify tracking update ignored; primary unit %s not found"):format(tostring(primary)))
+            return
+        end
         local officerId = GetSourceByCadIdentity(GetUnitIdentityValues(unit))
         if tracking then
             TriggerClientEvent("SonoranCAD::dispatchnotify:BeginTracking", officerId, callId)
@@ -766,7 +776,10 @@ if pluginConfig.enabled then
 
     AddEventHandler("SonoranCAD::dispatchnotify:CallEdit:Postal", function(callId, postal)
         local call = GetCallCache()[callId]
-        assert(call ~= nil, "Call not found, failed to process.")
+        if call == nil then
+            debugLog(("dispatchnotify postal update ignored; call %s not found"):format(tostring(callId)))
+            return
+        end
         if call.dispatch.idents == nil then
             debugLog("no units attached "..json.encode(call))
             return
@@ -865,7 +878,7 @@ if pluginConfig.enabled then
         debugLog(("Got note add request from %s, call id %s: %s"):format(source, callId, note))
         local call = GetCallCache()[callId]
         if call == nil then
-            TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^2Dispatch ^0] ", "Unable to find call."}})
+            sendClientError(source, "FEATURE_UNAVAILABLE", "Unable to find call.")
         else
             local payload = { serverId = tonumber(Config.serverId), note = note, callId = callId }
             local response = CadApiAddDispatchNote(payload)

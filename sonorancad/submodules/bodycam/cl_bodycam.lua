@@ -41,6 +41,12 @@ local BODYCAM_UPLOAD_CHUNK_SIZE = 240000
 -- Use FiveM's default latent-event throttle for large client->server bodycam uploads.
 local BODYCAM_UPLOAD_LATENT_BPS = 0
 
+local function sendBodycamInfo(message)
+    TriggerEvent('chat:addMessage', {
+        args = { 'Sonoran Bodycam', tostring(message) }
+    })
+end
+
 local function nowMs()
     return GetGameTimer()
 end
@@ -305,18 +311,14 @@ CreateThread(function()
                 if action == 'start' then
                     if recordingActive then
                         if sourceType == 'manual' then
-                            TriggerEvent('chat:addMessage', {
-                                args = { 'Sonoran Bodycam', 'Recording is already active.' }
-                            })
+                            showClientError('BODYCAM_RECORDING_ACTIVE')
                         end
                         return
                     end
                     if not canExternalRecordingControl(sourceType) then
                         logRecordingEvent('warn', 'recording_blocked', sourceType, normalizedTrigger, 'privacy_override')
                         if sourceType == 'manual' then
-                            TriggerEvent('chat:addMessage', {
-                                args = { 'Sonoran Bodycam', 'Recording blocked by privacy override.' }
-                            })
+                            showClientError('BODYCAM_RECORDING_BLOCKED', 'Recording blocked by privacy override.')
                         end
                         return
                     end
@@ -349,13 +351,9 @@ CreateThread(function()
                     if not recordingActive then
                         if sourceType == 'manual' then
                             if cancelledPendingStart then
-                                TriggerEvent('chat:addMessage', {
-                                    args = { 'Sonoran Bodycam', 'Pending recording cancelled.' }
-                                })
+                                showClientError('BODYCAM_RECORDING_INACTIVE', 'Pending recording cancelled.')
                             else
-                                TriggerEvent('chat:addMessage', {
-                                    args = { 'Sonoran Bodycam', 'No recording is currently active.' }
-                                })
+                                showClientError('BODYCAM_RECORDING_INACTIVE')
                             end
                         end
                         return
@@ -576,9 +574,7 @@ CreateThread(function()
                             transactionVolume = soundLevel
                         })
                     end
-                    TriggerEvent('chat:addMessage', {
-                        args = { 'Sonoran Bodycam', 'Recording started.' }
-                    })
+                    sendBodycamInfo('Recording started.')
                 elseif state == 'stopped' then
                     recordingActive = false
                     local durationMs = tonumber(data.durationMs) or 0
@@ -605,9 +601,7 @@ CreateThread(function()
                             transactionVolume = soundLevel
                         })
                     end
-                    TriggerEvent('chat:addMessage', {
-                        args = { 'Sonoran Bodycam', 'Recording stopped. Uploading clip...' }
-                    })
+                    sendBodycamInfo('Recording stopped. Uploading clip...')
                 elseif state == 'uploading' then
                     logRecordingEvent('debug', 'recording_uploading_ui', data.sourceType, data.trigger,
                         ('reason=%s durationMs=%s size=%s'):format(
@@ -626,9 +620,7 @@ CreateThread(function()
                         tostring(data.uploadStatus or 'nil'),
                         tostring(data.uploadResponse or '')
                     ))
-                    TriggerEvent('chat:addMessage', {
-                        args = { 'Sonoran Bodycam', ('Recording failed: %s'):format(tostring(data.reason or 'unknown')) }
-                    })
+                    showClientError('BODYCAM_RECORDING_FAILED', 'Recording failed.')
                     logRecordingEvent('warn', 'recording_failed', data.sourceType, data.trigger,
                         ('reason=%s uploadStatus=%s uploadResponse=%s'):format(
                             tostring(data.reason or 'unknown'),
@@ -831,9 +823,7 @@ CreateThread(function()
                             tostring(result and result.statusText or ''),
                             tostring(result and result.apiResponse or '')
                         ))
-                    TriggerEvent('chat:addMessage', {
-                        args = { 'Sonoran Bodycam', 'Recording uploaded to CAD.' }
-                    })
+                    sendBodycamInfo('Recording uploaded to CAD.')
                 else
                     debugLog(('Bodycam recording upload failed: reason=%s status=%s statusText=%s response=%s'):format(
                         tostring(result and result.reason or 'unknown'),
@@ -848,21 +838,18 @@ CreateThread(function()
                             tostring(result and result.statusText or ''),
                             tostring(result and result.apiResponse or '')
                         ))
-                    TriggerEvent('chat:addMessage', {
-                        args = { 'Sonoran Bodycam', ('Recording upload failed: %s'):format(tostring(result and result.statusText or 'unknown')) }
-                    })
+                    showClientError(result and result.errorCode or 'BODYCAM_UPLOAD_FAILED', 'Recording upload failed.')
                 end
             end)
 
-            RegisterNetEvent('SonoranCAD::bodycam::UploadConfig', function(proxyUrl, uploadToken)
+            RegisterNetEvent('SonoranCAD::bodycam::UploadConfig', function(uploadToken)
                 SendNUIMessage({
                     type = 'bodycamUploadConfig',
-                    proxyUrl = proxyUrl,
                     uploadToken = uploadToken
                 })
             end)
 
-            RegisterNetEvent('SonoranCAD::bodycam::Init', function(isReady, apiVersion, proxyUrl, uploadToken)
+            RegisterNetEvent('SonoranCAD::bodycam::Init', function(isReady, apiVersion, uploadToken)
                 if isReady == 0 then
                     CreateThread(function()
                         debugLog('Bodycam not ready, retrying in 10s')
@@ -876,7 +863,6 @@ CreateThread(function()
                 end
                 SendNUIMessage({
                     type = 'bodycamUploadConfig',
-                    proxyUrl = proxyUrl,
                     uploadToken = uploadToken
                 })
 
@@ -889,15 +875,13 @@ CreateThread(function()
                     end
                     if not IsWearingBodycam() then
                         if manualActivation then
-                            TriggerEvent('chat:addMessage',
-                                { args = { 'Sonoran Bodycam', 'You must be wearing a bodycam to activate it.' } })
+                            showClientError('BODYCAM_NOT_WORN')
                             return
                         end
                     end
 
                     if manualActivation and not toggle and watchingDisplayOn and not forceOff then
-                        TriggerEvent('chat:addMessage',
-                            { args = { 'Sonoran Bodycam', 'Bodycam is being watched and cannot be turned off.' } })
+                        showClientError('BODYCAM_WATCH_ACTIVE')
                         return
                     end
 
@@ -943,13 +927,11 @@ CreateThread(function()
 
                     if wasDisplayOn ~= bodyCamDisplayOn then
                         if bodyCamDisplayOn then
-                            TriggerEvent('chat:addMessage',
-                                { args = { 'Sonoran Bodycam', 'Bodycam enabled' } })
+                            sendBodycamInfo('Bodycam enabled')
                             PlayBeepSound()
                             FlushPendingRecordingStart('toggle_enabled')
                         else
-                            TriggerEvent('chat:addMessage',
-                                { args = { 'Sonoran Bodycam', 'Bodycam disabled' } })
+                            sendBodycamInfo('Bodycam disabled')
                             PlayOffBeep()
                             if pluginConfig.enablePadShake then
                                 SetPadShake(0, 2000, 200)
@@ -964,19 +946,14 @@ CreateThread(function()
                     if level then
                         level = tonumber(level)
                         if not level or level <= 0 or level > 1 then
-                            errorLog('Sound level must be a number greater than 0 and less then 1.0 percent.')
-                            TriggerEvent('chat:addMessage', {
-                                args = { 'Sonoran Bodycam', 'Sound level must be a number greater than 0 and less then 1.0 percent.' }
-                            })
+                            errorLog('BODYCAM_SOUND_LEVEL_INVALID', 'Sound level must be a number greater than 0 and less than or equal to 1.')
+                            showClientError('BODYCAM_SOUND_LEVEL_INVALID')
                             return
                         end
                         soundLevel = tonumber(level)
-                        TriggerEvent('chat:addMessage',
-                            { args = { 'Sonoran Bodycam', ('Sound level set to %s'):format(soundLevel) } })
+                        sendBodycamInfo(('Sound level set to %s'):format(soundLevel))
                     else
-                        TriggerEvent('chat:addMessage', {
-                            args = { 'Sonoran Bodycam', ('Current sound level is %s'):format((soundLevel)) }
-                        })
+                        sendBodycamInfo(('Current sound level is %s'):format((soundLevel)))
                     end
                 end)
                 RegisterNetEvent('SonoranCAD::bodycam::ToggleAnimation', function()
@@ -985,8 +962,7 @@ CreateThread(function()
                     else
                         doAnimation = true
                     end
-                    TriggerEvent('chat:addMessage',
-                        { args = { 'Sonoran Bodycam', ('Animations set to %s'):format(doAnimation) } })
+                    sendBodycamInfo(('Animations set to %s'):format(doAnimation))
                 end)
                 RegisterNetEvent('SonoranCAD::bodycam::ToggleOverlay', function()
                     if showOverlay then
@@ -1001,8 +977,7 @@ CreateThread(function()
                             location = pluginConfig.overlayLocation
                         })
                     end
-                    TriggerEvent('chat:addMessage',
-                        { args = { 'Sonoran Bodycam', ('Overlay set to %s'):format(showOverlay) } })
+                    sendBodycamInfo(('Overlay set to %s'):format(showOverlay))
                 end)
             end)
         end

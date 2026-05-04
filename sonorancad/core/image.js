@@ -74,7 +74,7 @@
 			}
 			return `${nextFileNumber}.jpg`;
 		} catch (e) {
-			console.error(e);
+			emit("SonoranCAD::core:writeLog", "error", "[image] ERR-CORE-906 Failed to create screenshot filename. More: https://sonorancad.com/error/ERR-CORE-906");
 		}
 	});
 

@@ -1,9 +1,16 @@
 local cadV2Client = nil
-local sonoranModule = nil
+sonoranModule = nil
 local communityLinkCheckCache = {}
 local COMMUNITY_LINK_CHECK_CACHE_TTL_MS = 10 * 60 * 1000
 
-local function load_sonoran_module()
+function get_sonoran_log_level(sonoran)
+    if Config ~= nil and Config.debugMode == true then
+        return sonoran.logLevels.DEBUG
+    end
+    return sonoran.logLevels.ERROR
+end
+
+function load_sonoran_module()
     if sonoranModule ~= nil then
         return sonoranModule
     end
@@ -56,7 +63,7 @@ local function get_cad_client()
         communityId = Config.communityID,
         apiUrl = resolve_api_url(),
         defaultServerId = tonumber(tonumber(Config.serverId)) or 1,
-        setLogLevel = Config.debug and sonoran.logLevels.DEBUG or sonoran.logLevels.OFF
+        setLogLevel = get_sonoran_log_level(sonoran)
     })
 
     return cadV2Client
@@ -66,6 +73,14 @@ function GetCadClient()
     return get_cad_client()
 end
 exports("getCadClient", GetCadClient)
+
+function SetCadClientLogLevel()
+    if cadV2Client == nil then
+        return
+    end
+    local sonoran = sonoranModule or load_sonoran_module()
+    cadV2Client:setLogLevel(get_sonoran_log_level(sonoran))
+end
 
 function registerApiType(_, endpoint)
     return endpoint
@@ -139,6 +154,13 @@ local function get_cache_time_ms()
     return math.floor(os.time() * 1000)
 end
 
+local function get_request_time_ms()
+    if type(GetGameTimer) == "function" then
+        return GetGameTimer()
+    end
+    return math.floor(os.clock() * 1000)
+end
+
 local function get_community_link_cache_key(payload)
     if type(payload) ~= "table" then
         return tostring(payload)
@@ -204,8 +226,17 @@ function CadApiReasonText(value)
     return tostring(value)
 end
 
+function CadApiSupportErrorText(request_name, response)
+    local baseMessage = "A CAD request failed. Please give this error to support."
+    if request_name ~= nil then
+        baseMessage = ("A CAD request failed during %s. Please give this error to support."):format(tostring(request_name))
+    end
+    local message = BuildSupportErrorMessage("CAD_API_REQUEST_FAILED", baseMessage)
+    return message
+end
+
 function CadApiLogFailure(request_name, response, payload)
-    errorLog(("CAD API ERROR (%s): %s payload=%s"):format(
+    logError("CAD_API_REQUEST_FAILED", ("CAD API ERROR (%s): %s payload=%s"):format(
         tostring(request_name),
         CadApiReasonText(response and response.reason),
         payload_preview(payload)
@@ -298,7 +329,7 @@ function performApiRequest(data, request_type, callback)
         if response and response.success then
             callback(format_legacy_success(response), true, response)
         else
-            callback(CadApiReasonText(response and response.reason), false, response)
+            callback(CadApiSupportErrorText(request_type, response), false, response)
         end
     end
 
@@ -835,28 +866,61 @@ function CadApiBanUser(payload)
 end
 
 function CadApiUploadSupportLogs(payload)
-    local request_payload = {
-        id = Config.communityID,
-        key = Config.apiKey,
-        data = {payload},
-        type = "UPLOAD_LOGS"
-    }
-    local url = "https://api.sonoransoftware.com/support/"
+    local ticket_id = nil
+    local request_body = nil
+    if type(payload) == "table" then
+        ticket_id = tonumber(payload.key or payload.ticketId or payload.id)
+        request_body = payload.logs
+    else
+        request_body = payload
+    end
+    if ticket_id == nil then
+        return {
+            success = false,
+            reason = "Missing or invalid support ticket ID."
+        }
+    end
+    if type(request_body) ~= "string" or request_body == "" then
+        return {
+            success = false,
+            reason = "Support upload body was empty."
+        }
+    end
+
+    local url = ("https://api.sonoransoftware.com/v2/upload/debug/%s"):format(tostring(ticket_id))
     local response_body = nil
     local response_status = nil
+    local request_complete = false
 
     PerformHttpRequestS(url, function(status_code, res)
         response_status = status_code
         response_body = res
-    end, "POST", json.encode(request_payload), {["Content-Type"] = "application/json"})
+        request_complete = true
+    end, "POST", request_body, {["Content-Type"] = "text/plain"})
 
-    if tonumber(response_status) == 200 and response_body ~= nil then
-        return {success = true, data = response_body}
+    local timeout_ms = 30000
+    local started_at = get_request_time_ms()
+    while not request_complete do
+        Wait(50)
+        local now = get_request_time_ms()
+        if (now - started_at) >= timeout_ms then
+            return {
+                success = false,
+                reason = "Support upload request timed out."
+            }
+        end
+    end
+
+    if tonumber(response_status) == 200 then
+        return {
+            success = true,
+            data = response_body
+        }
     end
 
     return {
         success = false,
-        reason = reason_from_http(response_status, response_body, "application/json")
+        reason = reason_from_http(response_status, response_body, "text/plain")
     }
 end
 

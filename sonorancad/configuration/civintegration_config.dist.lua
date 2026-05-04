@@ -29,7 +29,7 @@ local config = {
     -- how far away players can be to see /id show
     ,showNearbyDistance = 5.0
 
-    -- if true, you must have the sonoran_idcard resource started in your server in order for it to work
+    -- if true, use exec sonorancad.cfg and make sure sonorancad.cfg contains ensure sonoran_idcard before ensure sonorancad
     ,enableIDCardUI = true
 }
 

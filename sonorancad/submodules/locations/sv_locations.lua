@@ -189,9 +189,10 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
         RegisterServerEvent('SonoranCAD::locations:SendLocation')
         AddEventHandler('SonoranCAD::locations:SendLocation', function(currentLocation, position, vehicleType, lightsOn, bodycamPeerId)
             local source = source
-            local communityUserId = GetPlayerCommunityUserId(source)
-            if communityUserId == nil then
-                debugLog(("user %s has no linked CAD account, skipped location update."):format(source))
+            local cadState = isPlayerInCAD(source)
+            local communityUserId = cadState.communityUserId
+            if not cadState.success then
+                debugLog(("user %s is not fully in CAD, skipped location update. linked=%s online=%s"):format(source, tostring(cadState.linked), tostring(cadState.online)))
                 return
             end
             local normalizedPosition = normalizeCoords(position)
@@ -225,7 +226,6 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
                 ['vehicle'] = vehiclePayload
             }
             if bodycamPeerId then
-                payload['proxyUrl'] = Config.proxyUrl
                 payload['peerId'] = bodycamPeerId
             end
             LocationCache[source] = payload

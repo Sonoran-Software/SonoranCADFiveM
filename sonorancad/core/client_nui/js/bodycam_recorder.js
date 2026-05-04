@@ -67,11 +67,11 @@
 	function logRecorder(level, message, details) {
 		const payload = details && typeof details === "object" ? details : undefined;
 		if (level === "error") {
-			console.error("[bodycam-recorder] " + message, payload || "");
+			console.warn("[bodycam-recorder] ERR-CORE-906 " + message + " More: https://sonorancad.com/error/ERR-CORE-906");
 			return;
 		}
 		if (level === "warn") {
-			console.warn("[bodycam-recorder] " + message, payload || "");
+			console.warn("[bodycam-recorder] WRN-CORE-900 " + message + " More: https://sonorancad.com/error/WRN-CORE-900", payload || "");
 			return;
 		}
 		console.info("[bodycam-recorder] " + message, payload || "");
@@ -152,7 +152,6 @@
 			recordingSession: null,
 			pipelineReady: false,
 			uploadConfig: {
-				proxyUrl: null,
 				uploadToken: null,
 			},
 		};
@@ -730,18 +729,13 @@
 		}
 
 		function setUploadConfig(message) {
-			const nextProxyUrl = message && Object.prototype.hasOwnProperty.call(message, "proxyUrl")
-				? (message.proxyUrl || null)
-				: state.uploadConfig.proxyUrl;
 			const nextUploadToken = message && Object.prototype.hasOwnProperty.call(message, "uploadToken")
 				? (message.uploadToken || null)
 				: state.uploadConfig.uploadToken;
 			state.uploadConfig = {
-				proxyUrl: nextProxyUrl,
 				uploadToken: nextUploadToken,
 			};
 			logRecorder("info", "Recorder upload config updated.", {
-				hasProxyUrl: !!state.uploadConfig.proxyUrl,
 				hasUploadToken: !!state.uploadConfig.uploadToken,
 			});
 		}

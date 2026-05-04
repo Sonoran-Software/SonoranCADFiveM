@@ -81,7 +81,7 @@ if pluginConfig.enabled then
 
         if data.first == "" and data.last == "" and data.mi == "" and data.plate == "" then
             --not a valid request, just return a blank lookup
-            debugLog("Invalid lookup, all blanks? Trace: "..debug.traceback())
+            warnLog("INVALID_COMMAND_ARGUMENT", "Invalid lookup request rejected because all search fields were blank.")
             callback({})
             return
         end

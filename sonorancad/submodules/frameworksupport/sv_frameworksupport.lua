@@ -43,13 +43,19 @@
 			end)
 
 			-- Legacy ESX helper functions to get Character Info using MySQL-Async
-			local function safeParameters(params)
+				local function safeParameters(params)
 				if nil == params then
 					return {[''] = ''}
 				end
 
-				assert(type(params) == 'table', 'A table is expected')
-				assert(params[1] == nil, 'Parameters should not be an array, but a map (key / value pair) instead')
+				if type(params) ~= 'table' then
+					errorLog('FRAMEWORK_QUERY_INVALID', 'Framework query parameters must be a key/value table.')
+					return {[''] = ''}
+				end
+				if params[1] ~= nil then
+					errorLog('FRAMEWORK_QUERY_INVALID', 'Framework query parameters cannot be passed as an array.')
+					return {[''] = ''}
+				end
 
 				if next(params) == nil then
 					return {[''] = ''}
@@ -59,13 +65,22 @@
 			end
 
 			function MysqlAsyncFetchAll(query, params, func)
-				assert(type(query) == 'string', 'The SQL Query must be a string')
+				if type(query) ~= 'string' or query == '' then
+					errorLog('FRAMEWORK_QUERY_INVALID', 'Framework SQL query must be a non-empty string.')
+					if type(func) == 'function' then
+						func({})
+					end
+					return
+				end
 
 				exports['mysql-async']:mysql_fetch_all(query, safeParameters(params), func)
 			end
 
 			function MysqlSyncFetchAll(query, params)
-				assert(type(query) == 'string', 'The SQL Query must be a string')
+				if type(query) ~= 'string' or query == '' then
+					errorLog('FRAMEWORK_QUERY_INVALID', 'Framework SQL query must be a non-empty string.')
+					return {}
+				end
 
 				local res = {}
 				local finishedQuery = false

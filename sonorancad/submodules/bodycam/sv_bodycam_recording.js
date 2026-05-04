@@ -11,6 +11,10 @@ function log(level, message) {
 	emit("SonoranCAD::core:writeLog", level, `[bodycam-recording] ${message}`);
 }
 
+function supportHint(code) {
+	return `${code} More: https://sonorancad.com/error/${code}`;
+}
+
 function ensureRecordingsDirectory() {
 	if (!fs.existsSync(RECORDINGS_DIR)) {
 		fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
@@ -24,7 +28,7 @@ function readConfigFile() {
 			return JSON.parse(raw);
 		}
 	} catch (err) {
-		log("warn", `Failed to parse configuration/config.json: ${err && err.message ? err.message : err}`);
+		log("warn", supportHint("WRN-CORE-900"));
 	}
 	return {};
 }
@@ -153,16 +157,20 @@ async function uploadSavedBodycamClip(src, session) {
 	log("debug", `Upload prerequisites for ${src}: apiKey=${!!apiKey} communityUserId=${!!communityUserId} unit=${!!unit} uploadId=${session.uploadId}`);
 
 	if (!apiKey) {
+		log("warn", supportHint("ERR-BC-107"));
 		emitNet("SonoranCAD::bodycam::UploadResult", src, {
 			ok: false,
+			errorCode: "ERR-BC-107",
 			reason: "missing_api_key",
 		});
 		return;
 	}
 
 	if (!communityUserId) {
+		log("warn", supportHint("ERR-BC-107"));
 		emitNet("SonoranCAD::bodycam::UploadResult", src, {
 			ok: false,
+			errorCode: "ERR-BC-107",
 			reason: "missing_community_user_id",
 		});
 		return;
@@ -171,6 +179,7 @@ async function uploadSavedBodycamClip(src, session) {
 	if (durationMs < 1 || durationMs > MAX_DURATION_MS) {
 		emitNet("SonoranCAD::bodycam::UploadResult", src, {
 			ok: false,
+			errorCode: "ERR-BC-107",
 			reason: "invalid_duration",
 		});
 		return;
@@ -179,6 +188,7 @@ async function uploadSavedBodycamClip(src, session) {
 	if (!fs.existsSync(session.filePath)) {
 		emitNet("SonoranCAD::bodycam::UploadResult", src, {
 			ok: false,
+			errorCode: "ERR-BC-109",
 			reason: "missing_temp_file",
 		});
 		return;
@@ -188,6 +198,7 @@ async function uploadSavedBodycamClip(src, session) {
 	if (!fileBuffer || fileBuffer.byteLength < 1) {
 		emitNet("SonoranCAD::bodycam::UploadResult", src, {
 			ok: false,
+			errorCode: "ERR-BC-109",
 			reason: "invalid_file",
 		});
 		return;
@@ -196,6 +207,7 @@ async function uploadSavedBodycamClip(src, session) {
 	if (fileBuffer.byteLength > MAX_FILE_SIZE_BYTES) {
 		emitNet("SonoranCAD::bodycam::UploadResult", src, {
 			ok: false,
+			errorCode: "ERR-BC-108",
 			reason: "clip_too_large",
 		});
 		return;
@@ -205,9 +217,10 @@ async function uploadSavedBodycamClip(src, session) {
 	const unitNumber = metadata.unitNumber || (unit && unit.data && unit.data.unitNum) || undefined;
 	const unitLocation = metadata.unitLocation || (unit && unit.location) || undefined;
 	if (!hasWebmEbmlHeader(fileBuffer)) {
-		log("error", `Upload rejected for ${src}: invalid WebM header uploadId=${session.uploadId} firstBytes=${fileBuffer.subarray(0, 16).toString("hex")}`);
+		log("error", `${supportHint("ERR-BC-108")} Upload rejected due to invalid WebM header. uploadId=${session.uploadId}`);
 		emitNet("SonoranCAD::bodycam::UploadResult", src, {
 			ok: false,
+			errorCode: "ERR-BC-108",
 			reason: "invalid_file_header",
 		});
 		return;
@@ -263,13 +276,13 @@ async function uploadSavedBodycamClip(src, session) {
 		}
 		const bodyText = await response.text();
 		if (!response.ok) {
-			log("error", `Upload failure src=${src} uploadId=${session.uploadId} status=${response.status} statusText=${response.statusText || ""} body=${String(bodyText)}`);
+			log("error", `${supportHint("ERR-BC-119")} Upload failure src=${src} uploadId=${session.uploadId} status=${response.status}`);
 			emitNet("SonoranCAD::bodycam::UploadResult", src, {
 				ok: false,
+				errorCode: response.status === 401 || response.status === 403 ? "ERR-BC-106" : "ERR-BC-119",
 				reason: "upload_failed",
 				status: response.status,
-				statusText: JSON.parse(bodyText).detail || "",
-				apiResponse: String(bodyText),
+				statusText: response.statusText || "",
 			});
 			return;
 		}
@@ -281,11 +294,11 @@ async function uploadSavedBodycamClip(src, session) {
 			apiResponse: String(bodyText),
 		});
 	} catch (err) {
-		log("error", `Upload exception src=${src} uploadId=${session.uploadId}: ${err && err.stack ? err.stack : err}`);
+		log("error", `${supportHint("ERR-BC-119")} Upload exception src=${src} uploadId=${session.uploadId}: ${err && err.message ? err.message : String(err)}`);
 		emitNet("SonoranCAD::bodycam::UploadResult", src, {
 			ok: false,
+			errorCode: "ERR-BC-119",
 			reason: "upload_exception",
-			apiResponse: err && err.stack ? String(err.stack) : String(err),
 		});
 	}
 }
