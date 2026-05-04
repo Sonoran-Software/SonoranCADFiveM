@@ -11,22 +11,11 @@ CreateThread(function()
 			end
 			RegisterNetEvent(GetCurrentResourceName() .. '::registerVeh', function(primary, plate, class, realName)
 				local source = source
-				local communityUserId = GetPlayerCommunityUserId(source)
-				if not communityUserId then
-					TriggerClientEvent('chat:addMessage', source, {
-						color = {
-							255,
-							0,
-							0
-						},
-						multiline = true,
-						args = {
-							'[CAD - ERROR] ',
-							pluginConfig.language.noCadLink or pluginConfig.language.noApiId or "Your CAD account is not linked."
-						}
-					})
+				local playerCadStatus = getPlayerCadStatus(source, "Vehicle Registration", { link = true })
+				if not playerCadStatus.success then
 					return
 				end
+				local communityUserId = playerCadStatus.link
 				local characterResponse = CadApiGetCharacters({
 					communityUserId = communityUserId
 				})

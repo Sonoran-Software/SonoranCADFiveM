@@ -103,11 +103,11 @@ CreateThread(function()
                 return
             end
 
-            local communityUserId = GetPlayerCommunityUserId(source)
-            if communityUserId == nil then
-                TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^1Error ^0] ", "You must link your CAD account before sending this dispatch."}})
+            local playerCadStatus = getPlayerCadStatus(source, "Call Templates", { link = true })
+            if not playerCadStatus.success then
                 return
             end
+            local communityUserId = playerCadStatus.link
 
             local address = LocationCache[source] ~= nil and LocationCache[source].location or "Unknown"
             address = address:gsub('%b[]', '')

@@ -504,17 +504,8 @@ CreateThread(function()
                     pluginConfig.forceOffAce = "sonorancad.bodycam.forceoff"
                 end
                 if #args == 0 then
-                    if pluginConfig.requireUnitDuty then
-                        local unit = GetUnitByPlayerId(source)
-                        if unit == nil then
-                            TriggerClientEvent('chat:addMessage', source, {
-                                args = {
-                                    'Sonoran Bodycam',
-                                    'You must be onduty in CAD to use this command.'
-                                }
-                            })
-                            return
-                        end
+                    if pluginConfig.requireUnitDuty and not getPlayerCadStatus(source, "Bodycam", { unit = true }).success then
+                        return
                     end
                     TriggerClientEvent('SonoranCAD::bodycam::CommandToggle', source)
                 elseif args[1] == 'sound' then
@@ -592,12 +583,7 @@ CreateThread(function()
 
                 if pluginConfig.requireUnitDuty and unit == nil then
                     if manualActivation then
-                        TriggerClientEvent('chat:addMessage', source, {
-                            args = {
-                                'Sonoran Bodycam',
-                                'You must be onduty in CAD to use this command.'
-                            }
-                        })
+                        getPlayerCadStatus(source, "Bodycam", { unit = true })
                     end
                     return
                 end

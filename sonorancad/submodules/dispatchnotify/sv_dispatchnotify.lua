@@ -377,8 +377,8 @@ if pluginConfig.enabled then
             SendMessage("error", source, "You must be on duty to use this command.")
             return
         end
-        if not GetUnitByPlayerId(source) then
-            SendMessage("error", source, "Due to system limitations, you must be logged into the CAD to self attach.")
+        local playerCadStatus = getPlayerCadStatus(source, "Dispatch Notify", { unit = true, link = true })
+        if not playerCadStatus.success then
             return
         end
 
@@ -407,11 +407,7 @@ if pluginConfig.enabled then
         if call.metaData ~= nil and callerPlayerId == nil then
             debugLog("failed to find caller info")
         end
-        local communityUserId = GetPlayerCommunityUserId(source)
-        if communityUserId == nil then
-            SendMessage("error", source, "You must link your CAD account before self attaching.")
-            return
-        end
+        local communityUserId = playerCadStatus.link
         if originCall == nil then
             -- no mapped call, create a new one
             debugLog(("Creating new call request...(no mapped call for %s)"):format(callId))

@@ -607,3 +607,55 @@ exports('checkCADSubscriptionType', checkCADSubscriptionType)
 exports('getDispatchStatus', getDispatchStatus)
 exports('createDispatchCall', createDispatchCall)
 -- Jordan - CAD Utils
+
+-- Addition Server Functions --
+-- Gets a player's CAD status for a given submodule, checking for link and/or unit as specified in the checks parameter. Returns an object with hasLink, hasUnit and messages array.
+-- @param source - the player's server ID
+-- @param submodule - the submodule name to include in messages
+-- @param checks - an object specifying which checks to perform: { link = true/false, unit = true/false }
+-- @returns response - an object containing hasLink (boolean), hasUnit (boolean), and messages (array of strings)
+function getPlayerCadStatus(source, submodule, checks)
+    local checkForLink = checks and checks.link or false
+    local checkForUnit = checks and checks.unit or false
+    local response = {
+        hasLink = false,
+        hasUnit = false,
+        success = true,
+        messages = {
+            playerLink = "^1[SonoranCAD] - " .. submodule .. ": ^7You are not linked with SonoranCAD. Please link your account using /" .. Config.linkCommand .. " for integrations to work properly.",
+            playerUnit = "^1[SonoranCAD] - " .. submodule .. ": ^7You do not have a unit in SonoranCAD. Please log in to the Police, Fire or EMS page on SonoranCAD for integrations to work properly.",
+            debugLink = "^1[SonoranCAD] - " .. submodule .. ": ^7Debug: Link check is enabled. Player " .. source .. " has " .. (GetPlayerCommunityUserId(source) and "a" or "no") .. " community ID.",
+            debugUnit = "^1[SonoranCAD] - " .. submodule .. ": ^7Debug: Unit check is enabled. Player " .. source .. " has " .. (GetUnitByPlayerId(source) and "a" or "no") .. " unit in the cache."
+        }
+    }
+    if checkForLink then
+        if GetPlayerCommunityUserId(source) then
+            response.hasLink = true
+            response.link = GetPlayerCommunityUserId(source)
+        else
+            debugLog(response.messages.debugLink)
+            TriggerClientEvent('chat:addMessage', source, {
+                args = {response.messages.playerLink}
+            })
+        end
+    end
+    if checkForUnit then
+        local unit = GetUnitByPlayerId(source)
+        if unit then
+            response.hasUnit = true
+            response.unit = unit
+        else
+            debugLog(response.messages.debugUnit)
+            TriggerClientEvent('chat:addMessage', source, {
+                args = {response.messages.playerUnit}
+            })
+        end
+    end
+    if not response.hasLink and checkForLink then
+        response.success = false
+    end
+    if not response.hasUnit and checkForUnit then
+        response.success = false
+    end
+    return response
+end
