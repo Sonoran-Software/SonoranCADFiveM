@@ -163,7 +163,11 @@ Structured Error Buffer
         SetCadClientLogLevel()
     end
     local response = CadApiUploadSupportLogs(sanitizeForJson(cadOutput))
-    if response.success and response.data == "LOGS UPDATED" then
+    local uploadSucceeded = response.success == true and (
+        response.data == "LOGS UPDATED" or
+        (type(response.data) == "table" and response.data.success == true)
+    )
+    if uploadSucceeded then
         infoLog("Support logs have been successfully uploaded. Debug mode was disabled during the upload.")
         if requester > 0 then
             TriggerClientEvent("chat:addMessage", requester, {
@@ -172,7 +176,7 @@ Structured Error Buffer
         end
         return true
     elseif response.success then
-        local message = ("%s Response: %s"):format(getErrorText("SUPPORT_UPLOAD_FAILED"), tostring(response.data))
+        local message = ("%s Response: %s"):format(getErrorText("SUPPORT_UPLOAD_FAILED"), tostring(type(response.data) == "table" and (response.data.error or SafeJsonEncode(response.data, "support upload partial success", "{}")) or response.data))
         if requester > 0 then
             sendClientError(requester, "SUPPORT_UPLOAD_FAILED")
         else
