@@ -5,7 +5,7 @@
         signalR = require("@microsoft/signalr");
     } catch (err) {
         emit("SonoranCAD::core:writeLog", "error",
-            "[apiws] Missing dependency @microsoft/signalr. Run `npm i @microsoft/signalr` in the sonorancad resource.");
+            "[apiws] ERR-WS-101 Missing dependency @microsoft/signalr. Run `npm i @microsoft/signalr` in the sonorancad resource. More: https://sonorancad.com/error/ERR-WS-101");
     }
 
     const DEFAULT_HUBS = {
@@ -15,7 +15,7 @@
     const DEFAULT_RECONNECT_DELAYS_MS = [0, 2000, 10000, 30000];
     const BACKGROUND_ENSURE_INTERVAL_MS = 30000;
     const SEND_ERROR_LOG_INTERVAL_MS = 60 * 1000;
-    const MAX_SILENT_RECONNECT_FAILURES = 2;
+    const MAX_SILENT_RECONNECT_FAILURES = 5;
     const MANUAL_RETRY_DELAYS_MS = [2000, 5000, 10000, 30000];
     const SIGNALR_DEBUG_ONLY_PATTERNS = [
         "(WebSockets transport) There was an error with the transport.",
@@ -43,6 +43,14 @@
         emit("SonoranCAD::core:writeLog", level, "[apiws] " + message);
     }
 
+    function shouldExposeReconnectErrors() {
+        return reconnectEscalated || reconnectFailureCount >= MAX_SILENT_RECONNECT_FAILURES;
+    }
+
+    function logSuppressedReconnectError(message) {
+        apiWsLog("debug", "[signalr] " + message);
+    }
+
     function isSignalRDebugOnlyMessage(message) {
         if (!message || typeof message !== "string") {
             return false;
@@ -61,11 +69,19 @@
                     return;
                 }
                 if (level === signalR.LogLevel.Critical || level === signalR.LogLevel.Error) {
-                    apiWsLog("error", "[signalr] " + message);
+                    if (shouldExposeReconnectErrors()) {
+                        apiWsLog("error", "[signalr] " + message);
+                    } else {
+                        logSuppressedReconnectError(message);
+                    }
                     return;
                 }
                 if (level === signalR.LogLevel.Warning) {
-                    apiWsLog("warn", "[signalr] " + message);
+                    if (shouldExposeReconnectErrors()) {
+                        apiWsLog("warn", "[signalr] " + message);
+                    } else {
+                        logSuppressedReconnectError(message);
+                    }
                     return;
                 }
                 apiWsLog("debug", "[signalr] " + message);
@@ -101,7 +117,7 @@
             const suffix = state.suppressedCount > 0
                 ? " (" + state.suppressedCount + " similar events suppressed)"
                 : "";
-            console.error("[apiws] " + state.pendingMessage + suffix);
+            apiWsLog("error", state.pendingMessage + suffix);
             state.lastLoggedAt = now;
             state.suppressedCount = 0;
             return;
@@ -147,15 +163,16 @@
     }
 
     function reportReconnectFailure(failedAttempts, err) {
-        if (failedAttempts <= MAX_SILENT_RECONNECT_FAILURES || reconnectEscalated) {
+        reconnectFailureCount = Math.max(reconnectFailureCount, failedAttempts);
+        if (failedAttempts < MAX_SILENT_RECONNECT_FAILURES || reconnectEscalated) {
             return;
         }
 
         reconnectEscalated = true;
         apiWsLog(
-            "debug",
-            "API WS reconnect has failed " + failedAttempts
-            + " times. Latest error: " + getErrorMessage(err)
+            "error",
+            "ERR-WS-105 API WS has failed to reconnect after " + failedAttempts
+            + " consecutive attempts. More: https://sonorancad.com/error/ERR-WS-105"
         );
     }
 
@@ -220,7 +237,7 @@
             apiWsLog("debug", "Received pushEvent over WS: type=" + parsed.type + ", keys=" + Object.keys(parsed).join(","));
         } catch (err) {
             const errMsg = getErrorMessage(err);
-            apiWsLog("warn", "Failed to process pushEvent payload: " + errMsg);
+            apiWsLog("warn", "ERR-WS-106 Failed to process pushEvent payload. More: https://sonorancad.com/error/ERR-WS-106");
             reportServerIssue("ws-push", "pushEvent processing failed: " + errMsg, SEND_ERROR_LOG_INTERVAL_MS);
         }
     }
@@ -232,7 +249,7 @@
                 return JSON.parse(raw);
             }
         } catch (err) {
-            apiWsLog("warn", "Failed to parse configuration/config.json: " + (err.message || err));
+            apiWsLog("warn", "ERR-WS-103 Failed to parse API WS configuration. More: https://sonorancad.com/error/ERR-WS-103");
         }
         return {};
     }
@@ -294,14 +311,14 @@
                 }
                 authenticated = false;
                 const errMsg = auth && auth.error ? auth.error : "unknown error";
-                apiWsLog("error", "Authentication failed: " + errMsg);
+                apiWsLog("error", "ERR-WS-102 Authentication failed. More: https://sonorancad.com/error/ERR-WS-102");
                 apiWsLog("debug", "Authenticate: failed response: " + JSON.stringify(auth));
                 scheduleManualRetry("authentication_failed");
                 return false;
             })
             .catch((err) => {
                 authenticated = false;
-                apiWsLog("error", "Authentication error: " + (err && err.message ? err.message : err));
+                apiWsLog("error", "ERR-WS-102 Authentication error. More: https://sonorancad.com/error/ERR-WS-102");
                 apiWsLog("debug", "Authenticate: exception.");
                 scheduleManualRetry("authentication_exception");
                 return false;
@@ -320,7 +337,7 @@
         }
         if (!config.apiSendEnabled) {
             if (!warnedApiSendDisabled) {
-                apiWsLog("warn", "apiSendEnabled is false; skipping WS sends.");
+                apiWsLog("warn", "ERR-WS-103 API WS is disabled by configuration. More: https://sonorancad.com/error/ERR-WS-103");
                 warnedApiSendDisabled = true;
             }
             apiWsLog("debug", "ensureConnection: apiSendEnabled false.");
@@ -329,7 +346,7 @@
         warnedApiSendDisabled = false;
         if (!config.communityID || !config.apiKey || config.serverId === null) {
             if (!warnedMissingConfig) {
-                apiWsLog("error", "Missing communityID, apiKey, or serverId for WS authentication. Check config.json or convars.");
+                apiWsLog("error", "ERR-WS-103 Missing API WS configuration values. More: https://sonorancad.com/error/ERR-WS-103");
                 warnedMissingConfig = true;
             }
             apiWsLog("debug", "ensureConnection: missing communityID/apiKey/serverId.");
@@ -357,6 +374,8 @@
                 .withAutomaticReconnect({
                     nextRetryDelayInMilliseconds: (retryContext) => {
                         reconnectFailureCount = retryContext.previousRetryCount;
+                        const failedAttempts = retryContext.previousRetryCount + 1;
+                        reconnectFailureCount = failedAttempts;
                         if (retryContext.previousRetryCount > 0) {
                             apiWsLog(
                                 "debug",
@@ -364,7 +383,7 @@
                                 + " failed: " + getErrorMessage(retryContext.retryReason)
                             );
                         }
-                        reportReconnectFailure(retryContext.previousRetryCount, retryContext.retryReason);
+                        reportReconnectFailure(failedAttempts, retryContext.retryReason);
                         return typeof DEFAULT_RECONNECT_DELAYS_MS[retryContext.previousRetryCount] === "number"
                             ? DEFAULT_RECONNECT_DELAYS_MS[retryContext.previousRetryCount]
                             : null;
@@ -377,7 +396,6 @@
 
             connection.onreconnecting((err) => {
                 authenticated = false;
-                resetReconnectState();
                 const msg = err && err.message ? ": " + err.message : "";
                 apiWsLog("debug", "Reconnecting to API WS hub" + msg + ".");
             });
@@ -392,9 +410,8 @@
             connection.onclose((err) => {
                 authenticated = false;
                 const msg = err && err.message ? ": " + err.message : "";
-                reportReconnectFailure(reconnectFailureCount, err);
+                reportReconnectFailure(Math.max(reconnectFailureCount, manualRetryAttempt), err);
                 apiWsLog("debug", "Disconnected from API WS hub" + msg + ".");
-                resetReconnectState();
                 scheduleManualRetry("connection_closed");
             });
         }
@@ -413,7 +430,10 @@
                     .catch((err) => {
                         const errMsg = getErrorMessage(err);
                         apiWsLog("debug", "Failed to connect to API WS hub: " + errMsg);
-                        reportServerIssue("ws-send", "Unable to connect to API WS hub: " + errMsg, SEND_ERROR_LOG_INTERVAL_MS);
+                        reconnectFailureCount = Math.max(reconnectFailureCount, manualRetryAttempt + 1);
+                        if (shouldExposeReconnectErrors()) {
+                            reportServerIssue("ws-send", "ERR-WS-104 Unable to connect to API WS hub. More: https://sonorancad.com/error/ERR-WS-104", SEND_ERROR_LOG_INTERVAL_MS);
+                        }
                         apiWsLog("debug", "ensureConnection: connection start rejected.");
                         scheduleManualRetry("connection_start_failed");
                         throw err;
@@ -515,7 +535,9 @@
             const config = buildConfig();
             const ok = await ensureConnection(config);
             if (!ok) {
-                reportServerIssue("ws-send", "unitLocation skipped: connection not ready.", SEND_ERROR_LOG_INTERVAL_MS);
+                if (shouldExposeReconnectErrors()) {
+                    reportServerIssue("ws-send", "ERR-WS-107 unitLocation skipped because the connection is not ready. More: https://sonorancad.com/error/ERR-WS-107", SEND_ERROR_LOG_INTERVAL_MS);
+                }
                 return false;
             }
             apiWsLog("debug", "Sending location update with payload: " + JSON.stringify(payload));
@@ -524,14 +546,16 @@
             apiWsLog("debug", "unitLocation response: " + JSON.stringify(result));
             if (result && result.success === false) {
                 const errMsg = result.error || "unknown error";
-                apiWsLog("warn", "unitLocation rejected: " + errMsg);
+                apiWsLog("warn", "ERR-WS-107 unitLocation was rejected by the API WS hub. More: https://sonorancad.com/error/ERR-WS-107");
                 return false;
             }
             return true;
         } catch (err) {
             const errMsg = getErrorMessage(err);
             apiWsLog("debug", "unitLocation send failed: " + errMsg);
-            reportServerIssue("ws-send", "unitLocation send failed: " + errMsg, SEND_ERROR_LOG_INTERVAL_MS);
+            if (shouldExposeReconnectErrors()) {
+                reportServerIssue("ws-send", "ERR-WS-107 unitLocation send failed. More: https://sonorancad.com/error/ERR-WS-107", SEND_ERROR_LOG_INTERVAL_MS);
+            }
             return false;
         }
     });

@@ -132,7 +132,10 @@ CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfi
                     if isPluginLoaded("postals") and getNearestPostal() ~= nil then
                         postal = getNearestPostal()
                     else
-                        assert(false, "Required postal resource is not loaded. Cannot use postals plugin.")
+                        showClientError("POSTALS_RESOURCE_UNAVAILABLE", "Dispatch call tracking requires a working postal source.")
+                        trackingCall = false
+                        trackingID = nil
+                        return
                     end
                     if postal ~= nil and postal ~= lastpostal then
                         TriggerServerEvent("SonoranCAD::dispatchnotify:UpdateCallPostal", postal, trackingID)

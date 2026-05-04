@@ -39,6 +39,17 @@ local function parseQueryParams(path)
 	return params
 end
 
+local function decodeRequestJson(body, context)
+	local decoded, err = SafeJsonDecode(body, context, nil)
+	if type(decoded) ~= 'table' then
+		if err == nil then
+			warnLog("MALFORMED_PAYLOAD", ('%s JSON body was not an object.'):format(tostring(context or 'request')))
+		end
+		return nil
+	end
+	return decoded
+end
+
 local PushEventHandler = {
 	EVENT_UNIT_STATUS = function(body)
 		if (not body.data.identIds) then
@@ -143,6 +154,7 @@ local PushEventHandler = {
 	EVENT_DISPATCH_UNIT_ATTACH = function(body)
 		-- fetch the call and unit data
 		local call = GetCallCache()[body.data.callId]
+		local idents = {}
 		if body.data.idents ~= nil then
 			idents = body.data.idents
 		elseif body.data.ident ~= nil then
@@ -327,7 +339,7 @@ local function handlePushEventPayload(body, rawData, res, source)
 		return false, 'bad request'
 	end
 
-	if not body.key or type(body.key) ~= 'string' or body.key:upper() ~= Config.apiKey:upper() then
+	if not body.key or type(body.key) ~= 'string' or type(Config.apiKey) ~= 'string' or body.key:upper() ~= Config.apiKey:upper() then
 		if res then
 			res.send('error')
 		end
@@ -364,11 +376,17 @@ local function handlePushEventPayload(body, rawData, res, source)
 	local success = true
 	local result = 'ok'
 	if PushEventHandler[eventType] then
-		success, result = PushEventHandler[eventType](body)
-		if not success and not result then
-			result = 'error'
+		local handlerOk, handlerSuccess, handlerResult = pcall(PushEventHandler[eventType], body)
+		if not handlerOk then
+			success = false
+			result = 'handler exception'
+			errorLog(('Push event handler failed for %s over %s: %s'):format(eventType, tostring(source), tostring(handlerSuccess)))
+		else
+			success, result = handlerSuccess, handlerResult
+			if not success and not result then
+				result = 'error'
+			end
 		end
-		return
 	else
 		TriggerEvent('SonoranCAD::pushevents:OtherEvent', eventType, body.data)
 		result = 'ok - custom'
@@ -386,7 +404,6 @@ local function handlePushEventPayload(body, rawData, res, source)
 				debugLog(('Custom event handler %s (%s) failed with result: %s'):format(eventType, index, customResult))
 			end
 		end
-		return
 	else
 		debugLog('No custom push event handlers for push event: ' .. eventType)
 	end
@@ -446,7 +463,7 @@ SetHttpHandler(function(req, res)
 				}))
 				return
 			end
-			local data = json.decode(body)
+			local data = decodeRequestJson(body, '/info')
 			if not data then
 				res.send(json.encode({
 					['error'] = 'bad request'
@@ -455,7 +472,7 @@ SetHttpHandler(function(req, res)
 				res.send(json.encode({
 					['error'] = 'critical config error'
 				}))
-			elseif string.upper(data.password) ~= string.upper(Config.apiKey) then
+			elseif type(data.password) ~= 'string' or type(Config.apiKey) ~= 'string' or string.upper(data.password) ~= string.upper(Config.apiKey) then
 				res.send(json.encode({
 					['error'] = 'bad request'
 				}))
@@ -497,7 +514,7 @@ SetHttpHandler(function(req, res)
 				}))
 				return
 			end
-			local data = json.decode(body)
+			local data = decodeRequestJson(body, '/console')
 			if not data then
 				res.send(json.encode({
 					['error'] = 'bad request'
@@ -506,7 +523,7 @@ SetHttpHandler(function(req, res)
 				res.send(json.encode({
 					['error'] = 'critical config error'
 				}))
-			elseif string.upper(data.password) ~= string.upper(Config.apiKey) then
+			elseif type(data.password) ~= 'string' or type(Config.apiKey) ~= 'string' or string.upper(data.password) ~= string.upper(Config.apiKey) then
 				res.send(json.encode({
 					['error'] = 'bad request'
 				}))
@@ -533,7 +550,7 @@ SetHttpHandler(function(req, res)
 				}))
 				return
 			end
-			local body = json.decode(data)
+			local body = decodeRequestJson(data, '/event')
 			if not body then
 				res.send(json.encode({
 					['error'] = 'bad request'
@@ -542,7 +559,7 @@ SetHttpHandler(function(req, res)
 				return
 			end
 			if not warnedLegacyHttpPushEvent then
-				warnLog('Received legacy HTTP push event on /event. Websocket pushEvent delivery is preferred when API WS is connected.')
+				warnLog('LEGACY_HTTP_PUSH_EVENT')
 				warnedLegacyHttpPushEvent = true
 			end
 			CreateThread(function()
@@ -557,19 +574,24 @@ SetHttpHandler(function(req, res)
 				}))
 				return
 			end
-			local body = json.decode(data)
+			local body = decodeRequestJson(data, '/pluginevent')
 			if not body then
 				res.send(json.encode({
 					['error'] = 'bad request'
 				}))
 				return
 			end
-			if body.key and body.key:upper() == Config.apiKey:upper() then
+			if type(body.key) == 'string' and type(Config.apiKey) == 'string' and body.key:upper() == Config.apiKey:upper() then
 				if not body.type or not PluginHttpHandlers[body.type] then
 					return res.send('error')
 				end
-				local resp = PluginHttpHandlers[body.type](body)
-				return res.send(json.encode(resp))
+				local ok, resp = pcall(PluginHttpHandlers[body.type], body)
+				if not ok then
+					errorLog(('Plugin HTTP event failed for %s: %s'):format(tostring(body.type), tostring(resp)))
+					return res.send(json.encode({ error = 'plugin event failure' }))
+				end
+				local encoded = SafeJsonEncode(resp, ('plugin HTTP event %s response'):format(tostring(body.type)), '{}')
+				return res.send(encoded or '{}')
 			else
 				return res.send('error')
 			end
@@ -613,6 +635,7 @@ SetHttpHandler(function(req, res)
 				return
 			else
 				local content = imageFile:read('*all')
+				imageFile:close()
 				res.send(content)
 			end
 			-- Respond to the request with the bodycam image or relevant information
@@ -639,15 +662,28 @@ end
 
 function SaveFileInPluginPath(path, filename, filedata)
 	if PluginFilePaths[path] ~= nil then
-		local file = assert(io.open(('%s/filestore/%s/%s'):format(GetResourcePath(GetCurrentResourceName()), path, filename), 'wb+'))
-		file:write(filedata)
-		file:close()
-		debugLog('Saved file: ' .. ('%s/filestore/%s/%s'):format(GetResourcePath(GetCurrentResourceName()), path, filename))
+		local filePath = ('%s/filestore/%s/%s'):format(GetResourcePath(GetCurrentResourceName()), path, filename)
+		local file, openErr = io.open(filePath, 'wb+')
+		if not file then
+			logError("FILE_WRITE_FAILED", ("Failed to open plugin file path %s: %s"):format(filePath, tostring(openErr)))
+			return false
+		end
+		local ok, writeErr = pcall(function()
+			file:write(filedata)
+			file:close()
+		end)
+		if not ok then
+			logError("FILE_WRITE_FAILED", ("Failed to write plugin file path %s: %s"):format(filePath, tostring(writeErr)))
+			return false
+		end
+		debugLog('Saved file: ' .. filePath)
+		return true
 	end
+	return false
 end
 
 AddEventHandler('SonoranCAD::pushevents:shim', function(chunk)
-	local body = json.decode(chunk)
+	local body = decodeRequestJson(chunk, 'push event shim')
 	if not body then
 		debugLog('Invalid event: ' .. tostring(chunk))
 		return

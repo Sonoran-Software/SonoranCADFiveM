@@ -75,9 +75,7 @@ if pluginConfig.enabled then
 
         local queued, result = queueKickForPlayer(source, "Kick test command")
         if not queued then
-            TriggerClientEvent("chat:addMessage", source, {
-                args = {"SonoranCAD", ("Kick test failed: %s"):format(result)}
-            })
+            sendClientError(source, "FEATURE_UNAVAILABLE", ("Kick test failed: %s"):format(result))
             return
         end
 

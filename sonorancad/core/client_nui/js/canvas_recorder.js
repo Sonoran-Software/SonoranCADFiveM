@@ -73,7 +73,7 @@
 			};
 		});
 		if (list.length === 0) {
-			console.warn("CanvasDiscovery: no canvases found.");
+			console.warn("CanvasDiscovery: WRN-CORE-900 no canvases found. More: https://sonorancad.com/error/WRN-CORE-900");
 			return;
 		}
 		console.table(list);
@@ -83,7 +83,7 @@
 		const opts = options || {};
 		const list = listCanvases();
 		if (!list.length) {
-			console.error("CanvasDiscovery: no canvases found.");
+			console.warn("CanvasDiscovery: ERR-CORE-906 no canvases found. More: https://sonorancad.com/error/ERR-CORE-906");
 			return null;
 		}
 
@@ -92,7 +92,7 @@
 				return entry.id === opts.id;
 			});
 			if (!match) {
-				console.error("CanvasDiscovery: canvas id not found:", opts.id);
+				console.warn("CanvasDiscovery: ERR-CORE-906 canvas id not found. More: https://sonorancad.com/error/ERR-CORE-906");
 				logCanvases();
 				return null;
 			}
@@ -107,7 +107,7 @@
 			: list.slice();
 
 		if (!candidates.length) {
-			console.error("CanvasDiscovery: no WebGL canvases found.");
+			console.warn("CanvasDiscovery: ERR-CORE-906 no WebGL canvases found. More: https://sonorancad.com/error/ERR-CORE-906");
 			logCanvases();
 			return null;
 		}
@@ -172,7 +172,7 @@
 				try {
 					const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
 					if (!AudioContextCtor) {
-						console.warn("CanvasRecorder: AudioContext not available; recording video only.");
+						console.warn("CanvasRecorder: WRN-CORE-900 AudioContext not available; recording video only. More: https://sonorancad.com/error/WRN-CORE-900");
 					} else {
 						this.audioContext = new AudioContextCtor();
 						this.audioDestination = this.audioContext.createMediaStreamDestination();
@@ -182,7 +182,7 @@
 								const micSource = this.audioContext.createMediaStreamSource(this.micStream);
 								micSource.connect(this.audioDestination);
 							} catch (err) {
-								console.error("CanvasRecorder: microphone capture failed.", err);
+								console.warn("CanvasRecorder: ERR-CORE-906 microphone capture failed. More: https://sonorancad.com/error/ERR-CORE-906");
 							}
 						}
 						if (this.audioDestination.stream.getAudioTracks().length === 0) {
@@ -194,7 +194,7 @@
 						audioTrack = this.audioDestination.stream.getAudioTracks()[0] || null;
 					}
 				} catch (err) {
-					console.error("CanvasRecorder: audio setup failed.", err);
+					console.warn("CanvasRecorder: ERR-CORE-906 audio setup failed. More: https://sonorancad.com/error/ERR-CORE-906");
 				}
 			}
 

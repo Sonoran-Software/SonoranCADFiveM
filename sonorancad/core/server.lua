@@ -12,8 +12,39 @@ function getApiUrl()
         if ApiUrls[Config.mode] ~= nil then
             return ApiUrls[Config.mode]
         else
-            Config.critError = true
-            assert(false, "Invalid mode. Valid values are production, development")
+            warnLog("INVALID_API_MODE")
+            return ApiUrls.production
+        end
+    end
+end
+
+local function validateBundledCfgPermissions()
+    local raw = LoadResourceFile(GetCurrentResourceName(), "sonorancad.cfg")
+    if type(raw) ~= "string" or raw == "" then
+        return
+    end
+
+    local requiredLines = {
+        BODYCAM_F8_PERMISSION = {
+            "add_ace builtin%.everyone command%.SonoranCAD::bodycam::Keybind allow",
+            "add_ace builtin%.everyone command%.SonoranCAD::bodycam::RecordingKeybind allow"
+        },
+        CADDISPLAY_F8_PERMISSION = {
+            "add_ace builtin%.everyone command%.SonoranCAD::caddisplay::Interact allow",
+            "add_ace builtin%.everyone command%.SonoranCAD::caddisplay::AcceptRequest allow",
+            "add_ace builtin%.everyone command%.SonoranCAD::caddisplay::DenyRequest allow"
+        },
+        PANIC_F8_PERMISSION = {
+            "add_ace builtin%.everyone command%.panic allow"
+        }
+    }
+
+    for errorKey, patterns in pairs(requiredLines) do
+        for _, pattern in ipairs(patterns) do
+            if not raw:find(pattern) then
+                warnLog(errorKey)
+                break
+            end
         end
     end
 end
@@ -22,12 +53,13 @@ CreateThread(function()
     local ok, err = xpcall(function()
         infoLog("Starting SonoranCAD from "..GetResourcePath("sonorancad"))
         Config.apiUrl = getApiUrl()
+        validateBundledCfgPermissions()
 
         local clear_ok, clear_err = pcall(function()
             exports['sonorancad']:clearScreenshotsFolder()
         end)
         if not clear_ok then
-            warnLog(("Failed to clear screenshots folder on startup: %s"):format(tostring(clear_err)))
+            warnLog("UNHANDLED_WARNING", ("Failed to clear screenshots folder on startup: %s"):format(tostring(clear_err)))
         end
 
         local versionResponse = CadApiGetVersion()
@@ -54,7 +86,7 @@ CreateThread(function()
         local currentFxVersion = getServerVersion()
         if currentFxVersion ~= nil and fxversion ~= nil then
             if tonumber(currentFxVersion) < tonumber(fxversion) then
-                warnLog(("SonoranCAD has been tested with FXServer version %s, but you're running %s. Please update ASAP."):format(fxversion, currentFxVersion))
+                warnLog("OLD_FXSERVER_VERSION", ("SonoranCAD has been tested with FXServer version %s, but you're running %s. Please update ASAP."):format(fxversion, currentFxVersion))
             end
         end
 
@@ -63,11 +95,13 @@ CreateThread(function()
         end
 
         manuallySetUnitCache() -- set unit cache on startup
-    end, debug.traceback)
+    end, function(runtimeErr)
+        return SanitizeErrorDetail(runtimeErr)
+    end)
 
     if not ok then
         Config.critError = true
-        errorLog(("Startup initialization failed: %s"):format(tostring(err)))
+        errorLog("UNHANDLED_SERVER_ERROR", ("Startup initialization failed: %s"):format(SanitizeErrorDetail(err) or "unknown startup failure"))
     end
 end)
 
@@ -82,7 +116,7 @@ AddEventHandler("cadToggleApi", function()
     if Config.apiSendEnabled then
         infoLog("API sending has been enabled.")
     else
-        errorLog("API sending has been disabled via cadToggleApi... please contact support for more help")
+        errorLog("CAD_API_DISABLED", "API sending has been disabled via cadToggleApi.")
     end
 end)
 
@@ -126,7 +160,7 @@ RegisterNetEvent("SonoranCAD::core:PlayerReady")
 AddEventHandler("SonoranCAD::core:PlayerReady", function()
     local ids = GetIdentifiers(source)
     if ids[Config.primaryIdentifier] == nil then
-        warnLog(("Player %s connected, but did not have an %s ID."):format(source, Config.primaryIdentifier))
+        warnLog("PLAYER_IDENTIFIER_MISSING", ("Player %s connected, but did not have an %s ID."):format(source, Config.primaryIdentifier))
     end
 end)
 
@@ -168,7 +202,7 @@ function call911(caller, location, description, postal, plate, cb, silenceAlert,
     local response = CadApiCreateEmergencyCall(data)
     if cb ~= nil then
         local result = response.callId ~= nil and ("EMERGENCY CALL ADDED ID: %s"):format(response.callId)
-            or (response.success and json.encode(response.data or {}) or CadApiReasonText(response.reason))
+            or (response.success and json.encode(response.data or {}) or CadApiSupportErrorText("CALL_911", response))
         cb(result, response.success == true)
     elseif not response.success then
         CadApiLogFailure('CALL_911', response, data)
@@ -202,10 +236,10 @@ addBlip = function(coords, colorHex, subType, toolTip, icon, dataTable, cb)
             ['tooltip'] = toolTip,
             ['data'] = dataTable
 		}
-	}
+    }
     local response = CadApiCreateBlips(data)
     if cb ~= nil then
-        cb(response.success and json.encode(response.data or {}) or CadApiReasonText(response.reason))
+        cb(response.success and json.encode(response.data or {}) or CadApiSupportErrorText("ADD_BLIP", response))
     elseif not response.success then
         CadApiLogFailure('ADD_BLIP', response, data)
     end
@@ -213,7 +247,7 @@ end
 addBlips = function(blips, cb)
     local response = CadApiCreateBlips(blips)
     if cb ~= nil then
-        cb(response.success and json.encode(response.data or {}) or CadApiReasonText(response.reason))
+        cb(response.success and json.encode(response.data or {}) or CadApiSupportErrorText("ADD_BLIP", response))
     elseif not response.success then
         CadApiLogFailure('ADD_BLIP', response, blips)
     end
@@ -222,7 +256,7 @@ removeBlip = function(ids, cb)
     local payload = { ['ids'] = ids }
     local response = CadApiDeleteBlips(payload)
     if cb ~= nil then
-        cb(response.success and "OK" or CadApiReasonText(response.reason))
+        cb(response.success and "OK" or CadApiSupportErrorText("REMOVE_BLIP", response))
     elseif not response.success then
         CadApiLogFailure('REMOVE_BLIP', response, payload)
     end
@@ -242,14 +276,14 @@ getBlips = function(cb)
         ['serverId'] = GetConvar('sonoran_serverId', 1)
     })
     if cb ~= nil then
-        cb(response.success and json.encode(response.data or {}) or CadApiReasonText(response.reason))
+        cb(response.success and json.encode(response.data or {}) or CadApiSupportErrorText("GET_BLIPS", response))
     elseif not response.success then
         CadApiLogFailure('GET_BLIPS', response, { serverId = GetConvar('sonoran_serverId', 1) })
     end
 end
 removeWithSubtype = function(subType, cb)
 	getBlips(function(res)
-		local dres = json.decode(res)
+		local dres = SafeJsonDecode(res, "removeWithSubtype blip response", nil)
 		local ids = {}
 		if type(dres) == 'table' then
 			for _, v in ipairs(dres) do
@@ -261,7 +295,7 @@ removeWithSubtype = function(subType, cb)
 			    removeBlip(ids, cb)
             end
 		else
-			warnLog('No blips were returned.')
+			warnLog('FEATURE_UNAVAILABLE', 'No blips were returned.')
 		end
 	end)
 end
@@ -295,7 +329,7 @@ call911 = function(caller, location, description, postal, plate, cb, coords, cus
     local response = CadApiCreateEmergencyCall(payload)
     if cb ~= nil then
         local result = response.callId ~= nil and ("EMERGENCY CALL ADDED ID: %s"):format(response.callId)
-            or (response.success and json.encode(response.data or {}) or CadApiReasonText(response.reason))
+            or (response.success and json.encode(response.data or {}) or CadApiSupportErrorText("CALL_911", response))
         cb(result, response.success == true)
     elseif not response.success then
         CadApiLogFailure('CALL_911', response, payload)
@@ -323,7 +357,7 @@ createDispatchCall = function(origin, status, priority, block, address, postal, 
     local response = CadApiCreateDispatchCall(payload)
     if cb ~= nil then
         local result = response.callId ~= nil and ("NEW DISPATCH CREATED - ID: %s"):format(response.callId)
-            or (response.success and json.encode(response.data or {}) or CadApiReasonText(response.reason))
+            or (response.success and json.encode(response.data or {}) or CadApiSupportErrorText("NEW_DISPATCH", response))
         cb(result, response.success == true)
     elseif not response.success then
         CadApiLogFailure("NEW_DISPATCH", response, payload)
@@ -434,7 +468,7 @@ performLookup = function(plate, cb, options)
 	end
     local response = CadApiLookup(data)
     if cb ~= nil then
-        cb(response.success and json.encode(response.data or {}) or CadApiReasonText(response.reason))
+        cb(response.success and json.encode(response.data or {}) or CadApiSupportErrorText("LOOKUP", response))
     elseif not response.success then
         CadApiLogFailure('LOOKUP', response, data)
     end
@@ -531,7 +565,7 @@ getAllWarrantsAndBolos = function(options, cb)
 		}
         local response = CadApiLookupByValue(payload)
         if not response.success then
-            cb(nil, {ok = false, error = response.reason})
+            cb(nil, {ok = false, error = CadApiSupportErrorText("LOOKUP_BY_VALUE", response)})
             return
         end
         local decoded = response.data or {}
@@ -608,6 +642,20 @@ exports('getDispatchStatus', getDispatchStatus)
 exports('createDispatchCall', createDispatchCall)
 -- Jordan - CAD Utils
 
+function isPlayerInCAD(source)
+    local communityUserId = GetPlayerCommunityUserId(source)
+    local unit = GetUnitByPlayerId(source)
+    return {
+        linked = communityUserId ~= nil,
+        online = unit ~= nil,
+        success = communityUserId ~= nil and unit ~= nil,
+        communityUserId = communityUserId,
+        unit = unit
+    }
+end
+
+exports('isPlayerInCAD', isPlayerInCAD)
+
 -- Addition Server Functions --
 -- Gets a player's CAD status for a given submodule, checking for link and/or unit as specified in the checks parameter. Returns an object with hasLink, hasUnit and messages array.
 -- @param source - the player's server ID
@@ -617,38 +665,25 @@ exports('createDispatchCall', createDispatchCall)
 function getPlayerCadStatus(source, submodule, checks)
     local checkForLink = checks and checks.link or false
     local checkForUnit = checks and checks.unit or false
+    local chatLinkCommand = Config.linkCommand or "link"
+    local cadState = isPlayerInCAD(source)
     local response = {
-        hasLink = false,
-        hasUnit = false,
+        hasLink = cadState.linked,
+        hasUnit = cadState.online,
         success = true,
-        messages = {
-            playerLink = "^1[SonoranCAD] - " .. submodule .. ": ^7You are not linked with SonoranCAD. Please link your account using /" .. Config.linkCommand .. " for integrations to work properly.",
-            playerUnit = "^1[SonoranCAD] - " .. submodule .. ": ^7You do not have a unit in SonoranCAD. Please log in to the Police, Fire or EMS page on SonoranCAD for integrations to work properly.",
-            debugLink = "^1[SonoranCAD] - " .. submodule .. ": ^7Debug: Link check is enabled. Player " .. source .. " has " .. (GetPlayerCommunityUserId(source) and "a" or "no") .. " community ID.",
-            debugUnit = "^1[SonoranCAD] - " .. submodule .. ": ^7Debug: Unit check is enabled. Player " .. source .. " has " .. (GetUnitByPlayerId(source) and "a" or "no") .. " unit in the cache."
-        }
+        link = cadState.communityUserId,
+        unit = cadState.unit
     }
     if checkForLink then
-        if GetPlayerCommunityUserId(source) then
-            response.hasLink = true
-            response.link = GetPlayerCommunityUserId(source)
-        else
-            debugLog(response.messages.debugLink)
-            TriggerClientEvent('chat:addMessage', source, {
-                args = {response.messages.playerLink}
-            })
+        if not response.hasLink then
+            debugLog(("[cad-status] %s link check failed for player %s"):format(submodule, tostring(source)))
+            sendClientError(source, "PLAYER_NOT_LINKED", nil, chatLinkCommand)
         end
     end
     if checkForUnit then
-        local unit = GetUnitByPlayerId(source)
-        if unit then
-            response.hasUnit = true
-            response.unit = unit
-        else
-            debugLog(response.messages.debugUnit)
-            TriggerClientEvent('chat:addMessage', source, {
-                args = {response.messages.playerUnit}
-            })
+        if not response.hasUnit then
+            debugLog(("[cad-status] %s unit check failed for player %s"):format(submodule, tostring(source)))
+            sendClientError(source, response.hasLink and "PLAYER_NOT_ONLINE" or "PLAYER_NOT_IN_CAD")
         end
     end
     if not response.hasLink and checkForLink then

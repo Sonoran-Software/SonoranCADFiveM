@@ -34,7 +34,12 @@ AddEventHandler("unzipCoreCompleted", function(success, error)
         Wait(5000)
         ExecuteCommand("ensure sonoran_updatehelper")
     else
-        errorLog(tostring(error or "Failed to download core update."))
+        local errorText = tostring(error or "Failed to download core update.")
+        if errorText:find("allow%-child%-process") or errorText:find("child spawn not allowed") then
+            logError("UPDATE_CHILD_PERMISSION")
+        else
+            errorLog(errorText)
+        end
     end
 end)
 
@@ -44,9 +49,19 @@ local function doUpdate(latest)
     PerformHttpRequest(releaseUrl, function(code, data, headers)
         if code == 200 then
             local savePath = GetResourcePath(GetCurrentResourceName()).."/update.zip"
-            local f = assert(io.open(savePath, 'wb'))
-            f:write(data)
-            f:close()
+            local f, openErr = io.open(savePath, 'wb')
+            if not f then
+                logError("FILE_WRITE_FAILED", ("Failed to open update zip path %s: %s"):format(savePath, tostring(openErr)))
+                return
+            end
+            local ok, writeErr = pcall(function()
+                f:write(data)
+                f:close()
+            end)
+            if not ok then
+                logError("FILE_WRITE_FAILED", ("Failed to write update zip path %s: %s"):format(savePath, tostring(writeErr)))
+                return
+            end
             infoLog("Saved file...")
             doUnzip(savePath)
         else
@@ -82,10 +97,10 @@ function RunAutoUpdater(manualRun)
 
     PerformHttpRequestS(versionFile, function(code, data, headers)
         if code == 200 then
-            local remote = json.decode(data)
+            local remote = SafeJsonDecode(data, "auto-updater version lookup", nil)
             if remote == nil then
-                warnLog(("Failed to get a valid response for %s. Skipping."):format(k))
-                debugLog(("Raw output for %s: %s"):format(k, data))
+                warnLog(("Failed to get a valid response for %s. Skipping."):format(versionFile))
+                debugLog(("Raw output for %s: %s"):format(versionFile, tostring(data)))
             else
                 Config.latestVersion = remote.resource
                 local compare = compareVersions(remote.resource, myVersion)
@@ -125,6 +140,8 @@ function RunAutoUpdater(manualRun)
                     end
                 end
             end
+        else
+            warnLog(("Auto-updater version check failed for %s: HTTP %s"):format(versionFile, tostring(code)))
         end
     end, "GET")
 end

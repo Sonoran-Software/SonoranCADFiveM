@@ -128,7 +128,7 @@
         const streamPath = rootPath + "/stream/" + name + "/";
 
         if (!fs.existsSync(file)) {
-            console.error("File " + file + " doesn't exist.");
+            emit("SonoranCAD::core:writeLog", "error", "[unzipper] ERR-CORE-903 Source archive is missing. More: https://sonorancad.com/error/ERR-CORE-903");
             return false;
         }
 

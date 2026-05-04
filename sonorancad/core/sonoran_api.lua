@@ -3,6 +3,13 @@ local sonoranModule = nil
 local communityLinkCheckCache = {}
 local COMMUNITY_LINK_CHECK_CACHE_TTL_MS = 10 * 60 * 1000
 
+local function get_sonoran_log_level(sonoran)
+    if Config ~= nil and Config.debugMode == true then
+        return sonoran.logLevels.DEBUG
+    end
+    return sonoran.logLevels.ERROR
+end
+
 local function load_sonoran_module()
     if sonoranModule ~= nil then
         return sonoranModule
@@ -56,7 +63,7 @@ local function get_cad_client()
         communityId = Config.communityID,
         apiUrl = resolve_api_url(),
         defaultServerId = tonumber(tonumber(Config.serverId)) or 1,
-        setLogLevel = Config.debug and sonoran.logLevels.DEBUG or sonoran.logLevels.OFF
+        setLogLevel = get_sonoran_log_level(sonoran)
     })
 
     return cadV2Client
@@ -66,6 +73,14 @@ function GetCadClient()
     return get_cad_client()
 end
 exports("getCadClient", GetCadClient)
+
+function SetCadClientLogLevel()
+    if cadV2Client == nil then
+        return
+    end
+    local sonoran = sonoranModule or load_sonoran_module()
+    cadV2Client:setLogLevel(get_sonoran_log_level(sonoran))
+end
 
 function registerApiType(_, endpoint)
     return endpoint
@@ -204,8 +219,17 @@ function CadApiReasonText(value)
     return tostring(value)
 end
 
+function CadApiSupportErrorText(request_name, response)
+    local baseMessage = "A CAD request failed. Please give this error to support."
+    if request_name ~= nil then
+        baseMessage = ("A CAD request failed during %s. Please give this error to support."):format(tostring(request_name))
+    end
+    local message = BuildSupportErrorMessage("CAD_API_REQUEST_FAILED", baseMessage)
+    return message
+end
+
 function CadApiLogFailure(request_name, response, payload)
-    errorLog(("CAD API ERROR (%s): %s payload=%s"):format(
+    logError("CAD_API_REQUEST_FAILED", ("CAD API ERROR (%s): %s payload=%s"):format(
         tostring(request_name),
         CadApiReasonText(response and response.reason),
         payload_preview(payload)
@@ -298,7 +322,7 @@ function performApiRequest(data, request_type, callback)
         if response and response.success then
             callback(format_legacy_success(response), true, response)
         else
-            callback(CadApiReasonText(response and response.reason), false, response)
+            callback(CadApiSupportErrorText(request_type, response), false, response)
         end
     end
 

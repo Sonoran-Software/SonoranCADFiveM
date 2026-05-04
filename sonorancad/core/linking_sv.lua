@@ -65,6 +65,22 @@ local function get_cad_ui_base_url()
     return "https://sonorancad.com"
 end
 
+CreateThread(function()
+    local tabletState = GetResourceState('tablet')
+    if tabletState == 'started' then
+        return
+    end
+
+    if tabletState == 'stopped' then
+        logError('TABLET_RESOURCE_NOT_STARTED')
+        ExecuteCommand("ensure tablet")
+    elseif tabletState == 'missing' then
+        logError('TABLET_RESOURCE_MISSING')
+    else
+        logError('TABLET_RESOURCE_BAD_STATE')
+    end
+end)
+
 local function log_link_debug(message)
     debugLog(("[link] %s"):format(message))
 end

@@ -67,11 +67,11 @@
 	function logRecorder(level, message, details) {
 		const payload = details && typeof details === "object" ? details : undefined;
 		if (level === "error") {
-			console.error("[bodycam-recorder] " + message, payload || "");
+			console.warn("[bodycam-recorder] ERR-CORE-906 " + message + " More: https://sonorancad.com/error/ERR-CORE-906");
 			return;
 		}
 		if (level === "warn") {
-			console.warn("[bodycam-recorder] " + message, payload || "");
+			console.warn("[bodycam-recorder] WRN-CORE-900 " + message + " More: https://sonorancad.com/error/WRN-CORE-900", payload || "");
 			return;
 		}
 		console.info("[bodycam-recorder] " + message, payload || "");

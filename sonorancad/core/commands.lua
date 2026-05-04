@@ -76,13 +76,18 @@ Configuration:
     ]]):format(name, Config.plugins[name].version, table.concat(pluginDetail, "\n     "))
 end
 
-local function sendSupportLogs(key)
+local function sendSupportLogs(key, requester)
+    requester = tonumber(requester) or 0
     infoLog("Please wait, gathering required data...")
     local cadOutput = {}
     cadOutput.key = tonumber(key)
     if cadOutput.key == nil then
-        errorLog("Invalid support key.")
-        return
+        if requester > 0 then
+            sendClientError(requester, "SUPPORT_INVALID_ID")
+        else
+            logError("SUPPORT_INVALID_ID")
+        end
+        return false
     end
     local plugins = {}
     for name, config in pairs(Config.plugins) do
@@ -93,6 +98,14 @@ local function sendSupportLogs(key)
         table.insert(plugins, pluginData)
     end
     cadOutput.plugins = plugins
+    cadOutput.errors = getSupportErrorBuffer()
+    local encodedErrors = "[]"
+    if cadOutput.errors ~= nil then
+        local ok, serialized = pcall(json.encode, cadOutput.errors)
+        if ok and type(serialized) == "string" then
+            encodedErrors = serialized
+        end
+    end
     cadOutput.logs = ([[
 SonoranCAD Support Output
 ---------------------------------------
@@ -108,16 +121,40 @@ Console Buffer
 Last 50 Debug Messages
 ----------------------
 %s
-    ]]):format(dumpInfo(), GetConsoleBuffer(), table.concat(getDebugBuffer(), "\n"))
+---------------------------------------
+Structured Error Buffer
+-----------------------
+%s
+    ]]):format(dumpInfo(), GetConsoleBuffer(), table.concat(getDebugBuffer(), "\n"), encodedErrors)
     Config.debugMode = false
+    if SetCadClientLogLevel ~= nil then
+        SetCadClientLogLevel()
+    end
     local response = CadApiUploadSupportLogs(cadOutput)
     if response.success and response.data == "LOGS UPDATED" then
         infoLog("Support logs have been successfully uploaded. Debug mode was disabled during the upload.")
+        if requester > 0 then
+            TriggerClientEvent("chat:addMessage", requester, {
+                args = {"^0[ ^2Support ^0] ", formatErrorMessage("SUPPORT_UPLOAD_SUCCESS")}
+            })
+        end
+        return true
     elseif response.success then
-        errorLog(("Failed to upload support logs: %s"):format(tostring(response.data)))
+        local message = ("%s Response: %s"):format(getErrorText("SUPPORT_UPLOAD_FAILED"), tostring(response.data))
+        if requester > 0 then
+            sendClientError(requester, "SUPPORT_UPLOAD_FAILED")
+        else
+            logError("SUPPORT_UPLOAD_FAILED", message)
+        end
     else
-        errorLog(("Failed to upload support logs: %s"):format(CadApiReasonText(response.reason)))
+        local message = ("%s Reason: %s"):format(getErrorText("SUPPORT_UPLOAD_FAILED"), CadApiReasonText(response.reason))
+        if requester > 0 then
+            sendClientError(requester, "SUPPORT_UPLOAD_FAILED")
+        else
+            logError("SUPPORT_UPLOAD_FAILED", message)
+        end
     end
+    return false
 end
 RegisterCommand("sonoran", function(source, args, rawCommand)
     if source ~= 0 then
@@ -151,26 +188,39 @@ SonoranCAD Help
             convarString = "false"
         end
         SetConvar("sonoran_debugMode", convarString)
+        if SetCadClientLogLevel ~= nil then
+            SetCadClientLogLevel()
+        end
         infoLog(("Debug mode toggled to %s"):format(convarString))
         TriggerClientEvent("SonoranCAD::core:debugModeToggle", -1, Config.debugMode)
     elseif args[1] == "info" then
         print(dumpInfo())
     elseif args[1] == "support" and args[2] ~= nil then
-        sendSupportLogs(args[2])
+        sendSupportLogs(args[2], 0)
     elseif args[1] == "plugin" and args[2] then
         if Config.plugins[args[2]] then
             print(dumpPlugin(args[2]))
         else
-            errorLog("Invalid plugin")
+            errorLog("INVALID_COMMAND_ARGUMENT", "Invalid plugin.")
         end
     elseif args[1] == "update" then --update - attempt to auto-update
         infoLog("Checking for core update...")
         RunAutoUpdater(true)
     elseif args[1] == "dumpconsole" then
         local savePath = GetResourcePath(GetCurrentResourceName()).."/buffer.log"
-        local f = assert(io.open(savePath, 'wb'))
-        f:write(GetConsoleBuffer())
-        f:close()
+        local f, openErr = io.open(savePath, 'wb')
+        if not f then
+            logError("FILE_WRITE_FAILED", ("Failed to open console dump path %s: %s"):format(savePath, tostring(openErr)))
+            return
+        end
+        local ok, writeErr = pcall(function()
+            f:write(GetConsoleBuffer())
+            f:close()
+        end)
+        if not ok then
+            logError("FILE_WRITE_FAILED", ("Failed to write console dump path %s: %s"):format(savePath, tostring(writeErr)))
+            return
+        end
         infoLog("Wrote buffer to "..savePath)
     elseif args[1] == "pluginupdate" then
         infoLog("Scanning for plugin updates...")
@@ -188,10 +238,10 @@ SonoranCAD Help
                 TriggerClientEvent("SonoranCAD::core:RequestLogBuffer", args[2])
                 infoLog("Requested log buffer. Please wait...")
             else
-                errorLog("Invalid player ID")
+                errorLog("INVALID_COMMAND_ARGUMENT", "Invalid player ID.")
             end
         else
-            errorLog("Invalid argument.")
+            errorLog("INVALID_COMMAND_ARGUMENT", "Invalid argument.")
         end
     elseif args[1] == "errors" then
         print("----ERROR/WARNING BUFFER START----")
@@ -231,7 +281,12 @@ end
 
 AddEventHandler("SonoranCAD::pushevents:SendSupportLogs", function(key)
     infoLog("Support has requested logs to be uploaded. Collecting now...")
-    sendSupportLogs(key)
+    sendSupportLogs(key, 0)
+end)
+
+RegisterNetEvent("SonoranCAD::core:UploadSupportLogs")
+AddEventHandler("SonoranCAD::core:UploadSupportLogs", function(key)
+    sendSupportLogs(key, source)
 end)
 
 RegisterNetEvent("SonoranCAD::core:LogBuffer")

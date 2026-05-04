@@ -12,6 +12,34 @@ function shallowcopy(orig)
     return copy
 end
 
+function SafeJsonDecode(raw, context, defaultValue)
+    if type(raw) ~= "string" or raw == "" then
+        return defaultValue, "empty"
+    end
+
+    local ok, decoded = pcall(json.decode, raw)
+    if ok then
+        return decoded, nil
+    end
+
+    if context ~= nil then
+        warnLog("JSON_DECODE_FAILED", ("%s JSON decode failed: %s"):format(tostring(context), tostring(decoded)))
+    end
+    return defaultValue, decoded
+end
+
+function SafeJsonEncode(value, context, defaultValue)
+    local ok, encoded = pcall(json.encode, value)
+    if ok then
+        return encoded, nil
+    end
+
+    if context ~= nil then
+        warnLog("JSON_ENCODE_FAILED", ("%s JSON encode failed: %s"):format(tostring(context), tostring(encoded)))
+    end
+    return defaultValue, encoded
+end
+
 function stringsplit(inputstr, sep)
     if sep == nil then
         sep = "%s"

@@ -37,11 +37,12 @@ if pluginConfig.enabled then
     end)
 
     local function getCharactersApi(player, callback)
-        local communityUserId = GetPlayerCommunityUserId(player)
-        if not communityUserId then
+        local playerCadStatus = getPlayerCadStatus(player, "Civilian Integration", { link = true, unit = true })
+        if not playerCadStatus.success then
             callback(nil)
             return
         end
+        local communityUserId = playerCadStatus.link
         local response = CadApiGetCharacters({communityUserId = communityUserId})
         if response.success then
             local result = response.data

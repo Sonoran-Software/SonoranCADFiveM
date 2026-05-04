@@ -30,7 +30,7 @@ CreateThread(function()
                 return nil
             end
 
-            local decoded = json.decode(raw)
+            local decoded = SafeJsonDecode(raw, ("call template %s"):format(filePath), nil)
             if decoded == nil then
                 errorLog(("[calltemplates] Failed to decode JSON for template %s"):format(filePath))
                 return nil
@@ -94,12 +94,12 @@ CreateThread(function()
         local function handleCommand(cmdConfig, source, args, rawCommand)
             local template = loadTemplate(cmdConfig.callTypeFile)
             if template == nil then
-                TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^1Error ^0] ", "Call template missing or invalid."}})
+                sendClientError(source, "CALL_TEMPLATE_INVALID")
                 return
             end
 
             if not args[1] then
-                TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^1Error ^0] ", "You need to specify call details."}})
+                sendClientError(source, "CALL_MISSING_DETAILS")
                 return
             end
 
@@ -180,11 +180,11 @@ CreateThread(function()
                     TriggerClientEvent("chat:addMessage", source, {args = {"^0^5^*[SonoranCAD]^r ", "^7Your call has been sent to CAD."}})
                 else
                     CadApiLogFailure("NEW_DISPATCH", response, payload)
-                    TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^1Error ^0] ", "Call could not be sent to CAD."}})
+                    sendClientError(source, "CALL_SEND_FAILED")
                 end
             else
-                errorLog("Config.apiSendEnabled disabled via convar or config, skipping call creation. Check your config if this is unintentional.")
-                TriggerClientEvent("chat:addMessage", source, {args = {"^0[ ^1Error ^0] ", "Call could not be sent; API is disabled."}})
+                logError("CAD_API_DISABLED")
+                sendClientError(source, "CAD_API_DISABLED")
             end
         end)
 

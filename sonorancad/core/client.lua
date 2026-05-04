@@ -37,6 +37,45 @@ local function send_command_help_message(message)
     })
 end
 
+local function disable_plugin(reason)
+    return {
+        enabled = false,
+        disableReason = reason
+    }
+end
+
+local function extract_plugin_config(pluginName, rawConfig, subjectLabel)
+    if type(rawConfig) ~= "string" or rawConfig == "" then
+        warnLog("PLUGIN_CONFIG_PARSE_FAILED", ("%s %s configuration file was empty or unreadable."):format(subjectLabel, pluginName))
+        return disable_plugin("Unreadable configuration file")
+    end
+
+    local configBody = rawConfig:match("local config = ({.-\n})")
+    if configBody == nil then
+        errorLog("PLUGIN_CONFIG_PARSE_FAILED", ("%s %s configuration is missing a valid local config table."):format(subjectLabel, pluginName))
+        return disable_plugin("Invalid or missing config")
+    end
+
+    local tempEnv = {}
+    setmetatable(tempEnv, {__index = _G})
+    local loadedPlugin, pluginError = load("local config = " .. configBody .. "\nreturn config", 'config', 't', tempEnv)
+    if not loadedPlugin then
+        errorLog("PLUGIN_CONFIG_PARSE_FAILED", ("%s %s failed to compile: %s"):format(subjectLabel, pluginName, tostring(pluginError)))
+        return disable_plugin("Failed to load")
+    end
+
+    local success, res = pcall(loadedPlugin)
+    if not success then
+        errorLog("PLUGIN_CONFIG_PARSE_FAILED", ("%s %s failed to execute: %s"):format(subjectLabel, pluginName, SanitizeErrorDetail(res) or "unknown error"))
+        return disable_plugin("Failed to load")
+    end
+    if type(res) ~= "table" then
+        errorLog("PLUGIN_CONFIG_PARSE_FAILED", ("%s %s did not define a valid config table."):format(subjectLabel, pluginName))
+        return disable_plugin("Invalid or missing config")
+    end
+    return res
+end
+
 local function sorted_keys(input)
     local keys = {}
     for key in pairs(input or {}) do
@@ -93,18 +132,27 @@ end
 
 RegisterCommand("sonorancad", function(_, args)
     local subcommand = args[1] and string.lower(args[1]) or "help"
+    if subcommand == "support" then
+        if args[2] == nil or tostring(args[2]) == "" then
+            send_command_help_message("Usage: /sonorancad support <id>")
+            return
+        end
+        TriggerServerEvent("SonoranCAD::core:UploadSupportLogs", args[2])
+        send_command_help_message("Uploading support logs. Please wait...")
+        return
+    end
     if subcommand ~= "help" then
-        send_command_help_message("Usage: /sonorancad help [submodule]")
+        send_command_help_message("Usage: /sonorancad help [submodule] or /sonorancad support <id>")
         return
     end
     show_sonoran_command_help(args[2])
 end, false)
 
 TriggerEvent("chat:addSuggestion", "/sonorancad", "Show SonoranCAD command help.", {
-    { name = "action", help = "Use help" },
-    { name = "submodule", help = "Optional submodule name, such as civintegration or dispatchnotify" }
+    { name = "action", help = "Use help or support" },
+    { name = "value", help = "Submodule name for help, or support request ID for support" }
 })
-RegisterPlayerCommandHelp("core", "sonorancad", "Show SonoranCAD command help by submodule.", "help [submodule]")
+RegisterPlayerCommandHelp("core", "sonorancad", "Show SonoranCAD command help by submodule or upload support logs.", "help [submodule]|support <id>")
 
 
 Config.RegisterPluginConfig = function(pluginName, configs)
@@ -163,45 +211,15 @@ Config.GetPluginConfig = function(pluginName)
                 disableReason = 'Missing configuration file'
             }
         else
-            local configChunk = correctConfig:match("local config = {.-\n}") ..
-                                    "\nreturn config"
-            if not configChunk then
-                errorLog("No config table found in the string.")
+            local pluginConfig = extract_plugin_config(pluginName, correctConfig, "Plugin")
+            if type(pluginConfig) ~= "table" then
+                pluginConfig = disable_plugin("Invalid or missing config")
             end
-            local tempEnv = {}
-            setmetatable(tempEnv, {__index = _G}) -- Allow access to global functions if needed
-            local loadedPlugin, pluginError =
-                load(configChunk, 'config', 't', tempEnv)
-            if loadedPlugin then
-                -- Execute and capture the returned config table
-                local success, res = pcall(loadedPlugin)
-                if not success then
-                    errorLog(
-                        ('Plugin %s failed to load due to error: %s'):format(
-                            pluginName, res))
-                    Config.plugins[pluginName] = {
-                        enabled = false,
-                        disableReason = 'Failed to load'
-                    }
-                    return {enabled = false, disableReason = 'Failed to load'}
-                end
-                if res and type(res) == "table" then
-                    -- Assign the extracted config to Config.plugins[pluginName]
-                    Config.plugins[pluginName] = res
-                else
-                    -- Handle case where config is not available
-                    errorLog(
-                        ('Plugin %s did not define a valid config table.'):format(
-                            pluginName))
-                    Config.plugins[pluginName] = {
-                        enabled = false,
-                        disableReason = 'Invalid or missing config'
-                    }
-                    return {
-                        enabled = false,
-                        disableReason = 'Invalid or missing config'
-                    }
-                end
+            Config.plugins[pluginName] = pluginConfig
+            if pluginConfig.enabled == false and pluginConfig.disableReason ~= nil then
+                return pluginConfig
+            end
+            do
                 if Config.critError then
                     Config.plugins[pluginName].enabled = false
                     Config.plugins[pluginName].disableReason = 'startup aborted'
@@ -210,14 +228,6 @@ Config.GetPluginConfig = function(pluginName)
                 elseif Config.plugins[pluginName].enabled == false then
                     Config.plugins[pluginName].disableReason = 'Disabled'
                 end
-            else
-                errorLog(('Plugin %s failed to load due to error: %s'):format(
-                             pluginName, pluginError))
-                Config.plugins[pluginName] = {
-                    enabled = false,
-                    disableReason = 'Failed to load'
-                }
-                return {enabled = false, disableReason = 'Failed to load'}
             end
             return Config.plugins[pluginName]
         end
@@ -257,50 +267,20 @@ Config.LoadPlugin = function(pluginName, cb)
                 enabled = false,
                 disableReason = 'Missing configuration file'
             }
-            return {
+            return cb({
                 enabled = false,
                 disableReason = 'Missing configuration file'
-            }
+            })
         else
-            local configChunk = correctConfig:match("local config = {.-\n}") ..
-                                    "\nreturn config"
-            if not configChunk then
-                errorLog("No config table found in the string.")
+            local pluginConfig = extract_plugin_config(pluginName, correctConfig, "Submodule")
+            if type(pluginConfig) ~= "table" then
+                pluginConfig = disable_plugin("Invalid or missing config")
             end
-            local tempEnv = {}
-            setmetatable(tempEnv, {__index = _G}) -- Allow access to global functions if needed
-            local loadedPlugin, pluginError =
-                load(configChunk, 'config', 't', tempEnv)
-            if loadedPlugin then
-                -- Execute and capture the returned config table
-                local success, res = pcall(loadedPlugin)
-                if not success then
-                    errorLog(
-                        ('Submodule %s failed to load due to error: %s'):format(
-                            pluginName, res))
-                    Config.plugins[pluginName] = {
-                        enabled = false,
-                        disableReason = 'Failed to load'
-                    }
-                    return {enabled = false, disableReason = 'Failed to load'}
-                end
-                if res and type(res) == "table" then
-                    -- Assign the extracted config to Config.plugins[pluginName]
-                    Config.plugins[pluginName] = res
-                else
-                    -- Handle case where config is not available
-                    errorLog(
-                        ('Submodule %s did not define a valid config table.'):format(
-                            pluginName))
-                    Config.plugins[pluginName] = {
-                        enabled = false,
-                        disableReason = 'Invalid or missing config'
-                    }
-                    return {
-                        enabled = false,
-                        disableReason = 'Invalid or missing config'
-                    }
-                end
+            Config.plugins[pluginName] = pluginConfig
+            if pluginConfig.enabled == false and pluginConfig.disableReason ~= nil then
+                return cb(pluginConfig)
+            end
+            do
                 if Config.critError then
                     Config.plugins[pluginName].enabled = false
                     Config.plugins[pluginName].disableReason = 'startup aborted'
@@ -309,16 +289,8 @@ Config.LoadPlugin = function(pluginName, cb)
                 elseif Config.plugins[pluginName].enabled == false then
                     Config.plugins[pluginName].disableReason = 'Disabled'
                 end
-            else
-                errorLog(('Submodule %s failed to load due to error: %s'):format(
-                             pluginName, pluginError))
-                Config.plugins[pluginName] = {
-                    enabled = false,
-                    disableReason = 'Failed to load'
-                }
-                return {enabled = false, disableReason = 'Failed to load'}
             end
-            return Config.plugins[pluginName]
+            return cb(Config.plugins[pluginName])
         end
         Config.plugins[pluginName] = {
             enabled = false,

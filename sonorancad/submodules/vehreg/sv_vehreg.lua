@@ -21,49 +21,16 @@ CreateThread(function()
 				})
 				if not characterResponse.success then
 					CadApiLogFailure('GET_CHARACTERS', characterResponse, { communityUserId = communityUserId })
-					TriggerClientEvent('chat:addMessage', source, {
-						color = {
-							255,
-							0,
-							0
-						},
-						multiline = true,
-						args = {
-							'[CAD - ERROR] ',
-							pluginConfig.language.noCadLink or pluginConfig.language.noApiId or "Your CAD account is not linked."
-						}
-					})
+					sendClientError(source, "PLAYER_NOT_LINKED")
 					return;
 				end
 				local res = characterResponse.data
 				if not res or type(res) ~= 'table' then
-					TriggerClientEvent('chat:addMessage', source, {
-						color = {
-							255,
-							0,
-							0
-						},
-						multiline = true,
-						args = {
-							'[CAD - ERROR] ',
-							pluginConfig.language.noCharFound or "No character found. Please ensure you are logged in to a character."
-						}
-					})
+					sendClientError(source, "VEHREG_NO_CHARACTER")
 					return;
 				end
 				if #res < 1 then
-					TriggerClientEvent('chat:addMessage', source, {
-						color = {
-							255,
-							0,
-							0
-						},
-						multiline = true,
-						args = {
-							'[CAD - ERROR] ',
-							pluginConfig.language.noCharFound or "No character found. Please ensure you are logged in to a character."
-						}
-					})
+					sendClientError(source, "VEHREG_NO_CHARACTER")
 					return;
 				end
 				for iterator, table in pairs(res[1].sections) do
@@ -108,36 +75,14 @@ CreateThread(function()
 				if not createResponse.success then
 					local reason = CadApiReasonText(createResponse.reason)
 					if string.find(reason, 'taken') ~= nil then
-						TriggerClientEvent('chat:addMessage', source, {
-							color = {
-								255,
-								0,
-								0
-							},
-							multiline = true,
-							args = {
-								'[CAD - ERROR] ',
-								pluginConfig.language.plateAlrRegisted
-							}
-						})
+						sendClientError(source, "VEHREG_PLATE_TAKEN", pluginConfig.language.plateAlrRegisted or getErrorText("VEHREG_PLATE_TAKEN"))
 					else
 						CadApiLogFailure('NEW_RECORD', createResponse, {
 							communityUserId = communityUserId,
 							recordTypeId = 5,
 							replaceValues = replaceValues
 						})
-						TriggerClientEvent('chat:addMessage', source, {
-							color = {
-								255,
-								0,
-								0
-							},
-							multiline = true,
-							args = {
-								'[CAD - ERROR] ',
-								pluginConfig.language.errorCreatingReg or "Failed to create registration record."
-							}
-						})
+						sendClientError(source, "VEHREG_CREATE_FAILED", pluginConfig.language.errorCreatingReg or getErrorText("VEHREG_CREATE_FAILED"))
 					end
 				else
 						local placeHolders = {
