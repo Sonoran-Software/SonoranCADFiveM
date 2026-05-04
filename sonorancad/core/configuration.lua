@@ -358,7 +358,14 @@ for k, v in pairs(json.decode(conf)) do
     local cvar = GetConvar('sonoran_' .. k, 'NONE')
     local cvar_setter = GetConvar('sonoran_' .. k .. '_setter', 'NONE')
     local val = nil
-    if cvar ~= 'NONE' and cvar ~= 'statusLabels' then
+    if k == 'apiKey' then
+        if cvar == 'NONE' then
+            warnLog(('Configuration: apiKey convar value NOT initialized - has sonorancad.cfg been executed?'))
+        elseif cvar == 'protection_initialized' then
+            SetConvar('sonoran_' .. k, tostring(v))
+        end
+    end
+    if cvar ~= 'NONE' and cvar ~= 'statusLabels' and k ~= 'apiKey' then
         if cvar_setter == 'NONE' or cvar_setter == 'server' then
             infoLog(
                 ('Configuration: Overriding config option %s with convar. New value: %s'):format(
