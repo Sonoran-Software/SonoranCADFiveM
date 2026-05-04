@@ -157,7 +157,6 @@ Console Buffer
 Last 50 Debug Messages
 ----------------------
 %s
-    ]]):format(dumpInfo(), GetConsoleBuffer(), table.concat(getDebugBuffer(), "\n"), encodedErrors)
     ]]):format(dumpInfo(), encodedErrors, GetConsoleBuffer(), table.concat(getDebugBuffer(), "\n"))
     Config.debugMode = false
     if SetCadClientLogLevel ~= nil then

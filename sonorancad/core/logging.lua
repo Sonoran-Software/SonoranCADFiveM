@@ -140,7 +140,7 @@ local ErrorCodes = {
 
 local function buildErrorDocUrl(code)
     local resolvedCode = tostring(code or "ERR-CORE-900")
-    return ERROR_DOC_BASE_URL .. resolvedCode
+    return ERROR_DOC_BASE_URL .. string.lower(resolvedCode)
 end
 
 local function normalize_log_entry(level, err)
