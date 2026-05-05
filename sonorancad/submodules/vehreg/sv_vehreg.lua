@@ -50,10 +50,10 @@ CreateThread(function()
 						statusUid = "status",
 						expiresUid = "_imtoih149",
 					}
-					warnLog('Record data not found in configuration. Using default values. Please update your configuration using the vehreg_config.dist.lua file located in the configuration folder')
+					warnLog("UNHANDLED_WARNING", 'Record data not found in configuration. Using default values. Please update your configuration using the vehreg_config.dist.lua file located in the configuration folder')
 				end
 				if notSetConfig then
-					warnLog('Record data not found in configuration. Using default values. Please update your configuration using the vehreg_config.dist.lua file located in the configuration folder')
+					warnLog("UNHANDLED_WARNING", 'Record data not found in configuration. Using default values. Please update your configuration using the vehreg_config.dist.lua file located in the configuration folder')
 				end
 				local replaceValues = {
 					[pluginConfig.recordData.colorUid] = primary,

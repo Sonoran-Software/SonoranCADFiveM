@@ -11,7 +11,7 @@ local function LoadVersionFile()
     if f then
         return f
     else
-        warnLog(("Failed to load version file from /sonorancad/version.json Check to see if the file exists."))
+        warnLog("UNHANDLED_WARNING", ("Failed to load version file from /sonorancad/version.json Check to see if the file exists."))
         return nil
     end
 end
@@ -20,7 +20,7 @@ function CheckForPluginUpdate(name)
     local check_url = 'https://raw.githubusercontent.com/Sonoran-Software/SonoranCADFiveM/refs/heads/master/sonorancad/version.json'
     local plugin = Config.plugins[name]
     if plugin == nil then
-        errorLog(("Submodule %s not found."):format(name))
+        errorLog("UNHANDLED_SERVER_ERROR", ("Submodule %s not found."):format(name))
         return
     end
     PerformHttpRequestS(check_url, function(code, data, headers)
@@ -28,28 +28,28 @@ function CheckForPluginUpdate(name)
             local remote = json.decode(data)
             if remote == nil then
                 if plugin.enabled then
-                    warnLog(("Failed to get a valid response for %s. Skipping."):format(name))
+                    warnLog("UNHANDLED_WARNING", ("Failed to get a valid response for %s. Skipping."):format(name))
                 end
                 debugLog(("Raw output for %s request to %s: %s"):format(name, check_url, data))
             elseif remote.submoduleConfigs[name] == nil then
                 if plugin.enabled then
-                    warnLog(("Failed to check submodule updates for %s: submodule was not found in the updater manifest... if this is a custom submodule you can ignore this warning"):format(name))
+                    warnLog("UNHANDLED_WARNING", ("Failed to check submodule updates for %s: submodule was not found in the updater manifest... if this is a custom submodule you can ignore this warning"):format(name))
                 else
                     debugLog(("Disabled submodule was not found in remote updater manifest: %s"):format(name))
                 end
             elseif (remote.submoduleConfigs[name].version == nil) then
-                warnLog(("Submodule was found, but no version was found in remote updater manifest for plugin %s."):format(name))
+                warnLog("UNHANDLED_WARNING", ("Submodule was found, but no version was found in remote updater manifest for plugin %s."):format(name))
             else
                 local currentVersion = plugin.configVersion or plugin.pluginVersion or nil
                 if currentVersion == nil then
-                    errorLog(("No current version was found in the config for submodule %s. This warning could be ignored for custom submodules."):format(name))
+                    errorLog("UNHANDLED_SERVER_ERROR", ("No current version was found in the config for submodule %s. This warning could be ignored for custom submodules."):format(name))
                     return
                 end
 
                 local configCompare = compareVersions(remote.submoduleConfigs[name].version, currentVersion)
                 if configCompare.result and not Config.debugMode then
                     if plugin.enabled then
-                        errorLog(("Submodule Updater: %s has a new configuration version. You should look at the template configuration file (%s_config.dist.lua) and update your configuration before using this submodule. Guide: https://sonoran.link/config-update"):format(name, name))
+                        errorLog("UNHANDLED_SERVER_ERROR", ("Submodule Updater: %s has a new configuration version. You should look at the template configuration file (%s_config.dist.lua) and update your configuration before using this submodule. Guide: https://sonoran.link/config-update"):format(name, name))
                         Config.plugins[name].enabled = false
                         Config.plugins[name].disableReason = "outdated config file"
                     end
@@ -62,7 +62,7 @@ function CheckForPluginUpdate(name)
                         exports['sonorancad']:CreateFolderIfNotExisting(filePath)
                         local backupFile = io.open(("%s/configuration/config-backup/%s_config.lua"):format(GetResourcePath(GetCurrentResourceName()), name), "w")
                         if backupFile == nil then
-                            errorLog(("Unable to open config backup file for sub module %s."):format(name))
+                            errorLog("UNHANDLED_SERVER_ERROR", ("Unable to open config backup file for sub module %s."):format(name))
                             return
                         end
 
@@ -74,7 +74,7 @@ function CheckForPluginUpdate(name)
                 end
             end
         elseif plugin.enabled then
-            warnLog(("Failed to check submodule config updates for %s: %s %s"):format(name, code, data))
+            warnLog("UNHANDLED_WARNING", ("Failed to check submodule config updates for %s: %s %s"):format(name, code, data))
         end
     end, "GET")
 end
@@ -87,12 +87,12 @@ CreateThread(function()
     local versionFile = nil
     local vfile = LoadVersionFile()
     if vfile == nil then
-        warnLog("Unable to load local plugin version file")
+        warnLog("UNHANDLED_WARNING", "Unable to load local plugin version file")
         goto skip
     end
     versionFile = json.decode(vfile)
     if versionFile == nil then
-        warnLog("Unable to parse local plugin version file")
+        warnLog("UNHANDLED_WARNING", "Unable to parse local plugin version file")
         goto skip
     end
 
@@ -112,7 +112,7 @@ CreateThread(function()
                             Config.plugins[k].enabled = false
                             Config.plugins[k].disableReason = ("Missing dependency %s"):format(plugin.name)
                         elseif plugin.name ~= "esxsupport" then
-                            warnLog(("[submodule loader] submodule %s requires %s, but it is not installed. Some features may not work properly."):format(k, plugin.name))
+                            warnLog("UNHANDLED_WARNING", ("[submodule loader] submodule %s requires %s, but it is not installed. Some features may not work properly."):format(k, plugin.name))
                         end
                     end
                 end

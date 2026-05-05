@@ -71,7 +71,7 @@ CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfi
         RegisterNetEvent("SonoranCAD::dispatchnotify:SetLocation")
         AddEventHandler("SonoranCAD::dispatchnotify:SetLocation", function(coords)
             if coords == nil then
-                return warnLog("SetLocation was called, but no coordinates were found")
+                return warnLog("UNHANDLED_WARNING", "SetLocation was called, but no coordinates were found")
             else
                 debugLog(("In SetLocation: x: %s y: %s z: %s"):format(coords.x, coords.y, coords.z))
             end

@@ -37,12 +37,12 @@ local function CopyFile(old_path, new_path)
     local old_file = io.open(old_path, 'rb')
     local new_file = io.open(new_path, 'wb')
     if not old_file then
-        warnLog('Failed to open source file: ' .. old_path ..
+        warnLog("UNHANDLED_WARNING", 'Failed to open source file: ' .. old_path ..
                     ' - please check your folder permissions or rename file manually.')
         return false
     end
     if not new_file then
-        warnLog('Failed to create target file: ' .. new_path ..
+        warnLog("UNHANDLED_WARNING", 'Failed to create target file: ' .. new_path ..
                     ' - please check your folder permissions or rename file manually.')
         old_file:close()
         return false
@@ -101,11 +101,9 @@ Config.GetPluginConfig = function(pluginName)
                                 '_config.dist.lua',
                             GetResourcePath(GetCurrentResourceName()) ..
                                 '/configuration/' .. pluginName .. '_config.lua') then
-                warnLog(
-                    ('Failed to rename %s_config.dist.lua to %s_config.lua'):format(
+                warnLog("UNHANDLED_WARNING", ('Failed to rename %s_config.dist.lua to %s_config.lua'):format(
                         pluginName, pluginName))
-                warnLog(
-                    ('Using default configurations for %s. Please rename %s_config.dist.lua to %s_config.lua to avoid seeing this message'):format(
+                warnLog("UNHANDLED_WARNING", ('Using default configurations for %s. Please rename %s_config.dist.lua to %s_config.lua to avoid seeing this message'):format(
                         pluginName, pluginName, pluginName))
                 correctConfig = LoadResourceFile(GetCurrentResourceName(),
                                                  '/configuration/' .. pluginName ..
@@ -117,8 +115,7 @@ Config.GetPluginConfig = function(pluginName)
             end
         end
         if not correctConfig then
-            warnLog(
-                ('Submodule %s is missing critical configuration. Please check our submodule install guide at https://info.sonorancad.com/integration-plugins/in-game-integration/fivem-installation/submodule-configuration#activating-a-submodule for steps to properly install.'):format(
+            warnLog("UNHANDLED_WARNING", ('Submodule %s is missing critical configuration. Please check our submodule install guide at https://info.sonorancad.com/integration-plugins/in-game-integration/fivem-installation/submodule-configuration#activating-a-submodule for steps to properly install.'):format(
                     pluginName))
             Config.plugins[pluginName] = {
                 enabled = false,
@@ -131,7 +128,7 @@ Config.GetPluginConfig = function(pluginName)
         else
             local matchedConfig = correctConfig:match("local config = {.-\n}")
             if not matchedConfig then
-                errorLog("No config table found in the string.")
+                errorLog("UNHANDLED_SERVER_ERROR", "No config table found in the string.")
                 Config.plugins[pluginName] = {
                     enabled = false,
                     disableReason = 'Invalid config format'
@@ -149,7 +146,7 @@ Config.GetPluginConfig = function(pluginName)
                 -- Execute and capture the returned config table
                 local success, res = pcall(loadedPlugin)
                 if not success then
-                    errorLog(('Submodule %s failed to load due to error: %s'):format(pluginName, res))
+                    errorLog("UNHANDLED_SERVER_ERROR", ('Submodule %s failed to load due to error: %s'):format(pluginName, res))
                     Config.plugins[pluginName] = {
                         enabled = false,
                         disableReason = 'Failed to load'
@@ -161,8 +158,7 @@ Config.GetPluginConfig = function(pluginName)
                     Config.plugins[pluginName] = res
                 else
                     -- Handle case where config is not available
-                    errorLog(
-                        ('Plugin %s did not define a valid config table.'):format(
+                    errorLog("UNHANDLED_SERVER_ERROR", ('Plugin %s did not define a valid config table.'):format(
                             pluginName))
                     Config.plugins[pluginName] = {
                         enabled = false,
@@ -182,7 +178,7 @@ Config.GetPluginConfig = function(pluginName)
                     Config.plugins[pluginName].disableReason = 'Disabled'
                 end
             else
-                errorLog(('Plugin %s failed to load due to error: %s'):format(
+                errorLog("UNHANDLED_SERVER_ERROR", ('Plugin %s failed to load due to error: %s'):format(
                              pluginName, pluginError))
                 Config.plugins[pluginName] = {
                     enabled = false,
@@ -227,11 +223,9 @@ Config.LoadPlugin = function(pluginName, cb)
                                 '_config.dist.lua',
                             GetResourcePath(GetCurrentResourceName()) ..
                                 '/configuration/' .. pluginName .. '_config.lua') then
-                warnLog(
-                    ('Failed to rename %s_config.dist.lua to %s_config.lua'):format(
+                warnLog("UNHANDLED_WARNING", ('Failed to rename %s_config.dist.lua to %s_config.lua'):format(
                         pluginName, pluginName))
-                warnLog(
-                    ('Using default configurations for %s. Please rename %s_config.dist.lua to %s_config.lua to avoid seeing this message'):format(
+                warnLog("UNHANDLED_WARNING", ('Using default configurations for %s. Please rename %s_config.dist.lua to %s_config.lua to avoid seeing this message'):format(
                         pluginName, pluginName, pluginName))
                 correctConfig = LoadResourceFile(GetCurrentResourceName(),
                                                  '/configuration/' .. pluginName ..
@@ -243,8 +237,7 @@ Config.LoadPlugin = function(pluginName, cb)
             end
         end
         if not correctConfig then
-            warnLog(
-                ('Plugin %s is missing critical configuration. Please check our plugin install guide at https://info.sonorancad.com/integration-submodules/integration-submodules/plugin-installation for steps to properly install.'):format(
+            warnLog("UNHANDLED_WARNING", ('Plugin %s is missing critical configuration. Please check our plugin install guide at https://info.sonorancad.com/integration-submodules/integration-submodules/plugin-installation for steps to properly install.'):format(
                     pluginName))
             Config.plugins[pluginName] = {
                 enabled = false,
@@ -257,7 +250,7 @@ Config.LoadPlugin = function(pluginName, cb)
         else
             local matchedConfig = correctConfig:match("local config = {.-\n}")
             if not matchedConfig then
-                errorLog("No config table found in the string.")
+                errorLog("UNHANDLED_SERVER_ERROR", "No config table found in the string.")
                 Config.plugins[pluginName] = {
                     enabled = false,
                     disableReason = 'Invalid config format'
@@ -275,7 +268,7 @@ Config.LoadPlugin = function(pluginName, cb)
                 -- Execute and capture the returned config table
                 local success, res = pcall(loadedPlugin)
                 if not success then
-                    errorLog(('Plugin %s failed to load due to error: %s'):format(pluginName, res))
+                    errorLog("UNHANDLED_SERVER_ERROR", ('Plugin %s failed to load due to error: %s'):format(pluginName, res))
                     Config.plugins[pluginName] = {
                         enabled = false,
                         disableReason = 'Failed to load'
@@ -287,8 +280,7 @@ Config.LoadPlugin = function(pluginName, cb)
                     Config.plugins[pluginName] = res
                 else
                     -- Handle case where config is not available
-                    errorLog(
-                        ('Plugin %s did not define a valid config table.'):format(
+                    errorLog("UNHANDLED_SERVER_ERROR", ('Plugin %s did not define a valid config table.'):format(
                             pluginName))
                     Config.plugins[pluginName] = {
                         enabled = false,
@@ -308,7 +300,7 @@ Config.LoadPlugin = function(pluginName, cb)
                     Config.plugins[pluginName].disableReason = 'Disabled'
                 end
             else
-                errorLog(('Plugin %s failed to load due to error: %s'):format(
+                errorLog("UNHANDLED_SERVER_ERROR", ('Plugin %s failed to load due to error: %s'):format(
                              pluginName, pluginError))
                 Config.plugins[pluginName] = {
                     enabled = false,
@@ -335,8 +327,8 @@ if not updateIgnoreContent then
     infoLog('No updateIgnore.json found... attempting to copy default template (updateIgnore.CHANGEME.json)')
 
     if not CopyFile(defaultIgnorePath, updateIgnorePath) then
-        warnLog('Failed to copy updateIgnore.CHANGEME.json to updateIgnore.json')
-        warnLog('Using default ignore list. Please manually copy updateIgnore.CHANGEME.json to updateIgnore.json to suppress this warning.')
+        warnLog("UNHANDLED_WARNING", 'Failed to copy updateIgnore.CHANGEME.json to updateIgnore.json')
+        warnLog("UNHANDLED_WARNING", 'Using default ignore list. Please manually copy updateIgnore.CHANGEME.json to updateIgnore.json to suppress this warning.')
         updateIgnoreContent = LoadResourceFile(GetCurrentResourceName(), '/configuration/updateIgnore.CHANGEME.json')
     else
         updateIgnoreContent = LoadResourceFile(GetCurrentResourceName(), '/configuration/updateIgnore.json')
@@ -347,10 +339,10 @@ if updateIgnoreContent then
     if parsed and type(parsed) == "table" then
         updaterIgnore = parsed
     else
-        warnLog('updateIgnore file exists but is not valid JSON. Defaulting to empty list.')
+        warnLog("UNHANDLED_WARNING", 'updateIgnore file exists but is not valid JSON. Defaulting to empty list.')
     end
 else
-    warnLog('Unable to load any updateIgnore content.')
+    warnLog("UNHANDLED_WARNING", 'Unable to load any updateIgnore content.')
 end
 
 
@@ -557,7 +549,7 @@ CreateThread(function()
     local serverId = tonumber(Config.serverId)
     while Config.apiVersion == -1 do Wait(10) end
     if not Config.apiSendEnabled then
-        errorLog('Config.apiSendEnabled disabled via convar or config, skipping server registration. Check your config if this is unintentional.')
+        errorLog("CAD_API_DISABLED", 'Config.apiSendEnabled disabled via convar or config, skipping server registration. Check your config if this is unintentional.')
         return
     end
     local serversResponse = CadApiGetServers()
@@ -658,14 +650,12 @@ CreateThread(function()
                 debugLog('SET_SERVERS: ' .. tostring(setServersResponse.data and json.encode(setServersResponse.data) or 'OK'))
             end
         elseif disableOverride and not needSetup then
-            warnLog(
-                'disableOverride is true or there is no additional setup required, skipping any potential auto-IP/port fixing')
+            warnLog("UNHANDLED_WARNING", 'disableOverride is true or there is no additional setup required, skipping any potential auto-IP/port fixing')
         end
     end, 'GET', nil, nil)
 
     if isPluginLoaded('livemap') then
-        warnLog(
-            'The livemap plugin is no longer being used due to the map being native to the CAD. You can remove this plugin.')
+        warnLog("UNHANDLED_WARNING", 'The livemap plugin is no longer being used due to the map being native to the CAD. You can remove this plugin.')
     end
 end)
 
@@ -674,18 +664,16 @@ CreateThread(function()
     if Config.critError then return end
     if isPluginLoaded('wraithv2') then
         if GetResourceState('wk_wars2x') ~= 'started' then
-            warnLog(
-                ('Warning: wk_wars2x resource in bad start (%s). Ensure it is started to use the wraithv2 resource.'):format(
+            warnLog("UNHANDLED_WARNING", ('Warning: wk_wars2x resource in bad start (%s). Ensure it is started to use the wraithv2 resource.'):format(
                     GetResourceState('wk_wars2x')))
         end
         if GetResourceState('pNotify') ~= 'started' then
-            warnLog(
-                ('Warning: pNotify is required to see notifications from the wraithv2 plugin but the resource in bad start (%s). Ensure it is started'):format(
+            warnLog("UNHANDLED_WARNING", ('Warning: pNotify is required to see notifications from the wraithv2 plugin but the resource in bad start (%s). Ensure it is started'):format(
                     GetResourceState('pNotify')))
         end
     end
     if isPluginLoaded('smartsigns') then
-        warnLog('smartsigns is now a standalone resource. Please update.')
+        warnLog("UNHANDLED_WARNING", 'smartsigns is now a standalone resource. Please update.')
     end
     -- smartsigns improper install check
     if file_exists(('%s/submodules/smartsigns/sv_smartsigns.lua'):format(
@@ -693,10 +681,9 @@ CreateThread(function()
         file_exists(
             ('%s/submodules/smartsigns/smartsigns/sv_smartsigns.lua'):format(
                 GetResourcePath(GetCurrentResourceName()))) then
-        errorLog('-----------------------')
-        errorLog(
-            'Smartsigns incorrect installation detected. This should be installed a standalone resource. If you still have the plugin, you MUST update! You will recieve a parse error in this state.')
-        errorLog('-----------------------')
+        errorLog("UNHANDLED_SERVER_ERROR", '-----------------------')
+        errorLog("UNHANDLED_SERVER_ERROR", 'Smartsigns incorrect installation detected. This should be installed a standalone resource. If you still have the plugin, you MUST update! You will recieve a parse error in this state.')
+        errorLog("UNHANDLED_SERVER_ERROR", '-----------------------')
     end
 end)
 

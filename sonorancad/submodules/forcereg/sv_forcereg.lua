@@ -47,7 +47,7 @@ if pluginConfig.enabled and pluginConfig.requireLink ~= false then
     end
 
     if type(pluginConfig.captiveOption) == "string" and pluginConfig.captiveOption:lower() == "whitelist" then
-        warnLog(("Forcereg whitelist mode is enabled. This blocks players before they can use /%s in-game, so first-time linking must be done outside the server or by using Nag/Freeze instead."):format(linkCommand))
+        warnLog("UNHANDLED_WARNING", ("Forcereg whitelist mode is enabled. This blocks players before they can use /%s in-game, so first-time linking must be done outside the server or by using Nag/Freeze instead."):format(linkCommand))
         AddEventHandler("playerConnecting", function(name, setMessage, deferrals)
             local player = source
             deferrals.defer()
@@ -57,7 +57,7 @@ if pluginConfig.enabled and pluginConfig.requireLink ~= false then
             local identifier, identifier_type = get_player_identifier(player)
             checkCadLink(identifier, identifier_type, deferrals, function(exists, deferral)
                 if not exists then
-                    warnLog(("Forcereg denied player %s because no CAD link was found."):format(tostring(player)))
+                    warnLog("UNHANDLED_WARNING", ("Forcereg denied player %s because no CAD link was found."):format(tostring(player)))
                     deferral.done(captiveMessage)
                 else
                     deferral.done()

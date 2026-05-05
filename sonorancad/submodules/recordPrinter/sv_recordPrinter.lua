@@ -19,7 +19,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
             end
         end
         local unitSource = GetSourceByCadIdentity(GetUnitIdentityValues(unitInCache))
-        if not unitSource then return warnLog('User tried to print a PDF in-game but was not found in the unit cache')end
+        if not unitSource then return warnLog("UNHANDLED_WARNING", 'User tried to print a PDF in-game but was not found in the unit cache')end
         local function resolvePromise(value)
             if type(value) == 'table' or type(value) == 'userdata' then
                 local ok, result = pcall(function()
@@ -35,7 +35,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         local identId = tostring(printData.identId or 'unknown')
         local pdfDirectory = resolvePromise(exports['sonorancad']:createPDFDirectory(identId)) or ''
         if pdfDirectory == '' then
-            warnLog(('Record printer failed to get directory for %s'):format(identId))
+            warnLog("UNHANDLED_WARNING", ('Record printer failed to get directory for %s'):format(identId))
             return
         end
 
@@ -43,7 +43,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         local filePath = pdfDirectory .. '/' .. filename
         local savedPath = resolvePromise(exports['sonorancad']:savePdfFromUrl(printData.url, filePath))
         if not savedPath or savedPath == '' then
-            warnLog(('Record printer failed to save PDF for %s'):format(identId))
+            warnLog("UNHANDLED_WARNING", ('Record printer failed to save PDF for %s'):format(identId))
             return
         end
 
@@ -113,7 +113,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
 
         -- Basic allowlist for expected URLs (external https or local NUI file)
         if not (recordUrl:match("^https?://") or recordUrl:match("^nui://")) then
-            warnLog(('Record printer rejected ShareRecord with invalid url from %s'):format(src))
+            warnLog("UNHANDLED_WARNING", ('Record printer rejected ShareRecord with invalid url from %s'):format(src))
             return
         end
 
@@ -136,7 +136,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
 
         -- If no valid targets remain, bail instead of broadcasting to everyone.
         if #targets == 0 then
-            warnLog(('Record printer ShareRecord rejected empty target list from %s'):format(src))
+            warnLog("UNHANDLED_WARNING", ('Record printer ShareRecord rejected empty target list from %s'):format(src))
             return
         end
 

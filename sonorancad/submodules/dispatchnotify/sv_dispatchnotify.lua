@@ -31,8 +31,7 @@ if pluginConfig.enabled then
         local first = values[1]
         for i = 2, #values do
             if values[i] ~= first then
-                warnLog(
-                    "dispatchnotify: multiple legacy notify method settings detected; please migrate to notifyMethod. Using \"" ..
+                warnLog("UNHANDLED_WARNING", "dispatchnotify: multiple legacy notify method settings detected; please migrate to notifyMethod. Using \"" ..
                         tostring(first) .. "\".")
                 break
             end
@@ -126,7 +125,7 @@ if pluginConfig.enabled then
             return IsPlayerAceAllowed(player, "sonorancad.dispatchnotify")
         elseif pluginConfig.unitDutyMethod == "esxjob" then
             if not (isPluginLoaded("esxsupport") or isPluginLoaded("frameworksupport")) then
-                warnLog("dispatchnotify requires frameworksupport or esxsupport when unitDutyMethod is esxjob. Treating player as off duty.")
+                warnLog("UNHANDLED_WARNING", "dispatchnotify requires frameworksupport or esxsupport when unitDutyMethod is esxjob. Treating player as off duty.")
                 return false
             end
             local job = GetCurrentJob(player)
@@ -421,12 +420,12 @@ if pluginConfig.enabled then
                     if PostalsCache[tonumber(callerPlayerId)] ~= nil then
                         postal = PostalsCache[tonumber(callerPlayerId)]
                     else
-                        warnLog("PostalsCache is nil, please check your postals plugin. Enable debug mode to see more info.")
+                        warnLog("UNHANDLED_WARNING", "PostalsCache is nil, please check your postals plugin. Enable debug mode to see more info.")
                         debugLog("Failed to obtain postal. "..json.encode(PostalsCache))
                         failedToGetPostal = true
                     end
                 else
-                    warnLog('PostalsCache is nil, please check your postals plugin.')
+                    warnLog("UNHANDLED_WARNING", 'PostalsCache is nil, please check your postals plugin.')
                     failedToGetPostal = true
                 end
             else
@@ -471,7 +470,7 @@ if pluginConfig.enabled then
             }
             local response = CadApiCreateDispatchCall(payload)
             if not response.success then
-                errorLog("Dispatch creation failed: " .. CadApiReasonText(response.reason))
+                errorLog("UNHANDLED_SERVER_ERROR", "Dispatch creation failed: " .. CadApiReasonText(response.reason))
                 return
             end
             debugLog("Call creation OK")

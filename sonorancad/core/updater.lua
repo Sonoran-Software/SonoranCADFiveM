@@ -29,7 +29,7 @@ AddEventHandler("unzipCoreCompleted", function(success, error)
             infoLog("Delaying auto-update until server is empty.")
             return
         end
-        warnLog("Auto-restarting...")
+        warnLog("UNHANDLED_WARNING", "Auto-restarting...")
         signalUpdateHelper("core")
         Wait(5000)
         ExecuteCommand("ensure sonoran_updatehelper")
@@ -38,7 +38,7 @@ AddEventHandler("unzipCoreCompleted", function(success, error)
         if errorText:find("allow%-child%-process") or errorText:find("child spawn not allowed") then
             logError("UPDATE_CHILD_PERMISSION")
         else
-            errorLog(errorText)
+            errorLog("UNHANDLED_SERVER_ERROR", errorText)
         end
     end
 end)
@@ -65,7 +65,7 @@ local function doUpdate(latest)
             infoLog("Saved file...")
             doUnzip(savePath)
         else
-            warnLog(("Failed to download from %s: %s %s"):format(releaseUrl, code, data))
+            warnLog("UNHANDLED_WARNING", ("Failed to download from %s: %s %s"):format(releaseUrl, code, data))
         end
     end, "GET")
 
@@ -86,7 +86,7 @@ function RunAutoUpdater(manualRun)
     end
     local versionFile = Config.autoUpdateUrl
     if versionFile == "https://raw.githubusercontent.com/Sonoran-Software/SonoranCADLuaIntegration/{branch}/sonorancad/version.json" then
-        errorLog('It seems like you might be running a v2.X.X core configuration file. Please update from the config.CHANGEME.json file or reinstall the resource. Install guide: https://sonoran.link/v3')
+        errorLog("UNHANDLED_SERVER_ERROR", 'It seems like you might be running a v2.X.X core configuration file. Please update from the config.CHANGEME.json file or reinstall the resource. Install guide: https://sonoran.link/v3')
         versionFile = "https://raw.githubusercontent.com/Sonoran-Software/SonoranCADFiveM/{branch}/sonorancad/version.json"
     end
     if versionFile == nil then
@@ -99,7 +99,7 @@ function RunAutoUpdater(manualRun)
         if code == 200 then
             local remote = SafeJsonDecode(data, "auto-updater version lookup", nil)
             if remote == nil then
-                warnLog(("Failed to get a valid response for %s. Skipping."):format(versionFile))
+                warnLog("UNHANDLED_WARNING", ("Failed to get a valid response for %s. Skipping."):format(versionFile))
                 debugLog(("Raw output for %s: %s"):format(versionFile, tostring(data)))
             else
                 Config.latestVersion = remote.resource
@@ -117,7 +117,7 @@ function RunAutoUpdater(manualRun)
                         print("^1|^7 This update requires manual migration.                                    ^1|")
                         print("^1|^7 See: ^4https://sonoran.link/cadupdate^7                                       ^1|")
                         print("^1|===========================================================================|^7")
-                        warnLog("Major version update detected. Auto-update disabled. Manual migration required. See https://sonoran.link/cadupdate")
+                        warnLog("UNHANDLED_WARNING", "Major version update detected. Auto-update disabled. Manual migration required. See https://sonoran.link/cadupdate")
                         return
                     end
                     if not Config.allowAutoUpdate then
@@ -128,7 +128,7 @@ function RunAutoUpdater(manualRun)
                         print("^3| Download at: ^4https://sonoran.link/caddownload                         ^3|")
                         print("^3|===========================================================================|^7")
                         if Config.allowAutoUpdate == nil then
-                            warnLog("You have not configured the automatic updater. Please set allowAutoUpdate in config.json to allow updates.")
+                            warnLog("UNHANDLED_WARNING", "You have not configured the automatic updater. Please set allowAutoUpdate in config.json to allow updates.")
                         end
                     else
                         infoLog("Running auto-update now...")
@@ -141,7 +141,7 @@ function RunAutoUpdater(manualRun)
                 end
             end
         else
-            warnLog(("Auto-updater version check failed for %s: HTTP %s"):format(versionFile, tostring(code)))
+            warnLog("UNHANDLED_WARNING", ("Auto-updater version check failed for %s: HTTP %s"):format(versionFile, tostring(code)))
         end
     end, "GET")
 end
@@ -151,7 +151,7 @@ CreateThread(function()
     while true do
         if pendingRestart then
             if GetNumPlayerIndices() > 0 then
-                warnLog("An update has been applied to SonoranCAD but requires a resource restart. Restart delayed until server is empty.")
+                warnLog("UNHANDLED_WARNING", "An update has been applied to SonoranCAD but requires a resource restart. Restart delayed until server is empty.")
             else
                 infoLog("Server is empty, restarting resources...")
                 signalUpdateHelper("core")

@@ -42,7 +42,7 @@ local function validateBundledCfgPermissions()
     for errorKey, patterns in pairs(requiredLines) do
         for _, pattern in ipairs(patterns) do
             if not raw:find(pattern) then
-                warnLog(errorKey)
+                warnLog("UNHANDLED_WARNING", getWarningText(errorKey) or getErrorText(errorKey) or tostring(errorKey))
                 break
             end
         end
@@ -605,13 +605,13 @@ checkCADSubscriptionType = function()
 	end
 	local version = exports['sonorancad']:getCadVersion()
 	if version ~= 4 and version == 3 then
-		errorLog('The live map blip feature require the Pro plan for the CAD. It will be disabled for this run.'
+		errorLog("UNHANDLED_SERVER_ERROR", 'The live map blip feature require the Pro plan for the CAD. It will be disabled for this run.'
 						                           .. ' We recommend either upgrading your plan or disabling this feature in the config file.')
 		Config.integration.SonoranCAD_integration.addLiveMapBlips = false
 		Config.modified = true
 		TriggerClientEvent(GetCurrentResourceName() .. '::ModifiedConfig', -1, Config)
 	elseif version ~= 4 and version ~= 3 and version ~= 5 and version ~= 6 then
-		errorLog('SonoranCAD integration with this script requires at least a Plus plan for the CAD. It will be'
+		errorLog("UNHANDLED_SERVER_ERROR", 'SonoranCAD integration with this script requires at least a Plus plan for the CAD. It will be'
 						                           .. ' disabled for this run. We recommend either upgrading your plan or disabling this' .. ' feature in the config file.')
 		Config.integration.SonoranCAD_integration.use = false
 		Config.modified = true

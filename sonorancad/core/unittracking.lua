@@ -238,7 +238,7 @@ Citizen.CreateThread(function()
         debugLog("Disabling active units routine")
         return
     elseif not Config.apiSendEnabled then
-        errorLog("Config.apiSendEnabled disabled via convar or config, skipping unit caching. Check your config if this is unintentional.")
+        errorLog("CAD_API_DISABLED", "Config.apiSendEnabled disabled via convar or config, skipping unit caching. Check your config if this is unintentional.")
         return
     end
     while true do
@@ -300,7 +300,7 @@ CreateThread(function()
         Wait(10)
     end
     if not Config.apiSendEnabled then
-        errorLog("Config.apiSendEnabled disabled via convar or config, skipping call caching. Check your config if this is unintentional.")
+        errorLog("CAD_API_DISABLED", "Config.apiSendEnabled disabled via convar or config, skipping call caching. Check your config if this is unintentional.")
         return
     end
     local payload = { serverId = tonumber(tonumber(Config.serverId)) }

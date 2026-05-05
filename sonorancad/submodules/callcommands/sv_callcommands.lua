@@ -167,13 +167,13 @@
                 end
                 local response = CadApiCreateDispatchCall(payload)
                 if not response.success then
-                    warnLog("Call creation failed: " .. CadApiReasonText(response.reason))
+                    warnLog("UNHANDLED_WARNING", "Call creation failed: " .. CadApiReasonText(response.reason))
                     return
                 end
                 if response.callId ~= nil then
                     TriggerEvent("SonoranCAD::callcommands:CallCreated", response.callId)
                 else
-                    warnLog("Call creation returned unexpected response: " .. json.encode(response.data or {}))
+                    warnLog("UNHANDLED_WARNING", "Call creation returned unexpected response: " .. json.encode(response.data or {}))
                 end
             end)
 
@@ -262,10 +262,10 @@
                         if response.callId ~= nil then
                             TriggerEvent("SonoranCAD::callcommands:EmergencyCallAdd", source, response.callId)
                         else
-                            warnLog("Emergency call creation returned unexpected response: " .. json.encode(response.data or {}))
+                            warnLog("UNHANDLED_WARNING", "Emergency call creation returned unexpected response: " .. json.encode(response.data or {}))
                         end
                     else
-                        errorLog("Config.apiSendEnabled disabled via convar or config, skipping call creation. Check your config if this is unintentional.")
+                        errorLog("UNHANDLED_SERVER_ERROR", "Config.apiSendEnabled disabled via convar or config, skipping call creation. Check your config if this is unintentional.")
                     end
                 end)
 

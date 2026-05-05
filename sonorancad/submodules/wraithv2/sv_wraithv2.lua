@@ -25,7 +25,7 @@ if pluginConfig.enabled then
 	end
 
 	if pluginConfig.notificationTimers == nil then
-		warnLog('Notification timers are not set in the wraithv2 configuration. Using defaults. Please update your configuration using the wraithv2_config.dist.lua file located in the configuration folder.')
+		warnLog("UNHANDLED_WARNING", 'Notification timers are not set in the wraithv2 configuration. Using defaults. Please update your configuration using the wraithv2_config.dist.lua file located in the configuration folder.')
 		pluginConfig.notificationTimers = {
 			validReg = 20000,
 			warrant = 20000,
@@ -93,7 +93,7 @@ if pluginConfig.enabled then
 				elseif cbType == 'server' then
 					TriggerServerEvent(returnEvent, source, {['regData'] = regData, ['vehData'] = vehData, ['charData'] = charData, ['boloData'] = boloData, ['warrantData'] = warrantData, ['plate'] = plate, ['cam'] = cam, ['index'] = index})
 				else
-					warnLog('The provided cbType for wk:onPlateLocked was invalid!')
+					warnLog("UNHANDLED_WARNING", 'The provided cbType for wk:onPlateLocked was invalid!')
 				end
 			end
 			if #vehData < 1 then
@@ -124,7 +124,7 @@ if pluginConfig.enabled then
 					return
 				end
 				if regData[1].status == nil then
-					warnLog(('Plate %s was scanned by %s, but status was nil. Record: %s'):format(plate, source, json.encode(regData[1])))
+					warnLog("UNHANDLED_WARNING", ('Plate %s was scanned by %s, but status was nil. Record: %s'):format(plate, source, json.encode(regData[1])))
 					return
 				end
 				local plate = reg.plate
@@ -192,7 +192,7 @@ if pluginConfig.enabled then
 				elseif cbType == 'server' then
 					TriggerServerEvent(returnEvent, source, {['regData'] = regData, ['vehData'] = vehData, ['charData'] = charData, ['boloData'] = boloData, ['warrantData'] = warrantData, ['plate'] = plate, ['cam'] = cam, ['index'] = index})
 				else
-					warnLog('The provided cbType for wk:onPlateLocked was invalid!')
+					warnLog("UNHANDLED_WARNING", 'The provided cbType for wk:onPlateLocked was invalid!')
 				end
 			end
 			if cam == 'front' then
@@ -223,7 +223,7 @@ if pluginConfig.enabled then
 					return
 				end
 				if regData[1].status == nil then
-					warnLog(('Plate %s was scanned by %s, but status was nil. Record: %s'):format(plate, source, json.encode(regData[1])))
+					warnLog("UNHANDLED_WARNING", ('Plate %s was scanned by %s, but status was nil. Record: %s'):format(plate, source, json.encode(regData[1])))
 					return
 				end
 				local statusUid = pluginConfig.statusUid ~= nil and pluginConfig.statusUid or 'status'

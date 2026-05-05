@@ -4,7 +4,7 @@ local PluginHttpRoutes = {}
 
 function RegisterPluginHttpEvent(eventName, func)
 	if PluginHttpHandlers[eventName] ~= nil then
-		errorLog('Failed to register plugin event ' .. eventName .. ': Already Exists')
+		errorLog("UNHANDLED_SERVER_ERROR", 'Failed to register plugin event ' .. eventName .. ': Already Exists')
 		return
 	end
 	PluginHttpHandlers[eventName] = func
@@ -18,7 +18,7 @@ function RegisterPluginHttpRoute(method, routePath, func)
 	end
 	local key = normalizedMethod .. ':' .. normalizedPath
 	if PluginHttpRoutes[key] ~= nil then
-		errorLog('Failed to register plugin route ' .. key .. ': Already Exists')
+		errorLog("UNHANDLED_SERVER_ERROR", 'Failed to register plugin route ' .. key .. ': Already Exists')
 		return
 	end
 	PluginHttpRoutes[key] = func
@@ -380,7 +380,7 @@ local function handlePushEventPayload(body, rawData, res, source)
 		if not handlerOk then
 			success = false
 			result = 'handler exception'
-			errorLog(('Push event handler failed for %s over %s: %s'):format(eventType, tostring(source), tostring(handlerSuccess)))
+			errorLog("UNHANDLED_SERVER_ERROR", ('Push event handler failed for %s over %s: %s'):format(eventType, tostring(source), tostring(handlerSuccess)))
 		else
 			success, result = handlerSuccess, handlerResult
 			if not success and not result then
@@ -441,7 +441,7 @@ SetHttpHandler(function(req, res)
 		if method == 'OPTIONS' then
 			local ok, err = pcall(routeHandler, req, res, nil, queryParams, normalizedPathOnly)
 			if not ok then
-				errorLog(('Plugin HTTP route failed for %s %s: %s'):format(tostring(method), tostring(normalizedPathOnly), tostring(err)))
+				errorLog("UNHANDLED_SERVER_ERROR", ('Plugin HTTP route failed for %s %s: %s'):format(tostring(method), tostring(normalizedPathOnly), tostring(err)))
 				res.writeHead(500)
 				res.send(json.encode({ error = 'plugin route failure' }))
 			end
@@ -450,7 +450,7 @@ SetHttpHandler(function(req, res)
 		req.setDataHandler(function(body)
 			local ok, err = pcall(routeHandler, req, res, body or '', queryParams, normalizedPathOnly)
 			if not ok then
-				errorLog(('Plugin HTTP route failed for %s %s: %s'):format(tostring(method), tostring(normalizedPathOnly), tostring(err)))
+				errorLog("UNHANDLED_SERVER_ERROR", ('Plugin HTTP route failed for %s %s: %s'):format(tostring(method), tostring(normalizedPathOnly), tostring(err)))
 				res.writeHead(500)
 				res.send(json.encode({ error = 'plugin route failure' }))
 			end
@@ -587,7 +587,7 @@ SetHttpHandler(function(req, res)
 				end
 				local ok, resp = pcall(PluginHttpHandlers[body.type], body)
 				if not ok then
-					errorLog(('Plugin HTTP event failed for %s: %s'):format(tostring(body.type), tostring(resp)))
+					errorLog("UNHANDLED_SERVER_ERROR", ('Plugin HTTP event failed for %s: %s'):format(tostring(body.type), tostring(resp)))
 					return res.send(json.encode({ error = 'plugin event failure' }))
 				end
 				local encoded = SafeJsonEncode(resp, ('plugin HTTP event %s response'):format(tostring(body.type)), '{}')
@@ -599,7 +599,7 @@ SetHttpHandler(function(req, res)
 	elseif method == 'GET' and PluginFilePaths[base] ~= nil then
 		local data = LoadResourceFile(GetCurrentResourceName(), ('filestore/%s/%s'):format(base, file), 'r')
 		if not data then
-			warnLog('NOFILE: ' .. tostring(('%s/filestore/%s/%s'):format(GetResourcePath(GetCurrentResourceName()), base, file)))
+			warnLog("UNHANDLED_WARNING", 'NOFILE: ' .. tostring(('%s/filestore/%s/%s'):format(GetResourcePath(GetCurrentResourceName()), base, file)))
 			res.writeHead(404)
 			res.send('404')
 		else

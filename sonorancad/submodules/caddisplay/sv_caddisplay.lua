@@ -33,14 +33,14 @@ CreateThread(function()
                     if ok then
                         qbCore = obj
                     else
-                        warnLog(("[caddisplay] Unable to load qb-core export: %s"):format(tostring(obj)))
+                        warnLog("UNHANDLED_WARNING", ("[caddisplay] Unable to load qb-core export: %s"):format(tostring(obj)))
                     end
                 elseif pluginConfig.framework.frameworkType == "esx" and esx == nil then
                     local ok, obj = pcall(function() return exports["es_extended"]:getSharedObject() end)
                     if ok then
                         esx = obj
                     else
-                        warnLog(("[caddisplay] Unable to load es_extended export: %s"):format(tostring(obj)))
+                        warnLog("UNHANDLED_WARNING", ("[caddisplay] Unable to load es_extended export: %s"):format(tostring(obj)))
                     end
                 end
             end
@@ -153,7 +153,7 @@ CreateThread(function()
                         SaveResourceFile(GetCurrentResourceName(), placementFile, defaultFile, -1)
                         stored = defaultFile
                     else
-                        warnLog("[caddisplay] No placement data found; starting with empty placement list.")
+                        warnLog("UNHANDLED_WARNING", "[caddisplay] No placement data found; starting with empty placement list.")
                         placements = {}
                         return
                     end
@@ -161,7 +161,7 @@ CreateThread(function()
 
                 local parsed = json.decode(stored)
                 if not parsed or type(parsed) ~= "table" then
-                    warnLog("[caddisplay] Failed to parse placement file; starting with empty placement list.")
+                    warnLog("UNHANDLED_WARNING", "[caddisplay] Failed to parse placement file; starting with empty placement list.")
                     placements = {}
                     return
                 end
@@ -233,7 +233,7 @@ CreateThread(function()
                         end
                         return
                     end
-                    warnLog("[caddisplay] Failed to parse world placement file; using config defaults.")
+                    warnLog("UNHANDLED_WARNING", "[caddisplay] Failed to parse world placement file; using config defaults.")
                 end
 
                 local defaults = pluginConfig.worldDisplays and pluginConfig.worldDisplays.defaultPlacements or {}

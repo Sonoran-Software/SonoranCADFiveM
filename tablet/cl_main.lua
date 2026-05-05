@@ -705,7 +705,7 @@ end)
 
 RegisterNetEvent("sonoran:tablet:failed")
 AddEventHandler("sonoran:tablet:failed", function(message)
-	errorLog("Failed to link CAD account: "..tostring(message))
+	errorLog("UNHANDLED_SERVER_ERROR", "Failed to link CAD account: "..tostring(message))
 end)
 
 RegisterNUICallback("CadDisplayScreenshot", function(data, cb)

@@ -179,7 +179,7 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
                         local createdBlips = json.decode(res)
                         local createdBlip = type(createdBlips) == "table" and createdBlips[1] or nil
                         if not createdBlip or not createdBlip.id then
-                            warnLog("Failed to assign repeater blip ID for tower at coords: " .. queuedBlip.coordinates.x .. ", " .. queuedBlip.coordinates.y)
+                            warnLog("UNHANDLED_WARNING", "Failed to assign repeater blip ID for tower at coords: " .. queuedBlip.coordinates.x .. ", " .. queuedBlip.coordinates.y)
                             return
                         end
                         for towerIndex=1, #TowerCache do
@@ -356,7 +356,7 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
         RegisterNetEvent("SonoranCAD::sonrad:RadioPanic")
         AddEventHandler("SonoranCAD::sonrad:RadioPanic", function()
             if not isPluginLoaded("callcommands") then
-                errorLog("Cannot process radio panic as the required callcommands plugin is not present.")
+                errorLog("UNHANDLED_SERVER_ERROR", "Cannot process radio panic as the required callcommands plugin is not present.")
                 return
             end
             sendPanic(source, true)
@@ -375,7 +375,7 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
                 enabled = false, -- should the radio name be synced with the CAD?
                 nameFormat = "{UNIT_NUMBER} | {UNIT_NAME}" -- format of the radio name | available variables: {UNIT_NUMBER}, {UNIT_NAME}
             }
-            warnLog('Missing critial configuration for Sonrad. Missing syncRadioName configuration, using default values... Please update from sonrad_config.dist.lua')
+            warnLog("UNHANDLED_WARNING", 'Missing critial configuration for Sonrad. Missing syncRadioName configuration, using default values... Please update from sonrad_config.dist.lua')
         end
         AddEventHandler('SonoranCAD::pushevents:UnitLogin', function(unit)
             if pluginConfig.syncRadioName.enabled then

@@ -15,7 +15,7 @@ CreateThread(function()
 
         local function loadTemplate(fileName)
             if fileName == nil or fileName == "" then
-                warnLog("[calltemplates] callTypeFile missing from command config.")
+                warnLog("UNHANDLED_WARNING", "[calltemplates] callTypeFile missing from command config.")
                 return nil
             end
 
@@ -26,13 +26,13 @@ CreateThread(function()
             local filePath = ("%s/%s"):format(templateDirectory, fileName)
             local raw = LoadResourceFile(GetCurrentResourceName(), filePath)
             if raw == nil then
-                errorLog(("[calltemplates] Unable to load call type template at %s"):format(filePath))
+                errorLog("UNHANDLED_SERVER_ERROR", ("[calltemplates] Unable to load call type template at %s"):format(filePath))
                 return nil
             end
 
             local decoded = SafeJsonDecode(raw, ("call template %s"):format(filePath), nil)
             if decoded == nil then
-                errorLog(("[calltemplates] Failed to decode JSON for template %s"):format(filePath))
+                errorLog("UNHANDLED_SERVER_ERROR", ("[calltemplates] Failed to decode JSON for template %s"):format(filePath))
                 return nil
             end
 
@@ -198,7 +198,7 @@ CreateThread(function()
                     handleCommand(cfg, source, args, rawCommand)
                 end, restricted)
             else
-                warnLog("[calltemplates] command configuration missing `command` or `callTypeFile`")
+                warnLog("UNHANDLED_WARNING", "[calltemplates] command configuration missing `command` or `callTypeFile`")
             end
         end
     end)
