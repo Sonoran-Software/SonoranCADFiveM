@@ -197,7 +197,7 @@ RegisterCommand("sonorancad", function(source, args, rawCommand)
         return
     end
     if not args[1] then
-        print("Missing command. Try \"sonoran help\" for help.")
+        print("Missing command. Try \"sonorancad help\" for help.")
         return
     end
     if args[1] == "help" then
@@ -287,7 +287,7 @@ SonoranCAD Help
         end
         print("----ERROR/WARNING BUFFER END----")
     else
-        print("Missing command. Try \"sonoran help\" for help.")
+        print("Missing command. Try \"sonorancad help\" for help.")
     end
 end, true)
 
