@@ -7,31 +7,6 @@
 ]] CreateThread(function()
     Config.LoadPlugin("callcommands", function(pluginConfig)
         if pluginConfig.enabled then
-
-            if pluginConfig.callerNotifyMethod == nil then
-                pluginConfig.callerNotifyMethod = "auto"
-            end
-
-            local AutoSelectedNotifyMethod = "chat"
-            if pluginConfig.callerNotifyMethod == "auto" then
-                if GetResourceState("lation_ui") == "started" then
-                    AutoSelectedNotifyMethod = "lation_ui"
-                elseif GetResourceState("ox_lib") == "started" then
-                    AutoSelectedNotifyMethod = "ox_lib"
-                elseif GetResourceState("pNotify") == "started" then
-                    AutoSelectedNotifyMethod = "pnotify"
-                else
-                    AutoSelectedNotifyMethod = "chat"
-                end
-            end
-
-            local function ResolveNotifyMethod(cfgValue)
-                if cfgValue == "auto" then
-                    return AutoSelectedNotifyMethod
-                end
-                return cfgValue
-            end
-
             local random = math.random
             local function uuid()
                 math.randomseed(os.time())
@@ -75,35 +50,11 @@
                     TriggerEvent('SonoranCAD::callcommands:SendCallApi', isEmergency, caller, callLocation,
                         description, source, nil, pluginConfig.useCallLocation, type)
                     -- Sending the user a message stating the call has been sent
-                    local callerMethod = ResolveNotifyMethod(pluginConfig.callerNotifyMethod)
-
-                    if callerMethod == "chat" then
-                        TriggerClientEvent("chat:addMessage", source, {
-                            args = {"^0^5^*[SonoranCAD]^r ",
-                                    "^7Your call has been sent to dispatch. Help is on the way!"}
-                        })
-                    elseif callerMethod == "pnotify" then
-                        TriggerClientEvent("pNotify:SendNotification", source, {
-                            text = "Your call has been sent to dispatch. Help is on the way!",
-                            type = "success",
-                            layout = "bottomcenter",
-                            timeout = "10000"
-                        })
-                    elseif callerMethod == "ox_lib" then
-                        TriggerClientEvent("ox_lib:notify", source, {
-                            title = "SonoranCAD",
-                            description = "Your call has been sent to dispatch. Help is on the way!",
-                            duration = "10000",
-                            type = "success"
-                        })
-                    elseif callerMethod == "lation_ui" then
-                        TriggerClientEvent('lation_ui:notify', source, {
-                            title = 'SonoranCAD',
-                            message = "Your call has been sent to dispatch. Help is on the way!",
-                            duration = "10000",
-                            type = 'success'
-                        })
-                    end
+                    NotifyPlayer(source, {
+                        title = "SonoranCAD",
+                        message = "Your call has been sent to dispatch. Help is on the way!",
+                        type = "success"
+                    })
                 else
                     -- Throwing an error message due to no call description stated
                     sendClientError(source, "CALL_MISSING_DETAILS")

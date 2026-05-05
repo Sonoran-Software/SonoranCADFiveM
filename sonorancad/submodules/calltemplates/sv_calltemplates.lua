@@ -177,7 +177,11 @@ CreateThread(function()
                 debugLog(("[calltemplates] sending dispatch from /%s"):format(commandName or "unknown"))
                 local response = CadApiCreateDispatchCall(payload)
                 if response.success then
-                    TriggerClientEvent("chat:addMessage", source, {args = {"^0^5^*[SonoranCAD]^r ", "^7Your call has been sent to CAD."}})
+                    NotifyPlayer(source, {
+                        title = "SonoranCAD",
+                        message = "Your call has been sent to CAD.",
+                        type = "success"
+                    })
                 else
                     CadApiLogFailure("NEW_DISPATCH", response, payload)
                     sendClientError(source, "CALL_SEND_FAILED")

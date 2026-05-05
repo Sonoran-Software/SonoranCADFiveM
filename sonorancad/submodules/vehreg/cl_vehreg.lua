@@ -6,14 +6,11 @@ CreateThread(function() Config.LoadPlugin("vehreg", function(pluginConfig)
         local ped = GetPlayerPed(-1);
         local veh = GetVehiclePedIsIn(ped, false);
         if veh == 0 then
-            TriggerEvent(
-                'chat:addMessage',
-                {
-                    color = {255, 0, 0},
-                    multiline = true,
-                    args = {'[CAD - ERROR] ', pluginConfig.language.notInVeh}
-                }
-            )
+            NotifyClient({
+                title = "CAD - Error",
+                message = pluginConfig.language.notInVeh,
+                type = "error"
+            })
             return;
         else
             local plate = GetVehicleNumberPlateText(veh)

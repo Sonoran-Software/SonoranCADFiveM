@@ -379,9 +379,19 @@ end
 function sendClientError(target, err, msg, ...)
     local report = buildErrorReport("ERROR", err, msg, ...)
     appendSupportError(report)
-    TriggerClientEvent("chat:addMessage", target, {
-        args = {"^0[ ^1Error ^0] ", ("%s: %s"):format(report.entry.code, report.userMessage)}
-    })
+    local notification = {
+        title = "Error",
+        message = ("%s: %s"):format(report.entry.code, report.userMessage),
+        type = "error",
+        chatPrefix = "^0[ ^1Error ^0] "
+    }
+    if type(NotifyPlayer) == "function" then
+        NotifyPlayer(target, notification)
+    else
+        TriggerClientEvent("chat:addMessage", target, {
+            args = {notification.chatPrefix, notification.message}
+        })
+    end
     sendConsole("ERROR", "^1", report.logMessage)
 end
 
@@ -390,9 +400,19 @@ function showClientError(err, msg, ...)
     if IsDuplicityVersion() then
         return sendClientError(-1, err, msg, ...)
     end
-    TriggerEvent("chat:addMessage", {
-        args = {"^0[ ^1Error ^0] ", ("%s: %s"):format(report.entry.code, report.userMessage)}
-    })
+    local notification = {
+        title = "Error",
+        message = ("%s: %s"):format(report.entry.code, report.userMessage),
+        type = "error",
+        chatPrefix = "^0[ ^1Error ^0] "
+    }
+    if type(NotifyClient) == "function" then
+        NotifyClient(notification)
+    else
+        TriggerEvent("chat:addMessage", {
+            args = {notification.chatPrefix, notification.message}
+        })
+    end
     sendConsole("ERROR", "^1", report.logMessage)
 end
 

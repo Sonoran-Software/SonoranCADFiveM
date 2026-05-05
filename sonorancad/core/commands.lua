@@ -189,7 +189,7 @@ Last 50 Debug Messages
     end
     return false
 end
-RegisterCommand("sonoran", function(source, args, rawCommand)
+RegisterCommand("sonorancad", function(source, args, rawCommand)
     if source ~= 0 then
         print("Console only command")
         return
@@ -207,7 +207,6 @@ SonoranCAD Help
     errors - display all error/warning messages since last startup
     plugin <name> - show info about a plugin (config)
     update - Run core updater
-    pluginupdate - Run plugin updater
     viewcaches - View the current unit and call cache, for troubleshooting
     getclientlog <playerId> - Get a log buffer from a given client
     dumpconsole - Dumps current console buffer to file

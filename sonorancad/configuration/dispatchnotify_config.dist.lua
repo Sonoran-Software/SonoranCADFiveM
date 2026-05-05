@@ -8,7 +8,7 @@
 ]]
 local config = {
     enabled = true,
-    configVersion = "3.4",
+    configVersion = "3.5",
     pluginName = "dispatchnotify", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author
     requiresPlugins = {
@@ -72,23 +72,6 @@ local config = {
         Enable "units are on the way" notifications
     ]]
     enableCallerNotify = true,
-    --[[
-        notifyMethod: how should notifications be shown?
-        Applies to: caller notify, unit notify, unit status notify, note notify
-
-            none: disable notifications
-            auto: Will automatically detect the system to use
-            chat: Sends a message in chat
-            pnotify: Uses pNotify to show a notification
-            ox_lib: Uses ox_lib to show a notification
-            lation_ui: Uses lation_ui to show a notification
-            custom: Use the custom events instead (see docs)
-                Incoming calls: SonoranCAD::dispatchnotify:IncomingCallNotify (client)
-                Unit status: SonoranCAD::dispatchnotify:UnitStatusNotify (client)
-                Call notes: SonoranCAD::dispatchnotify:NewCallNote (client)
-                Caller notify: SonoranCAD::dispatchnotify:UnitAttach (server)
-    ]]
-    notifyMethod = "auto",
     --[[
         notifyMessage: Message template to use when sending to the player
 

@@ -37,7 +37,11 @@ if pluginConfig.enabled then
     RegisterNetEvent("SonoranCAD::unitstatus:StatusUpdate")
     AddEventHandler("SonoranCAD::unitstatus:StatusUpdate", function(unitIdentity, status, success)
         if success then
-            TriggerEvent("chat:addMessage", {args = {"^0^5^*[SonoranCAD]^r ", ("^7Status successfully changed to ^5%s^7."):format(statuses[status])}})
+            NotifyClient({
+                title = "SonoranCAD",
+                message = ("Status successfully changed to %s."):format(statuses[status]),
+                type = "success"
+            })
         else
             showClientError("CAD_API_REQUEST_FAILED", "Status change failed.")
         end

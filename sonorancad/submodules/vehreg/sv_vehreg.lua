@@ -90,17 +90,10 @@ CreateThread(function()
 							['{{FIRST}}'] = civData.first,
 							['{{LAST}}'] = civData.last
 						}
-						TriggerClientEvent('chat:addMessage', source, {
-							color = {
-								0,
-								255,
-								0
-							},
-							multiline = true,
-							args = {
-								'[CAD - SUCCESS] ',
-								placeholderReplace(pluginConfig.language.successReg, placeHolders)
-							}
+						NotifyPlayer(source, {
+							title = 'CAD - Success',
+							message = placeholderReplace(pluginConfig.language.successReg, placeHolders),
+							type = 'success'
 						})
 				end
 			end)

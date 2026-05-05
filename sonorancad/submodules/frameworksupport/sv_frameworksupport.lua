@@ -351,7 +351,11 @@
 											if citation.issuer ~= '' then
 												finemessage = finemessage .. ' by ' .. citation.issuer
 											end
-											TriggerClientEvent('chat:addMessage', -1, {color = {255, 0, 0}, multiline = true, args = {finemessage}})
+											NotifyPlayer(-1, {
+												title = 'Fine Issued',
+												message = finemessage,
+												type = 'warning'
+											})
 										end
 										if pluginConfig.qbNotifyFinedPlayer then
 											TriggerClientEvent('QBCore:Notify', xPlayer.PlayerData.source, pluginConfig.qbFineMessage:gsub('$AMOUNT', citation.fine):gsub('$OFFICER_NAME', citation.issuer), 'error', 5000)
@@ -369,7 +373,11 @@
 										if citation.issuer ~= '' then
 											finemessage = finemessage .. ' by ' .. citation.issuer
 										end
-										TriggerClientEvent('chat:addMessage', -1, {color = {255, 0, 0}, multiline = true, args = {finemessage}})
+										NotifyPlayer(-1, {
+											title = 'Fine Issued',
+											message = finemessage,
+											type = 'warning'
+										})
 									end
 								end
 							end

@@ -189,7 +189,11 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         if ox_inventory:CanCarryItem(source, 'sonoran_evidence_pdf', 1) then
             ox_inventory:AddItem(source, 'sonoran_evidence_pdf', 1, info, nil, function(success, reason) end)
         else
-            xPlayer.showNotification(pluginConfig.translations.couldNotHold)
+            NotifyPlayer(source, {
+                title = "Record Printer",
+                message = pluginConfig.translations.couldNotHold,
+                type = "error"
+            })
             return
         end
 

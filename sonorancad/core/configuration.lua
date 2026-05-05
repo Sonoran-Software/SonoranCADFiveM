@@ -15,6 +15,7 @@ Config = {
     primaryIdentifier = nil,
     apiSendEnabled = nil,
     debugMode = nil,
+    notificationSystem = "auto",
     updateBranch = nil,
     enableCanary = false,
     latestVersion = '',
@@ -410,6 +411,40 @@ for k, v in pairs(parsedConfig) do
     end
 end
 
+local validNotificationSystems = {
+    auto = true,
+    ox_lib = true,
+    lation_ui = true,
+    pnotify = true,
+    chat = true
+}
+
+local function normalizeNotificationSystem(value)
+    if type(value) ~= "string" then
+        return nil
+    end
+    local normalized = value:lower():gsub("%s+", "")
+    if normalized == "oxlib" then
+        normalized = "ox_lib"
+    elseif normalized == "pnotify" then
+        normalized = "pnotify"
+    end
+    return normalized
+end
+
+if parsedConfig.notificationSystem == nil then
+    warnLog("UNHANDLED_WARNING", "notificationSystem is missing from config.json. Defaulting to auto. Please update your config.json from config.CHANGEME.json.")
+end
+
+local normalizedNotificationSystem = normalizeNotificationSystem(Config.notificationSystem)
+if normalizedNotificationSystem == nil or not validNotificationSystems[normalizedNotificationSystem] then
+    if Config.notificationSystem ~= nil then
+        warnLog("UNHANDLED_WARNING", ("Invalid notificationSystem value \"%s\" in config.json. Defaulting to auto."):format(tostring(Config.notificationSystem)))
+    end
+    normalizedNotificationSystem = "auto"
+end
+Config.notificationSystem = normalizedNotificationSystem
+
 if type(Config.linkCommand) ~= "string" or Config.linkCommand == "" then
     Config.linkCommand = "link"
 end
@@ -515,6 +550,7 @@ applyFrameworkConvar('allowPopupCloseWhenUnlinked', Config.allowPopupCloseWhenUn
 applyFrameworkConvar('linkPollIntervalMs', Config.linkPollIntervalMs)
 applyFrameworkConvar('linkPopupTitleText', Config.linkPopupTitleText)
 applyFrameworkConvar('linkButtonText', Config.linkButtonText)
+applyFrameworkConvar('notificationSystem', Config.notificationSystem)
 
 if Config.updateBranch == nil then Config.updateBranch = 'master' end
 
@@ -535,6 +571,7 @@ AddEventHandler('SonoranCAD::core:sendClientConfig', function()
         primaryIdentifier = Config.primaryIdentifier,
         apiSendEnabled = Config.apiSendEnabled,
         debugMode = Config.debugMode,
+        notificationSystem = Config.notificationSystem,
         devHiddenSwitch = Config.devHiddenSwitch,
         statusLabels = Config.statusLabels,
         apiVersion = Config.apiVersion,
