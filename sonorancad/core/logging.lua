@@ -65,6 +65,7 @@ local ErrorCodes = {
     ['INVALID_API_MODE'] = { code = "ERR-CORE-027", message = "An invalid SonoranCAD API mode was configured. Falling back to production." },
     ['FILE_WRITE_FAILED'] = { code = "ERR-CORE-028", message = "SonoranCAD could not write a required file to disk." },
     ['CAD_API_REQUEST_FAILED'] = { code = "ERR-CORE-029", message = "A CAD API request failed." },
+    ['LOCAL_NETWORK_TIMEOUT'] = { code = "ERR-CORE-033", message = "The local server network timed out while connecting to SonoranCAD. Check the server host, firewall, proxy, or upstream network connection." },
     ['UNHANDLED_SERVER_ERROR'] = { code = "ERR-CORE-900", message = "An unexpected server error occurred." },
     ['UNHANDLED_WARNING'] = { code = "ERR-CORE-901", message = "A non-fatal warning occurred." },
     ['INVALID_COMMAND_ARGUMENT'] = { code = "ERR-CORE-902", message = "One or more command arguments were invalid." },
