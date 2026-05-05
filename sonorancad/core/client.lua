@@ -130,23 +130,15 @@ local function show_sonoran_command_help(submodule)
     end
 end
 
-RegisterCommand("sonorancad", function(_, args)
-    local subcommand = args[1] and string.lower(args[1]) or "help"
-    if subcommand == "support" then
-        if args[2] == nil or tostring(args[2]) == "" then
-            send_command_help_message("Usage: /sonorancad support <id>")
-            return
-        end
-        TriggerServerEvent("SonoranCAD::core:UploadSupportLogs", args[2])
-        send_command_help_message("Uploading support logs. Please wait...")
-        return
-    end
-    if subcommand ~= "help" then
-        send_command_help_message("Usage: /sonorancad help [submodule] or /sonorancad support <id>")
-        return
-    end
-    show_sonoran_command_help(args[2])
-end, false)
+RegisterNetEvent("SonoranCAD::core:ShowCommandHelp")
+AddEventHandler("SonoranCAD::core:ShowCommandHelp", function(submodule)
+    show_sonoran_command_help(submodule)
+end)
+
+RegisterNetEvent("SonoranCAD::core:ShowCommandMessage")
+AddEventHandler("SonoranCAD::core:ShowCommandMessage", function(message)
+    send_command_help_message(message)
+end)
 
 TriggerEvent("chat:addSuggestion", "/sonorancad", "Show SonoranCAD command help.", {
     { name = "action", help = "Use help or support" },

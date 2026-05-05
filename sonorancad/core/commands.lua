@@ -189,9 +189,37 @@ Last 50 Debug Messages
     end
     return false
 end
-RegisterCommand("sonoran", function(source, args, rawCommand)
+
+local function sendPlayerCommandMessage(target, message)
+    target = tonumber(target) or target
+    TriggerClientEvent("SonoranCAD::core:ShowCommandMessage", target, message)
+end
+
+local function handlePlayerSonoranCommand(source, args)
+    source = tonumber(source) or source
+    local subcommand = args[1] and string.lower(args[1]) or "help"
+    debugLog(("Player %s ran /sonorancad %s"):format(tostring(source), tostring(subcommand)))
+    if subcommand == "support" then
+        if args[2] == nil or tostring(args[2]) == "" then
+            sendPlayerCommandMessage(source, "Usage: /sonorancad support <id>")
+            return
+        end
+        sendPlayerCommandMessage(source, "Uploading support logs. Please wait...")
+        sendSupportLogs(args[2], source)
+        return
+    end
+
+    if subcommand ~= "help" then
+        sendPlayerCommandMessage(source, "Usage: /sonorancad help [submodule] or /sonorancad support <id>")
+        return
+    end
+
+    TriggerClientEvent("SonoranCAD::core:ShowCommandHelp", source, args[2])
+end
+
+RegisterCommand("sonorancad", function(source, args, rawCommand)
     if source ~= 0 then
-        print("Console only command")
+        handlePlayerSonoranCommand(source, args)
         return
     end
     if not args[1] then
@@ -288,7 +316,7 @@ SonoranCAD Help
     else
         print("Missing command. Try \"sonoran help\" for help.")
     end
-end, true)
+end, false)
 
 function GetPluginLists()
     local pluginList = {}
