@@ -49,9 +49,17 @@ function CheckForPluginUpdate(name)
                 local configCompare = compareVersions(remote.submoduleConfigs[name].version, currentVersion)
                 if configCompare.result and not Config.debugMode then
                     if plugin.enabled then
-                        errorLog("UNHANDLED_SERVER_ERROR", ("Submodule Updater: %s has a new configuration version. You should look at the template configuration file (%s_config.dist.lua) and update your configuration before using this submodule. Guide: https://sonoran.link/config-update"):format(name, name))
+                        errorLog("PLUGIN_CONFIG_OUTDATED", getErrorText("PLUGIN_CONFIG_OUTDATED"):format(
+                            name,
+                            currentVersion,
+                            remote.submoduleConfigs[name].version,
+                            name
+                        ) .. " Guide: https://sonoran.link/config-update")
                         Config.plugins[name].enabled = false
-                        Config.plugins[name].disableReason = "outdated config file"
+                        Config.plugins[name].disableReason = ("outdated config file (local %s, required %s)"):format(
+                            currentVersion,
+                            remote.submoduleConfigs[name].version
+                        )
                     end
                 else
                     debugLog(("Submodule %s has the same configuration version."):format(name))

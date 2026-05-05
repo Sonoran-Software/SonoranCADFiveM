@@ -70,7 +70,7 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 ### ERR-CORE-013
 - `Key`: `PLUGIN_CONFIG_OUTDATED`
 - `Meaning`: A submodule configuration file is older than the current template version.
-- `Potential Fix`: Compare your `*_config.lua` against the matching `*_config.dist.lua` and bring missing options forward.
+- `Potential Fix`: Compare your local submodule `*_config.lua` version against the required `*_config.dist.lua` version, copy over the missing settings, then restart the submodule.
 
 ### ERR-CORE-014
 - `Key`: `PLUGIN_CORE_OUTDATED`
