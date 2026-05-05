@@ -173,7 +173,6 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
                     table.insert(BlipQueue, #BlipQueue + 1, CurrentBlip)
                 end
                 for i=1, #BlipQueue do
-                    print("Processing blip queue for tower " .. i .. " of " .. #BlipQueue)
                     local queuedBlip = BlipQueue[i]
                     debugLog("Queueing blip for tower at coords: " .. queuedBlip.coordinates.x .. ", " .. queuedBlip.coordinates.y)
                     BlipMan.addBlip(queuedBlip.coordinates, queuedBlip.radius, queuedBlip.color, queuedBlip.subType, queuedBlip.tooltip, queuedBlip.icon, queuedBlip.data, function(res)

@@ -42,6 +42,82 @@ CreateThread(function()
                 end
             end
 
+            local FREEMODE_MALE = GetHashKey("mp_m_freemode_01")
+            local FREEMODE_FEMALE = GetHashKey("mp_f_freemode_01")
+            local FEMALE_MODEL_PREFIXES = { "a_f_", "s_f_", "u_f_", "mp_f_" }
+            local MALE_MODEL_PREFIXES = { "a_m_", "s_m_", "u_m_", "mp_m_" }
+
+            local function getPedModelName(ped)
+                local success, modelName = pcall(function()
+                    return GetEntityArchetypeName(ped)
+                end)
+
+                if success and type(modelName) == "string" and modelName ~= "" then
+                    return string.lower(modelName)
+                end
+
+                return nil
+            end
+
+            local function modelNameHasPrefix(modelName, prefixes)
+                if type(modelName) ~= "string" then
+                    return false
+                end
+
+                for _, prefix in ipairs(prefixes) do
+                    if modelName:sub(1, #prefix) == prefix then
+                        return true
+                    end
+                end
+
+                return false
+            end
+
+            local function getPedGender(ped)
+                if not DoesEntityExist(ped) then
+                    return "male"
+                end
+
+                local model = GetEntityModel(ped)
+                if model == FREEMODE_MALE then
+                    return "male"
+                elseif model == FREEMODE_FEMALE then
+                    return "female"
+                end
+
+                local modelName = getPedModelName(ped)
+                if modelNameHasPrefix(modelName, FEMALE_MODEL_PREFIXES) then
+                    return "female"
+                elseif modelNameHasPrefix(modelName, MALE_MODEL_PREFIXES) then
+                    return "male"
+                end
+
+                local pedType = GetPedType(ped)
+                if pedType == 5 then
+                    return "female"
+                elseif pedType == 4 then
+                    return "male"
+                end
+
+                if IsPedMale(ped) then
+                    return "male"
+                end
+
+                return "male"
+            end
+
+            local function getGenderedClothingConfig(genderKey)
+                if type(pluginConfig.clothingConfig) == "table" and type(pluginConfig.clothingConfig[genderKey]) == "table" then
+                    return pluginConfig.clothingConfig[genderKey]
+                end
+
+                if type(pluginConfig[genderKey]) == "table" then
+                    return pluginConfig[genderKey]
+                end
+
+                return nil
+            end
+
             -- Return one of: pistol, knife, longgun, shotgun, smg, sniper,
             -- melee, heavy, explosive, throwable, fire, or “unknown”
             function getWeaponCategory(weaponHash)
@@ -162,12 +238,18 @@ CreateThread(function()
                 end
 
                 -- 1) Determine gender
-                local isMale    = IsPedMale(ped)
-                local genderKey = isMale and "male" or "female"
-                local genderStr = isMale and pluginConfig.language.male or pluginConfig.language.female
+                local genderKey = getPedGender(ped)
+                if genderKey ~= "male" and genderKey ~= "female" then
+                    genderKey = "male"
+                end
+                local genderStr = genderKey == "male" and pluginConfig.language.male or pluginConfig.language.female
 
                 -- 2) Grab the gendered clothing table
-                local clothes = pluginConfig.clothingConfig[genderKey]
+                local clothes = getGenderedClothingConfig(genderKey)
+                if type(clothes) ~= "table" then
+                    debugLog(("Missing clothing config for gender '%s'"):format(genderKey))
+                    return genderStr
+                end
 
                 -- 3) Top (component 8)
                 local topDraw = GetPedDrawableVariation(ped, 8)
@@ -222,16 +304,6 @@ CreateThread(function()
                 return chosen
                     :gsub("{street}", street)
                     :gsub("{description}", description)
-            end
-            -- Helper function to get the ped's gender
-            local function getPedGender(ped)
-                local t = GetPedType(ped)
-                if t == 4 then
-                    return "male"
-                elseif t == 5 then
-                    return "female"
-                end
-                return "unknown"
             end
             -- Helper function: returns true if `ped` is wearing ANY of the whitelisted items
             local function isPedWhitelisted(ped)

@@ -9,7 +9,7 @@ local config = {
     enabled = true,
     pluginName = "localcallers", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author
-    configVersion = "1.2",
+    configVersion = "1.3",
     callCoolDown = 60,           -- Time in between calls in seconds
     clearRecordsAfter = 30,      -- Time in minutes to clear records after a call is made | 0 will disable this feature
     callTypes = {
@@ -1516,10 +1516,9 @@ local config = {
                 [51] = { name = "Visor (Red)", colors = { [0] = "Red" } },
                 [52] = { name = "Yachting Cap", colors = { [0] = "White/Blue" } }
             }
-        }
-    },
-    female = {
-        top = {
+        },
+        female = {
+            top = {
             [0] = {
                 name = "Tank Top",
                 colors = {
@@ -1760,6 +1759,7 @@ local config = {
                 name = "Headband",
                 colors = { [0] = "Red", [1] = "Pink", [2] = "Blue" }
             }
+        }
         }
     }
 }
