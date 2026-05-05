@@ -4,7 +4,38 @@ local function encode_uri_component(value)
   end)
 end
 
+local function has_header(headers, name)
+  local normalized_name = string.lower(name)
+  for key in pairs(headers or {}) do
+    if string.lower(tostring(key)) == normalized_name then
+      return true
+    end
+  end
+  return false
+end
+
+local function set_version_headers(headers)
+  if not GetResourceMetadata or not GetCurrentResourceName then
+    return
+  end
+
+  local version = GetResourceMetadata(GetCurrentResourceName(), "version", 0)
+  if version == nil or version == "" then
+    return
+  end
+
+  if not has_header(headers, "X-SonoranCAD-Version") then
+    headers["X-SonoranCAD-Version"] = version
+  end
+  if not has_header(headers, "X-FiveM-Resource-Version") then
+    headers["X-FiveM-Resource-Version"] = version
+  end
+end
+
 local function perform_request(options, callback)
+  local headers = options.headers or {}
+  set_version_headers(headers)
+
   local resource_name = GetCurrentResourceName and GetCurrentResourceName() or nil
   if resource_name ~= nil and exports ~= nil and exports[resource_name] ~= nil and exports[resource_name].HandleHttpRequest ~= nil then
     exports[resource_name]:HandleHttpRequest(
@@ -12,7 +43,7 @@ local function perform_request(options, callback)
       callback,
       options.method or "GET",
       options.body,
-      options.headers or {}
+      headers
     )
     return
   end
@@ -22,7 +53,7 @@ local function perform_request(options, callback)
     callback,
     options.method or "GET",
     options.body,
-    options.headers or {}
+    headers
   )
 end
 

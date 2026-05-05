@@ -7,22 +7,42 @@
         return encodeURI(s).split(/%..|./).length - 1;
     }
 
+    function hasHeader(headers, name) {
+        const normalized = name.toLowerCase();
+        return Object.keys(headers || {}).some((key) => key.toLowerCase() === normalized);
+    }
+
+    function setVersionHeaders(headers) {
+        const version = GetResourceMetadata(GetCurrentResourceName(), "version", 0);
+        if (!version) {
+            return;
+        }
+
+        if (!hasHeader(headers, "X-SonoranCAD-Version")) {
+            headers["X-SonoranCAD-Version"] = version;
+        }
+        if (!hasHeader(headers, "X-FiveM-Resource-Version")) {
+            headers["X-FiveM-Resource-Version"] = version;
+        }
+    }
+
     exports('HandleHttpRequest', (dest, callback, method, data, headers) => {
         emit("SonoranCAD::core:writeLog", "debug", "[http] to: " + dest + " - data: " + dest, JSON.stringify(data));
         const urlObj = url.parse(dest)
         const normalizedMethod = (method || "GET").toUpperCase();
+        const requestHeaders = Object.assign({}, headers || {});
         const options = {
             hostname: urlObj.hostname,
             path: urlObj.path || urlObj.pathname,
             method: normalizedMethod,
-            headers: headers || {}
+            headers: requestHeaders
         }
         if (data !== undefined && data !== null && data !== "") {
             if (!options.headers['Content-Type']) {
                 options.headers['Content-Type'] = 'application/json'
             }
         }
-        options.headers['X-SonoranCAD-Version'] = GetResourceMetadata(GetCurrentResourceName(), "version", 0)
+        setVersionHeaders(options.headers);
         const req = https.request(options, (res) => {
             const chunks = [];
             res.on('data', (d) => {
