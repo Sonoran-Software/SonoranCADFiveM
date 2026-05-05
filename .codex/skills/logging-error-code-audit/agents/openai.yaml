@@ -1,0 +1,4 @@
+interface:
+  display_name: "Logging Error Code Audit"
+  short_description: "Audit missing structured log codes."
+  default_prompt: "Audit SonoranCAD Lua files for errorLog/logError and warnLog/logWarn calls that are missing registered error or warning codes, then report the findings with suggested fixes."

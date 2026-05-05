@@ -42,8 +42,10 @@ local BODYCAM_UPLOAD_CHUNK_SIZE = 240000
 local BODYCAM_UPLOAD_LATENT_BPS = 0
 
 local function sendBodycamInfo(message)
-    TriggerEvent('chat:addMessage', {
-        args = { 'Sonoran Bodycam', tostring(message) }
+    NotifyClient({
+        title = "Sonoran Bodycam",
+        message = tostring(message),
+        type = "info"
     })
 end
 

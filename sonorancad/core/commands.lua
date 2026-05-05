@@ -167,8 +167,10 @@ Last 50 Debug Messages
     if uploadSucceeded then
         infoLog("Support logs have been successfully uploaded. Debug mode was disabled during the upload.")
         if requester > 0 then
-            TriggerClientEvent("chat:addMessage", requester, {
-                args = {"^0[ ^2Support ^0] ", formatErrorMessage("SUPPORT_UPLOAD_SUCCESS")}
+            NotifyPlayer(requester, {
+                title = "Support",
+                message = formatErrorMessage("SUPPORT_UPLOAD_SUCCESS"),
+                type = "success"
             })
         end
         return true
@@ -189,41 +191,13 @@ Last 50 Debug Messages
     end
     return false
 end
-
-local function sendPlayerCommandMessage(target, message)
-    target = tonumber(target) or target
-    TriggerClientEvent("SonoranCAD::core:ShowCommandMessage", target, message)
-end
-
-local function handlePlayerSonoranCommand(source, args)
-    source = tonumber(source) or source
-    local subcommand = args[1] and string.lower(args[1]) or "help"
-    debugLog(("Player %s ran /sonorancad %s"):format(tostring(source), tostring(subcommand)))
-    if subcommand == "support" then
-        if args[2] == nil or tostring(args[2]) == "" then
-            sendPlayerCommandMessage(source, "Usage: /sonorancad support <id>")
-            return
-        end
-        sendPlayerCommandMessage(source, "Uploading support logs. Please wait...")
-        sendSupportLogs(args[2], source)
-        return
-    end
-
-    if subcommand ~= "help" then
-        sendPlayerCommandMessage(source, "Usage: /sonorancad help [submodule] or /sonorancad support <id>")
-        return
-    end
-
-    TriggerClientEvent("SonoranCAD::core:ShowCommandHelp", source, args[2])
-end
-
 RegisterCommand("sonorancad", function(source, args, rawCommand)
     if source ~= 0 then
         handlePlayerSonoranCommand(source, args)
         return
     end
     if not args[1] then
-        print("Missing command. Try \"sonoran help\" for help.")
+        print("Missing command. Try \"sonorancad help\" for help.")
         return
     end
     if args[1] == "help" then
@@ -235,7 +209,6 @@ SonoranCAD Help
     errors - display all error/warning messages since last startup
     plugin <name> - show info about a plugin (config)
     update - Run core updater
-    pluginupdate - Run plugin updater
     viewcaches - View the current unit and call cache, for troubleshooting
     getclientlog <playerId> - Get a log buffer from a given client
     dumpconsole - Dumps current console buffer to file
@@ -314,7 +287,7 @@ SonoranCAD Help
         end
         print("----ERROR/WARNING BUFFER END----")
     else
-        print("Missing command. Try \"sonoran help\" for help.")
+        print("Missing command. Try \"sonorancad help\" for help.")
     end
 end, false)
 

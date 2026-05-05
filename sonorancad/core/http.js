@@ -85,7 +85,14 @@
             let ignore_ids = ["EAI_AGAIN", "ETIMEOUT", "ENOTFOUND"]
             if (!ignore_ids.includes(error.code))
                 console.debug("HTTP error caught: " + JSON.stringify(error));
-            callback(error.errono, {}, {});
+            callback(0, JSON.stringify({
+                error: "HTTP_REQUEST_FAILED",
+                code: error.code || "UNKNOWN",
+                message: error.message || "HTTP request failed.",
+                host: error.host || urlObj.hostname || null,
+                port: error.port || urlObj.port || 443,
+                path: error.path || null
+            }), {"content-type": "application/json"});
         })
         if (data !== undefined && data !== null && data !== "") {
             req.write(data);

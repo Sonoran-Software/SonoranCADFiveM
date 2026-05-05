@@ -191,8 +191,7 @@ Config.GetPluginConfig = function(pluginName)
                                          '/configuration/' .. pluginName ..
                                              '_config.lua')
         if not correctConfig then
-            warnLog(
-                ('Plugin %s is missing critical configuration. Please check our plugin install guide at https://info.sonorancad.com/integration-submodules/integration-submodules/plugin-installation for steps to properly install.'):format(
+            warnLog("UNHANDLED_WARNING", ('Plugin %s is missing critical configuration. Please check our plugin install guide at https://info.sonorancad.com/integration-submodules/integration-submodules/plugin-installation for steps to properly install.'):format(
                     pluginName))
             Config.plugins[pluginName] = {
                 enabled = false,
@@ -252,8 +251,7 @@ Config.LoadPlugin = function(pluginName, cb)
                                          '/configuration/' .. pluginName ..
                                              '_config.lua')
         if not correctConfig then
-            warnLog(
-                ('Submodule %s is missing critical configuration. Please check our submodule install guide at https://info.sonorancad.com/integration-plugins/in-game-integration/fivem-installation/submodule-configuration#activating-a-submodule for steps to properly install.'):format(
+            warnLog("UNHANDLED_WARNING", ('Submodule %s is missing critical configuration. Please check our submodule install guide at https://info.sonorancad.com/integration-plugins/in-game-integration/fivem-installation/submodule-configuration#activating-a-submodule for steps to properly install.'):format(
                     pluginName))
             Config.plugins[pluginName] = {
                 enabled = false,

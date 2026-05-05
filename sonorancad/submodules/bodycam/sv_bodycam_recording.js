@@ -3,6 +3,8 @@ const path = require("path");
 
 const MAX_FILE_SIZE_BYTES = 6000000;
 const MAX_DURATION_MS = 120000;
+const FINALIZE_WAIT_TIMEOUT_MS = 5000;
+const FINALIZE_WAIT_POLL_MS = 100;
 const BODYCAM_UPLOAD_PATH = "/v2/general/bodycam-recordings";
 const RECORDINGS_DIR = path.join(GetResourcePath(GetCurrentResourceName()), "submodules", "bodycam", "recordings");
 const PENDING_UPLOADS = new Map();
@@ -137,6 +139,10 @@ function safeDeleteFile(filePath) {
 	} catch (err) {
 		log("warn", `Failed to delete temp bodycam file ${filePath}: ${err && err.message ? err.message : err}`);
 	}
+}
+
+function wait(ms) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 exports("CreateTempBodycamRecordingFile", function (uploadId, fileName) {
@@ -324,6 +330,8 @@ function createUploadSession(src, payload) {
 		receivedChunks: 0,
 		chunks: new Map(),
 		createdAt: Date.now(),
+		finalizeRequestedAt: null,
+		finalizeInProgress: false,
 	};
 	PENDING_UPLOADS.set(uploadId, session);
 	log("debug", `Upload init for ${src}: ${JSON.stringify(summary)} filePath=${filePath}`);
@@ -362,8 +370,22 @@ async function finalizeUploadSession(src, uploadId) {
 		log("warn", `Upload complete rejected for ${src}: unknown uploadId=${uploadId}`);
 		return;
 	}
+	if (session.finalizeInProgress) {
+		log("debug", `Upload complete ignored for ${src}: finalize already running uploadId=${uploadId}`);
+		return;
+	}
+	session.finalizeInProgress = true;
+	session.finalizeRequestedAt = Date.now();
 	try {
 		log("debug", `Upload complete received for ${src}: uploadId=${uploadId} receivedChunks=${session.receivedChunks}/${session.totalChunks}`);
+		while (session.receivedChunks < session.totalChunks) {
+			const elapsedMs = Date.now() - session.finalizeRequestedAt;
+			if (elapsedMs >= FINALIZE_WAIT_TIMEOUT_MS) {
+				log("warn", `Upload complete rejected for ${src}: incomplete uploadId=${uploadId} receivedChunks=${session.receivedChunks} totalChunks=${session.totalChunks} waitedMs=${elapsedMs}`);
+				return;
+			}
+			await wait(FINALIZE_WAIT_POLL_MS);
+		}
 		if (session.receivedChunks !== session.totalChunks) {
 			log("warn", `Upload complete rejected for ${src}: incomplete uploadId=${uploadId} receivedChunks=${session.receivedChunks} totalChunks=${session.totalChunks}`);
 			return;

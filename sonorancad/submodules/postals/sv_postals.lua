@@ -46,7 +46,7 @@ CreateThread(function()
 			if shouldStop then
 				pluginConfig.enabled = false
 				pluginConfig.disableReason = 'postal resource incorrect'
-				errorLog('Force disabling plugin to prevent client errors.')
+				errorLog("UNHANDLED_SERVER_ERROR", 'Force disabling plugin to prevent client errors.')
 				return
 			end
 
@@ -82,7 +82,7 @@ CreateThread(function()
 					Wait(1000)
 				end
 				if not Config.apiSendEnabled then
-					errorLog('Config.apiSendEnabled disabled via convar or config, skipping postal sending. Check your config if this is unintentional.')
+					errorLog("UNHANDLED_SERVER_ERROR", 'Config.apiSendEnabled disabled via convar or config, skipping postal sending. Check your config if this is unintentional.')
 				end
 				local response = CadApiSetPostals(json.decode(postalFile))
 				if not response.success then
@@ -110,7 +110,7 @@ CreateThread(function()
 			end
 
 		elseif locationsConfig == nil then
-			errorLog('ERROR: Postals plugin is loaded, but required locations plugin is not. This plugin will not function correctly!')
+			errorLog("UNHANDLED_SERVER_ERROR", 'ERROR: Postals plugin is loaded, but required locations plugin is not. This plugin will not function correctly!')
 			pluginConfig.enabled = false
 			pluginConfig.disableReason = 'locations plugin missing'
 		end
