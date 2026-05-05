@@ -167,8 +167,10 @@ Last 50 Debug Messages
     if uploadSucceeded then
         infoLog("Support logs have been successfully uploaded. Debug mode was disabled during the upload.")
         if requester > 0 then
-            TriggerClientEvent("chat:addMessage", requester, {
-                args = {"^0[ ^2Support ^0] ", formatErrorMessage("SUPPORT_UPLOAD_SUCCESS")}
+            NotifyPlayer(requester, {
+                title = "Support",
+                message = formatErrorMessage("SUPPORT_UPLOAD_SUCCESS"),
+                type = "success"
             })
         end
         return true

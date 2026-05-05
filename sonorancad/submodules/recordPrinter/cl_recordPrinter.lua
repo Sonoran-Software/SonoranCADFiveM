@@ -63,13 +63,10 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
             message = ("New record shared by %s."):format(sharedBy)
         end
 
-        TriggerEvent('chat:addMessage', {
-            color = { 0, 255, 0},
-            multiline = true,
-            args = {
-                "Record Printer",
-                message .. " Use /" .. baseCommand .. " " .. configuredCommands.queue .. " to view queue."
-            }
+        NotifyClient({
+            title = "Record Printer",
+            message = message .. " Use /" .. baseCommand .. " " .. configuredCommands.queue .. " to view queue.",
+            type = "success"
         })
     end
     local function prettyFileName(path, opts)
@@ -196,10 +193,20 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
     end
 
     function sendChat(color, msg)
-        TriggerEvent('chat:addMessage', {
-            color = color or {255,255,255},
-            multiline = true,
-            args = {"Record Printer", msg}
+        local notificationType = "info"
+        if type(color) == "table" then
+            if color[1] == 255 and color[2] == 100 and color[3] == 100 then
+                notificationType = "error"
+            elseif color[1] == 255 and color[2] == 200 and color[3] == 0 then
+                notificationType = "warning"
+            elseif color[1] == 0 and color[2] == 255 and color[3] == 0 then
+                notificationType = "success"
+            end
+        end
+        NotifyClient({
+            title = "Record Printer",
+            message = msg,
+            type = notificationType
         })
     end
 
@@ -215,10 +222,10 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
                 rawPath = tostring(rawPath or '')
             end
             local displayName = prettyFileName(rawPath, { keep_ext = true, max_len = pluginConfig.queueDisplayMaxLength or 48 })
-            TriggerEvent('chat:addMessage', {
-                color = { 0, 255, 0},
-                multiline = true,
-                args = {"Record Printer", "Record " .. i .. ": " .. displayName}
+            NotifyClient({
+                title = "Record Printer",
+                message = "Record " .. i .. ": " .. displayName,
+                type = "info"
             })
         end
     end
@@ -351,10 +358,10 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
             printQueueList()
         elseif action == "clear" then
             printQueue = {}
-            TriggerEvent('chat:addMessage', {
-                color = { 0, 255, 0},
-                multiline = true,
-                args = {"Record Printer", "Print queue cleared."}
+            NotifyClient({
+                title = "Record Printer",
+                message = "Print queue cleared.",
+                type = "success"
             })
         elseif action == "print" then
             doPrint(tonumber(args[2] or ""))

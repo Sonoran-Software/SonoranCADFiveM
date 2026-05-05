@@ -129,8 +129,10 @@ RegisterNetEvent("SonoranCAD::links:OpenResult")
 AddEventHandler("SonoranCAD::links:OpenResult", function(data)
     if type(data) ~= "table" or data.ok ~= true then
         local message = type(data) == "table" and data.message or "Failed to start the CAD link flow."
-        TriggerEvent("chat:addMessage", {
-            args = {"^0[ ^1SonoranCAD ^0] ", tostring(message)}
+        NotifyClient({
+            title = "SonoranCAD",
+            message = tostring(message),
+            type = "error"
         })
         return
     end
@@ -158,8 +160,10 @@ AddEventHandler("SonoranCAD::links:Status", function(data)
         debugLog("[link] player linked successfully")
         cadLinkForceOpen = false
         close_link_ui(true)
-        TriggerEvent("chat:addMessage", {
-            args = {"^0[ ^2SonoranCAD ^0] ", "Your CAD account is now linked."}
+        NotifyClient({
+            title = "SonoranCAD",
+            message = "Your CAD account is now linked.",
+            type = "success"
         })
     elseif cadLinkUiOpen then
         set_link_ui_state(true, cadLinkForceOpen)
