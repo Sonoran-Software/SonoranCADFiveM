@@ -95,7 +95,7 @@ CreateThread(function()
                 local token = params and params.token or nil
                 local src = token and uploadSourceByToken[token] or nil
                 if src == nil then
-                    warnLog(('Bodycam upload rejected: invalid token path=%s token=%s'):format(
+                    warnLog("UNHANDLED_WARNING", ('Bodycam upload rejected: invalid token path=%s token=%s'):format(
                         tostring(routePath or '/bodycam-upload'),
                         tostring(token or 'nil')
                     ))
@@ -161,7 +161,7 @@ CreateThread(function()
                 local fileName = params and params.fileName or ('bodycam-%s.webm'):format(os.time())
                 local filePath = exports[GetCurrentResourceName()]:CreateTempBodycamRecordingFile(uploadId, fileName)
                 if type(filePath) ~= 'string' or filePath == '' then
-                    errorLog(('Bodycam upload temp file creation failed: uploadId=%s fileName=%s'):format(
+                    errorLog("UNHANDLED_SERVER_ERROR", ('Bodycam upload temp file creation failed: uploadId=%s fileName=%s'):format(
                         tostring(uploadId),
                         tostring(fileName)
                     ))
@@ -230,7 +230,7 @@ CreateThread(function()
                 local fileHandle = io.open(session.filePath, 'ab')
                 if not fileHandle then
                     cleanupHttpUploadSession(uploadId)
-                    errorLog(('Bodycam upload temp file append failed: uploadId=%s filePath=%s'):format(
+                    errorLog("UNHANDLED_SERVER_ERROR", ('Bodycam upload temp file append failed: uploadId=%s filePath=%s'):format(
                         tostring(uploadId),
                         tostring(session.filePath)
                     ))
@@ -246,7 +246,7 @@ CreateThread(function()
                 end)
                 if not writeOk then
                     cleanupHttpUploadSession(uploadId)
-                    errorLog(('Bodycam upload temp file write failed: uploadId=%s filePath=%s err=%s'):format(
+                    errorLog("UNHANDLED_SERVER_ERROR", ('Bodycam upload temp file write failed: uploadId=%s filePath=%s err=%s'):format(
                         tostring(uploadId),
                         tostring(session.filePath),
                         tostring(writeErr)
@@ -463,10 +463,10 @@ CreateThread(function()
                             turnCache.expiresAt = os.time() + ttl
                             ok = true
                         else
-                            warnLog(("Bodycam TURN request returned invalid payload. status=%s"):format(tostring(statusCode)))
+                            warnLog("UNHANDLED_WARNING", ("Bodycam TURN request returned invalid payload. status=%s"):format(tostring(statusCode)))
                         end
                     elseif statusCode ~= 200 then
-                        warnLog(("Bodycam TURN request failed with HTTP %s"):format(tostring(statusCode)))
+                        warnLog("UNHANDLED_WARNING", ("Bodycam TURN request failed with HTTP %s"):format(tostring(statusCode)))
                     end
                     turnCache.fetching = false
                     scheduleTurnRefresh()

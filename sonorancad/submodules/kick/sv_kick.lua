@@ -80,8 +80,10 @@ if pluginConfig.enabled then
         end
 
         processPendingKicks()
-        TriggerClientEvent("chat:addMessage", source, {
-            args = {"SonoranCAD", ("Kick test sent for CAD user %s"):format(result)}
+        NotifyPlayer(source, {
+            title = "SonoranCAD",
+            message = ("Kick test sent for CAD user %s"):format(result),
+            type = "success"
         })
     end, false)
 

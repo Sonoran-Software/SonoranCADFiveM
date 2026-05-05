@@ -50,10 +50,10 @@ CreateThread(function()
 						statusUid = "status",
 						expiresUid = "_imtoih149",
 					}
-					warnLog('Record data not found in configuration. Using default values. Please update your configuration using the vehreg_config.dist.lua file located in the configuration folder')
+					warnLog("UNHANDLED_WARNING", 'Record data not found in configuration. Using default values. Please update your configuration using the vehreg_config.dist.lua file located in the configuration folder')
 				end
 				if notSetConfig then
-					warnLog('Record data not found in configuration. Using default values. Please update your configuration using the vehreg_config.dist.lua file located in the configuration folder')
+					warnLog("UNHANDLED_WARNING", 'Record data not found in configuration. Using default values. Please update your configuration using the vehreg_config.dist.lua file located in the configuration folder')
 				end
 				local replaceValues = {
 					[pluginConfig.recordData.colorUid] = primary,
@@ -90,17 +90,10 @@ CreateThread(function()
 							['{{FIRST}}'] = civData.first,
 							['{{LAST}}'] = civData.last
 						}
-						TriggerClientEvent('chat:addMessage', source, {
-							color = {
-								0,
-								255,
-								0
-							},
-							multiline = true,
-							args = {
-								'[CAD - SUCCESS] ',
-								placeholderReplace(pluginConfig.language.successReg, placeHolders)
-							}
+						NotifyPlayer(source, {
+							title = 'CAD - Success',
+							message = placeholderReplace(pluginConfig.language.successReg, placeHolders),
+							type = 'success'
 						})
 				end
 			end)

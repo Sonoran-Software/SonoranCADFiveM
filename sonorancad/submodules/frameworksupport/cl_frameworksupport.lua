@@ -87,7 +87,7 @@
 				AddEventHandler('SonoranCAD::frameworksupport:returnIdentity', function(data)
 					recievedIdentity = true
 					if data.job == nil then
-						warnLog('Warning: no identity data was found.')
+						warnLog("UNHANDLED_WARNING", 'Warning: no identity data was found.')
 					else
 						returnedIdentity = data
 					end

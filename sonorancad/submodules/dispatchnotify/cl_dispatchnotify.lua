@@ -40,17 +40,25 @@ CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfi
         local lockedPlate = nil
         local gpsBlip = false
 
+        local function dispatchNotify(title, message, notificationType)
+            NotifyClient({
+                title = title,
+                message = message,
+                type = notificationType or "info"
+            })
+        end
+
         RegisterNetEvent("SonoranCAD::dispatchnotify:SetGps")
         AddEventHandler("SonoranCAD::dispatchnotify:SetGps", function(postal)
             -- try to set postal via command?
             if gpsLock then
                 ExecuteCommand("postal "..tostring(postal))
                 if lastPostal ~= nil and lastPostal ~= postal then
-                    TriggerEvent("chat:addMessage", {args = {"^0[ ^2Dispatch ^0] ", ("Call GPS coordinates updated (%s)."):format(postal)}})
+                    dispatchNotify("Dispatch", ("Call GPS coordinates updated (%s)."):format(postal), "info")
                     lastPostal = postal
                 else
                     lastPostal = postal
-                    TriggerEvent("chat:addMessage", {args = {"^0[ ^2Dispatch ^0] ", ("GPS coordinates set to caller's last known postal (%s)."):format(postal)}})
+                    dispatchNotify("Dispatch", ("GPS coordinates set to caller's last known postal (%s)."):format(postal), "info")
                 end
             end
         end)
@@ -58,20 +66,20 @@ CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfi
         RegisterNetEvent("SonoranCAD::dispatchnotify:UnsetGps")
         AddEventHandler("SonoranCAD::dispatchnotify:UnsetGps", function()
             if gpsBlip then
-                TriggerEvent("chat:addMessage", {args = {"^0[ ^2Dispatch ^0] ", "You are now on scene. Disabling GPS."}})
+                dispatchNotify("Dispatch", "You are now on scene. Disabling GPS.", "info")
                 RemoveBlip(gpsBlip)
                 gpsBlip = nil
             elseif lastPostal ~= nil then
                 ExecuteCommand("postal")
                 lastPostal = nil
-                TriggerEvent("chat:addMessage", {args = {"^0[ ^2Dispatch ^0] ", "You are now on scene. Disabling GPS."}})
+                dispatchNotify("Dispatch", "You are now on scene. Disabling GPS.", "info")
             end
         end)
 
         RegisterNetEvent("SonoranCAD::dispatchnotify:SetLocation")
         AddEventHandler("SonoranCAD::dispatchnotify:SetLocation", function(coords)
             if coords == nil then
-                return warnLog("SetLocation was called, but no coordinates were found")
+                return warnLog("UNHANDLED_WARNING", "SetLocation was called, but no coordinates were found")
             else
                 debugLog(("In SetLocation: x: %s y: %s z: %s"):format(coords.x, coords.y, coords.z))
             end
@@ -82,12 +90,12 @@ CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfi
                 SetBlipRoute(gpsBlip, true)
                 if lastCoords ~= nil then
                     if lastCoords.x == coords.x and lastCoords.y == coords.y then
-                        TriggerEvent("chat:addMessage", {args = {"^0[ ^2Dispatch ^0] ", "GPS coordinates have been updated."}})
+                        dispatchNotify("Dispatch", "GPS coordinates have been updated.", "info")
                         return
                     end
                 end
                 lastCoords = coords
-                TriggerEvent("chat:addMessage", {args = {"^0[ ^2Dispatch ^0] ", "GPS coordinates set to caller's last known location."}})
+                dispatchNotify("Dispatch", "GPS coordinates set to caller's last known location.", "info")
             end
         end)
 
@@ -106,7 +114,7 @@ CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfi
 
         local function setGpsLock(value)
             gpsLock = value
-            TriggerEvent("chat:addMessage", {args = {"^0[ ^2GPS ^0] ", ("GPS lock has been %s"):format(gpsLock and "enabled" or "disabled")}})
+            dispatchNotify("GPS", ("GPS lock has been %s"):format(gpsLock and "enabled" or "disabled"), "info")
         end
 
         RegisterNetEvent("SonoranCAD::dispatchnotify:CallAttach")
@@ -174,7 +182,7 @@ CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfi
 
             if subcommand == string.lower(pluginConfig.respondSubcommandName) then
                 if args[2] == nil then
-                    TriggerEvent("chat:addMessage", {args = {"^0[ ^4Error ^0] ", ("Usage: /%s %s <callId>"):format(pluginConfig.commandName, pluginConfig.respondSubcommandName)}})
+                    dispatchNotify("Error", ("Usage: /%s %s <callId>"):format(pluginConfig.commandName, pluginConfig.respondSubcommandName), "error")
                     return
                 end
                 TriggerServerEvent("SonoranCAD::dispatchnotify:CommandRespond", {args[2]})
@@ -192,38 +200,38 @@ CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfi
 
             if subcommand == string.lower(pluginConfig.addNoteSubcommand) then
                 if not pluginConfig.enableAddNote then
-                    TriggerEvent("chat:addMessage", {args = {"^0[ ^4Error ^0] ", "Adding notes is disabled."}})
+                    dispatchNotify("Error", "Adding notes is disabled.", "error")
                     return
                 end
                 local note = table.concat(args, " ", 2)
                 if note == nil or note == "" then
-                    TriggerEvent("chat:addMessage", {args = {"^0[ ^4Error ^0] ", ("Usage: /%s %s <note>"):format(pluginConfig.commandName, pluginConfig.addNoteSubcommand)}})
+                    dispatchNotify("Error", ("Usage: /%s %s <note>"):format(pluginConfig.commandName, pluginConfig.addNoteSubcommand), "error")
                     return
                 end
                 if currentCallId ~= nil then
                     TriggerServerEvent("SonoranCAD::dispatchnotify:AddNoteToCall", currentCallId, note)
-                    TriggerEvent("chat:addMessage", {args = {"^0[ ^2Note ^0] ", "Note sent to CAD."}})
+                    dispatchNotify("Note", "Note sent to CAD.", "success")
                 else
-                    TriggerEvent("chat:addMessage", {args = {"^0[ ^4Error ^0] ", "Not attached to any call."}})
+                    dispatchNotify("Error", "Not attached to any call.", "error")
                 end
                 return
             end
 
             if subcommand == string.lower(pluginConfig.addPlateSubcommand) then
                 if not canAddPlate then
-                    TriggerEvent("chat:addMessage", {args = {"^0[ ^4Error ^0] ", "Plate sending is unavailable."}})
+                    dispatchNotify("Error", "Plate sending is unavailable.", "error")
                     return
                 end
                 if currentCallId ~= nil and lockedPlate ~= nil then
                     TriggerServerEvent("SonoranCAD::dispatchnotify:AddNoteToCall", currentCallId, ("PLATE NUMBER: %s"):format(lockedPlate))
-                    TriggerEvent("chat:addMessage", {args = {"^0[ ^2Note ^0] ", ("Locked plate %s sent to CAD."):format(lockedPlate)}})
+                    dispatchNotify("Note", ("Locked plate %s sent to CAD."):format(lockedPlate), "success")
                 else
-                    TriggerEvent("chat:addMessage", {args = {"^0[ ^4Error ^0] ", "Not attached to any call or no plate locked."}})
+                    dispatchNotify("Error", "Not attached to any call or no plate locked.", "error")
                 end
                 return
             end
 
-            TriggerEvent("chat:addMessage", {args = {"^0[ ^3Dispatch ^0] ", ("Usage: /%s %s <callId> | /%s %s [on|off|auto] | /%s %s <note> | /%s %s | /%s %s"):format(
+            dispatchNotify("Dispatch", ("Usage: /%s %s <callId> | /%s %s [on|off|auto] | /%s %s <note> | /%s %s | /%s %s"):format(
                 pluginConfig.commandName,
                 pluginConfig.respondSubcommandName,
                 pluginConfig.commandName,
@@ -234,7 +242,7 @@ CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfi
                 pluginConfig.addPlateSubcommand,
                 pluginConfig.commandName,
                 pluginConfig.gpsToggleSubcommand
-            )}})
+            ), "info")
         end)
 
     end

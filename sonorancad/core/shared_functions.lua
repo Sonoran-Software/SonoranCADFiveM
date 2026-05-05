@@ -139,3 +139,162 @@ function compareVersions(version1, version2)
 
     return tbl
 end
+
+local NotificationSystemPriority = {"ox_lib", "lation_ui", "pnotify", "chat"}
+local ValidNotificationSystems = {
+    auto = true,
+    ox_lib = true,
+    lation_ui = true,
+    pnotify = true,
+    chat = true
+}
+
+local function normalizeNotificationSystem(value)
+    if type(value) ~= "string" then
+        return nil
+    end
+    local normalized = value:lower():gsub("%s+", "")
+    if normalized == "pnotify" then
+        return "pnotify"
+    end
+    if normalized == "oxlib" then
+        return "ox_lib"
+    end
+    return normalized
+end
+
+local function normalizeNotificationType(value)
+    local normalized = type(value) == "string" and value:lower() or "info"
+    if normalized == "inform" then
+        normalized = "info"
+    elseif normalized == "warn" then
+        normalized = "warning"
+    end
+    if normalized ~= "success" and normalized ~= "error" and normalized ~= "warning" then
+        normalized = "info"
+    end
+    return normalized
+end
+
+local function stripHtmlForText(message)
+    local text = tostring(message or "")
+    text = text:gsub("<br%s*/?>", "\n")
+    text = text:gsub("</p>", "\n")
+    text = text:gsub("</li>", "\n")
+    text = text:gsub("<li>", "- ")
+    text = text:gsub("<.->", "")
+    text = text:gsub("&nbsp;", " ")
+    text = text:gsub("&amp;", "&")
+    text = text:gsub("&lt;", "<")
+    text = text:gsub("&gt;", ">")
+    return text
+end
+
+local function getConfiguredNotificationSystem()
+    local configured = normalizeNotificationSystem(Config and Config.notificationSystem or nil)
+    if configured == nil or not ValidNotificationSystems[configured] then
+        return "auto"
+    end
+    return configured
+end
+
+function ResolveNotificationSystem(preferredSystem)
+    local configured = normalizeNotificationSystem(preferredSystem) or getConfiguredNotificationSystem()
+    if configured ~= "auto" then
+        return configured
+    end
+
+    for _, resourceName in ipairs(NotificationSystemPriority) do
+        local stateName = resourceName == "pnotify" and "pNotify" or resourceName
+        if resourceName == "chat" or GetResourceState(stateName) == "started" then
+            return resourceName
+        end
+    end
+
+    return "chat"
+end
+
+local function getChatPrefix(notification)
+    if type(notification.chatPrefix) == "string" and notification.chatPrefix ~= "" then
+        return notification.chatPrefix
+    end
+
+    local prefixColor = "5"
+    local notificationType = normalizeNotificationType(notification.type)
+    if notificationType == "success" then
+        prefixColor = "2"
+    elseif notificationType == "warning" then
+        prefixColor = "3"
+    elseif notificationType == "error" then
+        prefixColor = "1"
+    end
+
+    local title = tostring(notification.title or "SonoranCAD")
+    return ("^0[ ^%s%s ^0] "):format(prefixColor, title)
+end
+
+local function buildNotificationPayload(input)
+    if type(input) == "table" then
+        return input
+    end
+    return {message = tostring(input or "")}
+end
+
+function NotifyClient(input)
+    local notification = buildNotificationPayload(input)
+    local notificationType = normalizeNotificationType(notification.type)
+    local title = tostring(notification.title or "SonoranCAD")
+    local duration = tonumber(notification.duration or notification.timeout) or 10000
+    local richMessage = notification.htmlMessage or notification.message or notification.description or ""
+    local plainMessage = notification.plainMessage or stripHtmlForText(notification.message or notification.description or richMessage)
+    local chatMessage = notification.chatMessage or plainMessage
+    local system = ResolveNotificationSystem(notification.system)
+
+    if system == "ox_lib" and GetResourceState("ox_lib") == "started" then
+        TriggerEvent("ox_lib:notify", {
+            title = title,
+            description = plainMessage,
+            duration = duration,
+            type = notificationType
+        })
+        return
+    end
+
+    if system == "lation_ui" and GetResourceState("lation_ui") == "started" then
+        TriggerEvent("lation_ui:notify", {
+            title = title,
+            message = plainMessage,
+            duration = duration,
+            type = notificationType
+        })
+        return
+    end
+
+    if system == "pnotify" and GetResourceState("pNotify") == "started" then
+        TriggerEvent("pNotify:SendNotification", {
+            text = richMessage ~= "" and richMessage or plainMessage,
+            type = notificationType,
+            layout = notification.layout or "bottomcenter",
+            timeout = duration,
+            queue = notification.queue
+        })
+        return
+    end
+
+    TriggerEvent("chat:addMessage", {
+        color = notification.color,
+        multiline = true,
+        args = {getChatPrefix(notification), chatMessage}
+    })
+end
+
+RegisterNetEvent("SonoranCAD::core:Notify")
+AddEventHandler("SonoranCAD::core:Notify", function(notification)
+    NotifyClient(notification)
+end)
+
+if IsDuplicityVersion() then
+    function NotifyPlayer(target, input)
+        TriggerClientEvent("SonoranCAD::core:Notify", target, buildNotificationPayload(input))
+    end
+end

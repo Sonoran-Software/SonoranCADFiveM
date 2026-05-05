@@ -265,7 +265,7 @@ local function refresh_link_status_by_identifier(identifier, identifier_type, co
             })
         end
 
-        warnLog(("CAD link status check failed for %s (%s): %s"):format(
+        warnLog("UNHANDLED_WARNING", ("CAD link status check failed for %s (%s): %s"):format(
             tostring(identifier),
             tostring(identifier_type),
             tostring(response.reason)
@@ -290,7 +290,7 @@ local function create_link_session_by_identifier(identifier, identifier_type, co
     log_link_debug(("request link code for %s (%s)"):format(tostring(identifier), tostring(identifier_type)))
     local response = CadApiCreateCommunityLink(build_link_payload(identifier, identifier_type, nil, community_user_id))
     if not response.success then
-        warnLog(("CAD link creation failed for %s (%s): %s"):format(
+        warnLog("UNHANDLED_WARNING", ("CAD link creation failed for %s (%s): %s"):format(
             tostring(identifier),
             tostring(identifier_type),
             tostring(response.reason)
@@ -314,7 +314,7 @@ local function create_link_session_by_identifier(identifier, identifier_type, co
         tostring(parsed.communityUserId)
     ))
     if not is_non_empty_string(parsed.code) then
-        warnLog(("CAD link creation for %s (%s) did not return a link code: %s"):format(
+        warnLog("UNHANDLED_WARNING", ("CAD link creation for %s (%s) did not return a link code: %s"):format(
             tostring(identifier),
             tostring(identifier_type),
             json.encode(response.data)
@@ -437,7 +437,7 @@ end
 -- Read-only export for third-party resources that need the configured CAD community ID.
 function GetCommunityId()
     if not is_non_empty_string(Config.communityID) then
-        warnLog("getCommunityId export returned nil because Config.communityID is not configured.")
+        warnLog("UNHANDLED_WARNING", "getCommunityId export returned nil because Config.communityID is not configured.")
         return nil
     end
     return Config.communityID
@@ -447,7 +447,7 @@ end
 function GetServerId()
     local server_id = tonumber(tonumber(Config.serverId)) or tonumber(GetConvar("sonoran_serverId", ""))
     if server_id == nil then
-        warnLog("getServerId export returned nil because tonumber(Config.serverId) is not configured.")
+        warnLog("UNHANDLED_WARNING", "getServerId export returned nil because tonumber(Config.serverId) is not configured.")
         return nil
     end
     return server_id
@@ -563,7 +563,7 @@ local function associate_sso_with_player(player, sso_id)
     log_link_debug(("associate SSO for player %s using %s"):format(tostring(player), tostring(identifier_type)))
     local link_status, err = create_link_session_by_identifier(identifier, identifier_type, sanitized_sso_id)
     if link_status == nil then
-        warnLog(("Failed SSO association for player %s: %s"):format(tostring(player), tostring(err)))
+        warnLog("UNHANDLED_WARNING", ("Failed SSO association for player %s: %s"):format(tostring(player), tostring(err)))
         return nil, type(err) == "string" and err or "Failed to associate the SSO account."
     end
 

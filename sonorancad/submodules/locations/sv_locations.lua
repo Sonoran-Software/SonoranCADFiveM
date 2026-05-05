@@ -23,13 +23,13 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
         local function loadVehicleModelConfig()
             local raw = LoadResourceFile(GetCurrentResourceName(), vehicleModelConfigPath)
             if not raw or raw == "" then
-                warnLog(("Livemap vehicle model config missing: %s"):format(vehicleModelConfigPath))
+                warnLog("UNHANDLED_WARNING", ("Livemap vehicle model config missing: %s"):format(vehicleModelConfigPath))
                 vehicleModelConfig = {}
                 return
             end
             local ok, data = pcall(json.decode, raw)
             if not ok or type(data) ~= "table" then
-                warnLog(("Livemap vehicle model config invalid: %s"):format(vehicleModelConfigPath))
+                warnLog("UNHANDLED_WARNING", ("Livemap vehicle model config invalid: %s"):format(vehicleModelConfigPath))
                 vehicleModelConfig = {}
                 return
             end
@@ -240,9 +240,9 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
         RegisterNetEvent("SonoranCAD::locations:ErrorDetection")
         AddEventHandler("SonoranCAD::locations:ErrorDetection", function(isInitial)
             if isInitial then
-                errorLog(("Player %s reported an error sending initial location data. Check client logs for errors. Did you set up the postals plugin correctly?"):format(source))
+                errorLog("UNHANDLED_SERVER_ERROR", ("Player %s reported an error sending initial location data. Check client logs for errors. Did you set up the postals plugin correctly?"):format(source))
             else
-                warnLog(("Player %s reported an error sending location data. Check client logs for errors."):format(source))
+                warnLog("UNHANDLED_WARNING", ("Player %s reported an error sending location data. Check client logs for errors."):format(source))
             end
         end)
 

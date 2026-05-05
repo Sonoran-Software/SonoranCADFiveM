@@ -122,7 +122,7 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
                 Wait(15000)
                 if lastSentTime == nil then
                     TriggerServerEvent("SonoranCAD::locations:ErrorDetection", true)
-                    warnLog("Warning: No location data has been sent yet. Check for errors.")
+                    warnLog("UNHANDLED_WARNING", "Warning: No location data has been sent yet. Check for errors.")
                 end
                 Wait(30000)
             end

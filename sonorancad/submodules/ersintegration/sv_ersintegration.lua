@@ -183,7 +183,7 @@ if pluginConfig.enabled then
                     if ok then
                         replaceValues[cadKey] = value or ""
                     else
-                        errorLog("ERS replace value mapping failed for key " .. tostring(cadKey) .. ": " .. tostring(value))
+                        errorLog("UNHANDLED_SERVER_ERROR", "ERS replace value mapping failed for key " .. tostring(cadKey) .. ": " .. tostring(value))
                         replaceValues[cadKey] = ""
                     end
                 elseif type(source) == "string" then
@@ -206,7 +206,7 @@ if pluginConfig.enabled then
                     if ok then
                         result[cadKey] = value or ""
                     else
-                        errorLog("ERS license mapping failed for key " .. tostring(cadKey) .. ": " .. tostring(value))
+                        errorLog("UNHANDLED_SERVER_ERROR", "ERS license mapping failed for key " .. tostring(cadKey) .. ": " .. tostring(value))
                         result[cadKey] = ""
                     end
                 end
@@ -261,13 +261,13 @@ if pluginConfig.enabled then
         if pluginConfig.create911Call then
             AddEventHandler('ErsIntegration::OnIsOfferedCallout', function(calloutData)
                 if type(calloutData) ~= "table" then
-                    errorLog("ERS 911 callout payload was malformed.")
+                    errorLog("UNHANDLED_SERVER_ERROR", "ERS 911 callout payload was malformed.")
                     return
                 end
 
                 local coords = getCoordinates(calloutData.Coordinates)
                 if coords == nil then
-                    errorLog("ERS 911 callout missing valid coordinates.")
+                    errorLog("UNHANDLED_SERVER_ERROR", "ERS 911 callout missing valid coordinates.")
                     return
                 end
 
@@ -310,7 +310,7 @@ if pluginConfig.enabled then
                     end
                     local response = CadApiCreateEmergencyCall(data)
                     if not response.success then
-                        errorLog("ERS emergency call creation failed: " .. CadApiReasonText(response.reason))
+                        errorLog("UNHANDLED_SERVER_ERROR", "ERS emergency call creation failed: " .. CadApiReasonText(response.reason))
                         return
                     end
                     local callId = response.callId
@@ -329,13 +329,13 @@ if pluginConfig.enabled then
         if pluginConfig.createEmergencyCall then
             AddEventHandler('ErsIntegration::OnAcceptedCalloutOffer', function(calloutData)
                 if type(calloutData) ~= "table" then
-                    errorLog("ERS accepted callout payload was malformed.")
+                    errorLog("UNHANDLED_SERVER_ERROR", "ERS accepted callout payload was malformed.")
                     return
                 end
 
                 local coords = getCoordinates(calloutData.Coordinates)
                 if coords == nil then
-                    errorLog("ERS accepted callout missing valid coordinates.")
+                    errorLog("UNHANDLED_SERVER_ERROR", "ERS accepted callout missing valid coordinates.")
                     return
                 end
 
@@ -354,7 +354,7 @@ if pluginConfig.enabled then
                         local existingCall = processedCalloutAccepted[uniqueKey]
                         local callId = tonumber(existingCall.id or existingCall)
                         if callId == nil then
-                            errorLog("ERS accepted callout had an invalid saved call ID for key: " .. uniqueKey)
+                            errorLog("UNHANDLED_SERVER_ERROR", "ERS accepted callout had an invalid saved call ID for key: " .. uniqueKey)
                             return
                         end
                         local unitData = getPlayerCadStatus(source, "ERS Integration", { unit = true, link = true })
@@ -405,7 +405,7 @@ if pluginConfig.enabled then
                     end
                     local response = CadApiCreateDispatchCall(data)
                     if not response.success then
-                        errorLog("ERS dispatch creation failed: " .. CadApiReasonText(response.reason))
+                        errorLog("UNHANDLED_SERVER_ERROR", "ERS dispatch creation failed: " .. CadApiReasonText(response.reason))
                         return
                     end
                     local callId = response.callId
@@ -433,7 +433,7 @@ if pluginConfig.enabled then
         ]]
         AddEventHandler('SonoranCAD::ErsIntegration::BuildChars', function(pedData)
             if type(pedData) ~= "table" then
-                errorLog("ERS character payload was malformed.")
+                errorLog("UNHANDLED_SERVER_ERROR", "ERS character payload was malformed.")
                 return
             end
 
@@ -467,7 +467,7 @@ if pluginConfig.enabled then
                 processedPedData[uniqueKey] = {id = recordId, timestamp = os.time()}
                 debugLog("Record ID " .. recordId .. " saved for unique key: " .. uniqueKey)
             elseif characterResponse.success then
-                warnLog("Invalid or missing 'id' in response")
+                warnLog("UNHANDLED_WARNING", "Invalid or missing 'id' in response")
             else
                 CadApiLogFailure("NEW_CHARACTER", characterResponse, data)
             end
@@ -525,7 +525,7 @@ if pluginConfig.enabled then
         end)
         AddEventHandler('SonoranCAD::ErsIntegration::BuildVehs', function(vehData)
             if type(vehData) ~= "table" then
-                errorLog("ERS vehicle payload was malformed.")
+                errorLog("UNHANDLED_SERVER_ERROR", "ERS vehicle payload was malformed.")
                 return
             end
 
@@ -557,7 +557,7 @@ if pluginConfig.enabled then
                 processedVehData[uniqueKey] = {id = recordId, timestamp = os.time()}
                 debugLog("Record ID " .. recordId .. " saved for unique key: " .. uniqueKey)
             elseif recordResponse.success then
-                warnLog("Invalid or missing 'id' in response")
+                warnLog("UNHANDLED_WARNING", "Invalid or missing 'id' in response")
             else
                 CadApiLogFailure("NEW_RECORD", recordResponse, data)
             end
@@ -587,12 +587,12 @@ if pluginConfig.enabled then
             debugLog('Loading ERS Callouts...')
             local calloutData = exports.night_ers.getCallouts()
             if type(calloutData) ~= "table" then
-                errorLog("ERS callout list was malformed.")
+                errorLog("UNHANDLED_SERVER_ERROR", "ERS callout list was malformed.")
                 calloutData = {}
             end
             for uid, callout in pairs(calloutData) do
                 if type(callout) ~= "table" then
-                    warnLog("Skipping malformed ERS callout with id: " .. tostring(uid))
+                    warnLog("UNHANDLED_WARNING", "Skipping malformed ERS callout with id: " .. tostring(uid))
                     goto continue
                 end
                 -- Retain only the first description if it exists, otherwise set to an empty table
@@ -632,7 +632,7 @@ if pluginConfig.enabled then
         ]]
         TriggerEvent('SonoranCAD::RegisterPushEvent', 'EVENT_NEW_CALLOUT', function(data)
             if type(data) ~= "table" or type(data.data) ~= "table" or type(data.data.callout) ~= "table" or type(data.data.callout.data) ~= "table" then
-                errorLog("Push event callout payload was malformed.")
+                errorLog("UNHANDLED_SERVER_ERROR", "Push event callout payload was malformed.")
                 return
             end
 
@@ -641,7 +641,7 @@ if pluginConfig.enabled then
             local firstLocation = locations and locations[1]
             local coords = getCoordinates(firstLocation)
             if coords == nil then
-                errorLog("Push event callout was missing a valid location.")
+                errorLog("UNHANDLED_SERVER_ERROR", "Push event callout was missing a valid location.")
                 return
             end
 
@@ -661,7 +661,7 @@ if pluginConfig.enabled then
         debugLog("night ERS resource is started.")
         startErs()
     else
-        errorLog("Night ERS resource is not started. Please start the resource before using this submodule.")
+        errorLog("UNHANDLED_SERVER_ERROR", "Night ERS resource is not started. Please start the resource before using this submodule.")
     end
     AddEventHandler('onResourceStart', function(resourceName)
         if resourceName == 'night_ers' then

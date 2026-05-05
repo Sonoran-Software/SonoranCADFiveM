@@ -33,14 +33,14 @@ CreateThread(function()
                     if ok then
                         qbCore = obj
                     else
-                        warnLog(("[caddisplay] Unable to load qb-core export: %s"):format(tostring(obj)))
+                        warnLog("UNHANDLED_WARNING", ("[caddisplay] Unable to load qb-core export: %s"):format(tostring(obj)))
                     end
                 elseif pluginConfig.framework.frameworkType == "esx" and esx == nil then
                     local ok, obj = pcall(function() return exports["es_extended"]:getSharedObject() end)
                     if ok then
                         esx = obj
                     else
-                        warnLog(("[caddisplay] Unable to load es_extended export: %s"):format(tostring(obj)))
+                        warnLog("UNHANDLED_WARNING", ("[caddisplay] Unable to load es_extended export: %s"):format(tostring(obj)))
                     end
                 end
             end
@@ -153,7 +153,7 @@ CreateThread(function()
                         SaveResourceFile(GetCurrentResourceName(), placementFile, defaultFile, -1)
                         stored = defaultFile
                     else
-                        warnLog("[caddisplay] No placement data found; starting with empty placement list.")
+                        warnLog("UNHANDLED_WARNING", "[caddisplay] No placement data found; starting with empty placement list.")
                         placements = {}
                         return
                     end
@@ -161,7 +161,7 @@ CreateThread(function()
 
                 local parsed = json.decode(stored)
                 if not parsed or type(parsed) ~= "table" then
-                    warnLog("[caddisplay] Failed to parse placement file; starting with empty placement list.")
+                    warnLog("UNHANDLED_WARNING", "[caddisplay] Failed to parse placement file; starting with empty placement list.")
                     placements = {}
                     return
                 end
@@ -233,7 +233,7 @@ CreateThread(function()
                         end
                         return
                     end
-                    warnLog("[caddisplay] Failed to parse world placement file; using config defaults.")
+                    warnLog("UNHANDLED_WARNING", "[caddisplay] Failed to parse world placement file; using config defaults.")
                 end
 
                 local defaults = pluginConfig.worldDisplays and pluginConfig.worldDisplays.defaultPlacements or {}
@@ -272,6 +272,14 @@ CreateThread(function()
                 TriggerClientEvent("SonoranCAD::caddisplay::SyncOwners", target or -1, displayOwners)
             end
 
+            local function notifyPlayer(playerId, message, notificationType)
+                NotifyPlayer(playerId, {
+                    title = "CAD Display",
+                    message = message,
+                    type = notificationType or "info"
+                })
+            end
+
             local function clearPendingForPlayer(playerId)
                 local changed = false
                 for vehNet, req in pairs(pendingRequests) do
@@ -293,8 +301,7 @@ CreateThread(function()
                 local vehicleModel = string.upper(data.vehicle or "")
                 if vehicleModel == "" then
                     if src then
-                        TriggerClientEvent("chat:addMessage", src,
-                            {args = {"CAD Display", "No vehicle model provided; placement not saved."}})
+                        notifyPlayer(src, "No vehicle model provided; placement not saved.", "error")
                     end
                     return
                 end
@@ -389,8 +396,11 @@ CreateThread(function()
             RegisterCommand(pluginConfig.commands.cadDisplayMenu, function(source)
                 local allowed, isAdmin = checkPermissions(source)
                 if not allowed then
-                    TriggerClientEvent("chat:addMessage", source,
-                        {args = {"CAD Display", "You do not have permission to use this command."}})
+                    NotifyPlayer(source, {
+                        title = "CAD Display",
+                        message = "You do not have permission to use this command.",
+                        type = "error"
+                    })
                     return
                 end
                 local worldAdmin = checkWorldPlacementPermission(source)
@@ -407,8 +417,11 @@ CreateThread(function()
                 local src = source
                 local allowed, isAdmin = checkPermissions(src)
                 if not allowed or not isAdmin then
-                    TriggerClientEvent("chat:addMessage", src,
-                        {args = {"CAD Display", "You do not have permission to save placements."}})
+                    NotifyPlayer(src, {
+                        title = "CAD Display",
+                        message = "You do not have permission to save placements.",
+                        type = "error"
+                    })
                     return
                 end
                 upsertPlacement(data or {}, src)
@@ -418,8 +431,11 @@ CreateThread(function()
                 local src = source
                 local allowed, isAdmin = checkPermissions(src)
                 if not allowed or not isAdmin then
-                    TriggerClientEvent("chat:addMessage", src,
-                        {args = {"CAD Display", "You do not have permission to delete placements."}})
+                    NotifyPlayer(src, {
+                        title = "CAD Display",
+                        message = "You do not have permission to delete placements.",
+                        type = "error"
+                    })
                     return
                 end
                 local targetModel = string.upper(vehicleModel or "")
@@ -439,8 +455,11 @@ CreateThread(function()
             RegisterNetEvent("SonoranCAD::caddisplay::SaveWorldPlacement", function(data)
                 local src = source
                 if not checkWorldPlacementPermission(src) then
-                    TriggerClientEvent("chat:addMessage", src,
-                        {args = {"CAD Display", "You do not have permission to save station displays."}})
+                    NotifyPlayer(src, {
+                        title = "CAD Display",
+                        message = "You do not have permission to save station displays.",
+                        type = "error"
+                    })
                     return
                 end
                 upsertWorldPlacement(data or {}, src)
@@ -449,8 +468,11 @@ CreateThread(function()
             RegisterNetEvent("SonoranCAD::caddisplay::DeleteWorldPlacement", function(displayId)
                 local src = source
                 if not checkWorldPlacementPermission(src) then
-                    TriggerClientEvent("chat:addMessage", src,
-                        {args = {"CAD Display", "You do not have permission to delete station displays."}})
+                    NotifyPlayer(src, {
+                        title = "CAD Display",
+                        message = "You do not have permission to delete station displays.",
+                        type = "error"
+                    })
                     return
                 end
                 local targetId = tonumber(displayId)
@@ -482,7 +504,11 @@ CreateThread(function()
                 local src = source
                 local veh = NetworkGetEntityFromNetworkId(vehNet)
                 if veh == 0 or not DoesEntityExist(veh) then
-                    TriggerClientEvent("chat:addMessage", src, {args = {"CAD Display", "Unable to identify this vehicle."}})
+                    NotifyPlayer(src, {
+                        title = "CAD Display",
+                        message = "Unable to identify this vehicle.",
+                        type = "error"
+                    })
                     return
                 end
 
@@ -510,8 +536,11 @@ CreateThread(function()
                         requester = src,
                         requesterName = GetPlayerName(src) or ("Player %s"):format(src)
                     })
-                    TriggerClientEvent("chat:addMessage", src,
-                        {args = {"CAD Display", "Control request sent to the current owner."}})
+                    NotifyPlayer(src, {
+                        title = "CAD Display",
+                        message = "Control request sent to the current owner.",
+                        type = "info"
+                    })
                     SetTimeout(10500, function()
                         if pendingRequests[vehNet] and pendingRequests[vehNet].requester == src then
                             pendingRequests[vehNet] = nil
@@ -520,8 +549,11 @@ CreateThread(function()
                         end
                     end)
                 else
-                    TriggerClientEvent("chat:addMessage", src,
-                        {args = {"CAD Display", "Only the driver or front passenger can take control."}})
+                    NotifyPlayer(src, {
+                        title = "CAD Display",
+                        message = "Only the driver or front passenger can take control.",
+                        type = "warning"
+                    })
                 end
             end)
 
@@ -556,8 +588,11 @@ CreateThread(function()
                     requester = src,
                     requesterName = GetPlayerName(src) or ("Player %s"):format(src)
                 })
-                TriggerClientEvent("chat:addMessage", src,
-                    {args = {"CAD Display", "Control request sent to the current owner."}})
+                NotifyPlayer(src, {
+                    title = "CAD Display",
+                    message = "Control request sent to the current owner.",
+                    type = "info"
+                })
                 SetTimeout(10500, function()
                     if pendingRequests[key] and pendingRequests[key].requester == src then
                         pendingRequests[key] = nil
@@ -575,18 +610,27 @@ CreateThread(function()
                 end
                 pendingRequests[vehNet] = nil
                 if not accepted then
-                    TriggerClientEvent("chat:addMessage", requester,
-                        {args = {"CAD Display", "Your control request was denied."}})
+                    NotifyPlayer(requester, {
+                        title = "CAD Display",
+                        message = "Your control request was denied.",
+                        type = "error"
+                    })
                     TriggerClientEvent("SonoranCAD::caddisplay::ControlRequestExpired", src, vehNet)
                     return
                 end
 
                 displayOwners[tostring(vehNet)] = requester
                 syncOwners()
-                TriggerClientEvent("chat:addMessage", requester,
-                    {args = {"CAD Display", "You now have control of the CAD display."}})
-                TriggerClientEvent("chat:addMessage", src,
-                    {args = {"CAD Display", "You granted control of the CAD display."}})
+                NotifyPlayer(requester, {
+                    title = "CAD Display",
+                    message = "You now have control of the CAD display.",
+                    type = "success"
+                })
+                NotifyPlayer(src, {
+                    title = "CAD Display",
+                    message = "You granted control of the CAD display.",
+                    type = "success"
+                })
             end)
 
             RegisterNetEvent("SonoranCAD::caddisplay::BroadcastCadScreenshot", function(vehNet, image)

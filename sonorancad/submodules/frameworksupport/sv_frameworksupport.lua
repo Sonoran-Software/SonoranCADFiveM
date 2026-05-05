@@ -10,7 +10,7 @@
 		if pluginConfig.enabled then
 
 			if GetResourceState('qb-core') ~= "started" and GetResourceState('es_extended') ~= 'started' then
-				errorLog('Both qb-core and es_extended are not started. Disabling framework support.')
+				errorLog("UNHANDLED_SERVER_ERROR", 'Both qb-core and es_extended are not started. Disabling framework support.')
 				pluginConfig.enabled = false
 				pluginConfig.disableReason = 'qb-core and es_extended not started'
 				return
@@ -19,7 +19,7 @@
             local ESX = nil
 			if pluginConfig.usingQBCore then
 				if GetResourceState('qb-core') ~= "started" then
-					errorLog('qb-core is not started. Disabling framework support.')
+					errorLog("UNHANDLED_SERVER_ERROR", 'qb-core is not started. Disabling framework support.')
 					pluginConfig.enabled = false
 					pluginConfig.disableReason = 'qb-core not started'
 					return
@@ -28,7 +28,7 @@
 			end
 			if not pluginConfig.usingQBCore then
 				if GetResourceState('es_extended') ~= 'started' then
-					errorLog('es_extended is not started. Disabling framework support.')
+					errorLog("UNHANDLED_SERVER_ERROR", 'es_extended is not started. Disabling framework support.')
 					pluginConfig.enabled = false
 					pluginConfig.disableReason = 'es_extended not started'
 					return
@@ -173,7 +173,7 @@
 					xPlayer = ESX.GetPlayerFromId(player)
 				end
 				if xPlayer == nil then
-					warnLog(('Failed to obtain player info from %s. ESX.GetPlayerFromId returned nil.'):format(player))
+					warnLog("UNHANDLED_WARNING", ('Failed to obtain player info from %s. ESX.GetPlayerFromId returned nil.'):format(player))
 				else
 					if pluginConfig.usingQBCore then
 						if not xPlayer.PlayerData.job.onduty then -- QBUS job.onduty is false when on duty??? okayyyyy
@@ -351,7 +351,11 @@
 											if citation.issuer ~= '' then
 												finemessage = finemessage .. ' by ' .. citation.issuer
 											end
-											TriggerClientEvent('chat:addMessage', -1, {color = {255, 0, 0}, multiline = true, args = {finemessage}})
+											NotifyPlayer(-1, {
+												title = 'Fine Issued',
+												message = finemessage,
+												type = 'warning'
+											})
 										end
 										if pluginConfig.qbNotifyFinedPlayer then
 											TriggerClientEvent('QBCore:Notify', xPlayer.PlayerData.source, pluginConfig.qbFineMessage:gsub('$AMOUNT', citation.fine):gsub('$OFFICER_NAME', citation.issuer), 'error', 5000)
@@ -369,7 +373,11 @@
 										if citation.issuer ~= '' then
 											finemessage = finemessage .. ' by ' .. citation.issuer
 										end
-										TriggerClientEvent('chat:addMessage', -1, {color = {255, 0, 0}, multiline = true, args = {finemessage}})
+										NotifyPlayer(-1, {
+											title = 'Fine Issued',
+											message = finemessage,
+											type = 'warning'
+										})
 									end
 								end
 							end

@@ -167,8 +167,10 @@ Last 50 Debug Messages
     if uploadSucceeded then
         infoLog("Support logs have been successfully uploaded. Debug mode was disabled during the upload.")
         if requester > 0 then
-            TriggerClientEvent("chat:addMessage", requester, {
-                args = {"^0[ ^2Support ^0] ", formatErrorMessage("SUPPORT_UPLOAD_SUCCESS")}
+            NotifyPlayer(requester, {
+                title = "Support",
+                message = formatErrorMessage("SUPPORT_UPLOAD_SUCCESS"),
+                type = "success"
             })
         end
         return true
@@ -189,13 +191,13 @@ Last 50 Debug Messages
     end
     return false
 end
-RegisterCommand("sonoran", function(source, args, rawCommand)
+RegisterCommand("sonorancad", function(source, args, rawCommand)
     if source ~= 0 then
         print("Console only command")
         return
     end
     if not args[1] then
-        print("Missing command. Try \"sonoran help\" for help.")
+        print("Missing command. Try \"sonorancad help\" for help.")
         return
     end
     if args[1] == "help" then
@@ -207,7 +209,6 @@ SonoranCAD Help
     errors - display all error/warning messages since last startup
     plugin <name> - show info about a plugin (config)
     update - Run core updater
-    pluginupdate - Run plugin updater
     viewcaches - View the current unit and call cache, for troubleshooting
     getclientlog <playerId> - Get a log buffer from a given client
     dumpconsole - Dumps current console buffer to file
@@ -286,7 +287,7 @@ SonoranCAD Help
         end
         print("----ERROR/WARNING BUFFER END----")
     else
-        print("Missing command. Try \"sonoran help\" for help.")
+        print("Missing command. Try \"sonorancad help\" for help.")
     end
 end, true)
 
