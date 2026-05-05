@@ -17,6 +17,7 @@
     const SEND_ERROR_LOG_INTERVAL_MS = 60 * 1000;
     const MAX_SILENT_RECONNECT_FAILURES = 5;
     const MANUAL_RETRY_DELAYS_MS = [2000, 5000, 10000, 30000];
+    const PROTECTED_CONVAR_PLACEHOLDER = "protection_initialized";
     const SIGNALR_DEBUG_ONLY_PATTERNS = [
         "(WebSockets transport) There was an error with the transport.",
         "Failed to start the transport 'WebSockets'",
@@ -256,7 +257,7 @@
 
     function getConvar(name) {
         const value = GetConvar(name, "NONE");
-        if (value === "NONE") {
+        if (value === "NONE" || value === PROTECTED_CONVAR_PLACEHOLDER) {
             return null;
         }
         return value;
