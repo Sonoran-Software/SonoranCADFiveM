@@ -266,28 +266,27 @@ Citizen.CreateThread(function()
                         debugLog(("Couldn't find unit, not adding %s (%s)"):format(playerId, json.encode(GetUnitIdentityValues(v))))
                     end
                 end
-            end
-            for k, v in pairs(OldUnits) do
-                local exists = false
-                for _, n in pairs(NewUnits) do
-                    if n.id == v.id then
-                        exists = true
+                for k, v in pairs(OldUnits) do
+                    local exists = false
+                    for _, n in pairs(NewUnits) do
+                        if n.id == v.id then
+                            exists = true
+                        end
+                    end
+                    if not exists then
+                        debugLog(("Removing player %s, not on units list"):format(k))
+                        PlayerUnitMapping[k] = nil
+                        TriggerEvent("SonoranCAD::core:RemovePlayer", k, v)
+                        TriggerClientEvent("SonoranCAD::core:RemovePlayer", k, v)
                     end
                 end
-                if not exists then
-                    debugLog(("Removing player %s, not on units list"):format(k))
-                    PlayerUnitMapping[k] = nil
-                    TriggerEvent("SonoranCAD::core:RemovePlayer", k, v)
-                    TriggerClientEvent("SonoranCAD::core:RemovePlayer", k, v)
+                UnitCache = {}
+                for k, v in pairs(NewUnits) do
+                    debugLog("Insert unit "..json.encode(v))
+                    table.insert(UnitCache, v)
                 end
-            end
-            UnitCache = {}
-            for k, v in pairs(NewUnits) do
-                debugLog("Insert unit "..json.encode(v))
-                table.insert(UnitCache, v)
-            end
-            if allUnits == nil then
-                rebuildActiveDispatchers({})
+            else
+                debugLog("GET_ACTIVE_UNITS returned no data; preserving active unit cache")
             end
         end
         Citizen.Wait(60000)
@@ -347,28 +346,27 @@ function manuallySetUnitCache()
                     debugLog(("Couldn't find unit, not adding %s (%s)"):format(playerId, json.encode(GetUnitIdentityValues(v))))
                 end
             end
-        end
-        for k, v in pairs(OldUnits) do
-            local exists = false
-            for _, n in pairs(NewUnits) do
-                if n.id == v.id then
-                    exists = true
+            for k, v in pairs(OldUnits) do
+                local exists = false
+                for _, n in pairs(NewUnits) do
+                    if n.id == v.id then
+                        exists = true
+                    end
+                end
+                if not exists then
+                    debugLog(("Removing player %s, not on units list"):format(k))
+                    PlayerUnitMapping[k] = nil
+                    TriggerEvent("SonoranCAD::core:RemovePlayer", k, v)
+                    TriggerClientEvent("SonoranCAD::core:RemovePlayer", k, v)
                 end
             end
-            if not exists then
-                debugLog(("Removing player %s, not on units list"):format(k))
-                PlayerUnitMapping[k] = nil
-                TriggerEvent("SonoranCAD::core:RemovePlayer", k, v)
-                TriggerClientEvent("SonoranCAD::core:RemovePlayer", k, v)
+            UnitCache = {}
+            for _, v in pairs(NewUnits) do
+                debugLog("Insert unit "..json.encode(v))
+                table.insert(UnitCache, v)
             end
-        end
-        UnitCache = {}
-        for _, v in pairs(NewUnits) do
-            debugLog("Insert unit "..json.encode(v))
-            table.insert(UnitCache, v)
-        end
-        if allUnits == nil then
-            rebuildActiveDispatchers({})
+        else
+            debugLog("GET_ACTIVE_UNITS returned no data; preserving active unit cache")
         end
     end
 end
