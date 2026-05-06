@@ -14,6 +14,7 @@ local WarningCodes = {
     ['APIKEY_CONVAR_UNINITIALIZED'] = { code = "WRN-CORE-005", message = "The sonorancad.cfg convars were not initialized before SonoranCAD started." },
     ['OLD_FXSERVER_VERSION'] = { code = "WRN-CORE-006", message = "The running FXServer build is older than the version SonoranCAD was tested against." },
     ['PLAYER_IDENTIFIER_MISSING'] = { code = "WRN-CAD-101", message = "A player connected without the configured primary identifier." },
+    ['PLAYER_LINK_REQUIRED'] = { code = "WRN-CAD-102", message = "A player's CAD account is not linked. Have them run /%s to link their account." },
     ['LEGACY_HTTP_PUSH_EVENT'] = { code = "WRN-WS-101", message = "A legacy HTTP push event was received while WebSocket delivery is preferred." },
     ['UNHANDLED_WARNING'] = { code = "WRN-CORE-900", message = "A non-fatal warning occurred." },
 }

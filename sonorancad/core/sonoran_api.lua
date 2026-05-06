@@ -265,12 +265,28 @@ end
 
 function CadApiLogFailure(request_name, response, payload)
     local localNetworkError = get_local_network_error(response)
-    local errorCode = localNetworkError and localNetworkError.key or "CAD_API_REQUEST_FAILED"
-    logError(errorCode, ("CAD API ERROR (%s): %s payload=%s"):format(
+    local detail = ("CAD API ERROR (%s): %s payload=%s"):format(
         tostring(request_name),
         CadApiReasonText(response and response.reason),
         payload_preview(payload)
-    ))
+    )
+
+    if localNetworkError ~= nil then
+        if localNetworkError.key == "LOCAL_NETWORK_TIMEOUT" then
+            logError("LOCAL_NETWORK_TIMEOUT", detail)
+            return
+        end
+
+        if localNetworkError.key == "LOCAL_NETWORK_CONNECT_TIMEOUT" then
+            logError("LOCAL_NETWORK_CONNECT_TIMEOUT", detail)
+            return
+        end
+
+        logError("CAD_API_REQUEST_FAILED", detail)
+        return
+    end
+
+    logError("CAD_API_REQUEST_FAILED", detail)
 end
 
 local function get_v2_response_id(data)
