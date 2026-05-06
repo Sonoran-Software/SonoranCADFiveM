@@ -684,13 +684,18 @@ RegisterNetEvent("SonoranCAD::Tablet::LinkMissing")
 AddEventHandler('SonoranCAD::Tablet::LinkMissing', function()
 	isRegistered = false
 	SendNUIMessage({
-		type = "regbar"
+		type = "regbar",
+		show = true
 	})
 end)
 
 RegisterNetEvent("SonoranCAD::Tablet::LinkFound")
 AddEventHandler("SonoranCAD::Tablet::LinkFound", function()
 	isRegistered = true
+	SendNUIMessage({
+		type = "regbar",
+		show = false
+	})
 end)
 
 RegisterNUICallback('SetLinkInformation', function(data,cb)

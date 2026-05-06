@@ -290,10 +290,17 @@
 			recordPrinterFrame.style.height = "100%";
 			recordPrinterFrame.style.border = "0px";
 			recordPrinterFrame.style.zIndex = "10";
+			recordPrinterFrame.style.pointerEvents = "none";
+			recordPrinterFrame.tabIndex = -1;
 			recordPrinterContainer.appendChild(recordPrinterFrame);
 
 			function setRecordPrinterVisible(visible) {
 				recordPrinterContainer.style.display = visible ? "block" : "none";
+				recordPrinterContainer.style.pointerEvents = visible ? "auto" : "none";
+				recordPrinterFrame.style.pointerEvents = visible ? "auto" : "none";
+				if (visible) {
+					recordPrinterFrame.focus();
+				}
 			}
 
 			function renderCadLink() {

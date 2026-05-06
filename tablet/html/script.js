@@ -285,8 +285,13 @@ $(function () {
 			}
 		}
 		else if (event.data.type == "regbar") {
-			currentlyCheckingLink = true;
-			$("#check-api-data").show();
+			const shouldShow = event.data.show !== false;
+			currentlyCheckingLink = shouldShow;
+			if (shouldShow) {
+				$("#check-api-data").show();
+			} else {
+				$("#check-api-data").hide();
+			}
 		}
 		else if (event.data.type == "resize") {
 			if (event.data.module == "cad") {

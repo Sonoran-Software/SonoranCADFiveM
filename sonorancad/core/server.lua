@@ -126,7 +126,7 @@ CreateThread(function()
         -- Wait a few seconds for server startup
         Wait(5000)
         local coreVersion = GetResourceMetadata(GetCurrentResourceName(), "version", 0)
-        SetConvarServerInfo("SonoranCAD", coreVersion)
+        SetConvarServerInfo("SonoranCADVersion", coreVersion)
         local plugins = {}
         local playerCount = GetNumPlayerIndices()
         for k, v in pairs(Config.plugins) do

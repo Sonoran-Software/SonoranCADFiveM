@@ -193,7 +193,7 @@ Last 50 Debug Messages
 end
 RegisterCommand("sonorancad", function(source, args, rawCommand)
     if source ~= 0 then
-        handlePlayerSonoranCommand(source, args)
+        handlePlayerSonoranCommand(source, args or {})
         return
     end
     if not args[1] then

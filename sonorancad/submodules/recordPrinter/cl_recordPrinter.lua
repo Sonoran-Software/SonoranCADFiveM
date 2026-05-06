@@ -12,6 +12,10 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
     local holdingDoc = false
     local uiOpen = false
     local uiMinimized = false
+    local function releaseFocus()
+        SetNuiFocus(false, false)
+        SetNuiFocusKeepInput(false)
+    end
     local radius = pluginConfig.interactRadius or 3.0
     local baseCommand = pluginConfig.commandPrefix or "printer"
     local defaultCommands = { queue = "queue", clear = "clear", print = "print", share = "share", accept = "accept" }
@@ -44,6 +48,9 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
     local function frameworksEnabled()
         local fw = pluginConfig.frameworks or {}
         return fw.use_qbcore or fw.use_esx or fw.use_esx_ox_inventory or fw.use_custom_inventory or fw.use_quasar_inventory
+    end
+    local function isStandaloneMode()
+        return not frameworksEnabled()
     end
     local function setActiveDocLink(link) doc_link = link end
     local function enqueueRecord(recordUrl, opts)
@@ -256,7 +263,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
 
         sendChat({0, 255, 0}, ("Printing: queue #%d"):format(idx))
         setActiveDocLink(url)
-        SendNuiMessage(json.encode({ action = 'openUI', link = url, first = true, type = 'pdf', recordPrinter = true }))
+        SendNuiMessage(json.encode({ action = 'openUI', link = url, first = true, type = 'pdf', recordPrinter = true, standalone = isStandaloneMode() }))
         uiOpen, uiMinimized = true, false
         SetNuiFocus(true, true)
         SetNuiFocusKeepInput(false)
@@ -339,7 +346,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         local entry = table.remove(pendingShares, idx)
         if entry.mode == "direct" then
             setActiveDocLink(entry.url)
-            SendNuiMessage(json.encode({ action = 'openUI', link = entry.url, first = false, type = 'pdf', recordPrinter = true }))
+            SendNuiMessage(json.encode({ action = 'openUI', link = entry.url, first = false, type = 'pdf', recordPrinter = true, standalone = isStandaloneMode() }))
             uiOpen, uiMinimized = true, false
             ToggleDocHold(true)
             SetNuiFocus(true, true)
@@ -453,6 +460,22 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
             SetEntityCoords(entity, 0.0, 0.0, -100.0, false, false, false, true)
         end
     end
+    local function createGroundedWorldDoc(hash, pos)
+        local x = pos.x or 0.0
+        local y = pos.y or 0.0
+        local z = pos.z or 0.0
+        local entity = CreateObject(hash, x, y, z, false, true, false)
+        if not entity or entity == 0 then
+            return nil
+        end
+
+        PlaceObjectOnGroundProperly(entity)
+        FreezeEntityPosition(entity, true)
+
+        local actualPos = GetEntityCoords(entity)
+        pos.x, pos.y, pos.z = actualPos.x, actualPos.y, actualPos.z
+        return entity
+    end
 
     -- =========================
     -- World doc spawn/update
@@ -479,7 +502,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
 
         for i = 1, #WorldDocs do
             local pos = WorldDocs[i].Position or {}
-            local e = CreateObject(hash, pos.x or 0.0, pos.y or 0.0, (pos.z or 0.0) - 0.2, false, true, false)
+            local e = createGroundedWorldDoc(hash, pos)
             WorldDocs[i].entityObject = e
         end
     end)
@@ -530,7 +553,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
                                 e.entityObject = nil
                             end
                             TriggerServerEvent('SonoranPDF:destroyWorldPDF', closestId)
-                            SendNuiMessage(json.encode({ action = 'openUI', link = e.pdf_link, first = false, type = 'pdf', recordPrinter = true }))
+                            SendNuiMessage(json.encode({ action = 'openUI', link = e.pdf_link, first = false, type = 'pdf', recordPrinter = true, standalone = isStandaloneMode() }))
                             uiOpen, uiMinimized = true, false
                             ToggleDocHold(true)
                             setActiveDocLink(e.pdf_link)
@@ -561,7 +584,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         -- QB: item.info.pdf_link
         local link = (item and item.info and item.info.pdf_link) or nil
         if not link or link == '' then return end
-        SendNuiMessage(json.encode({ action = 'openUI', link = link, first = false, type = 'pdf', recordPrinter = true }))
+        SendNuiMessage(json.encode({ action = 'openUI', link = link, first = false, type = 'pdf', recordPrinter = true, standalone = isStandaloneMode() }))
         uiOpen, uiMinimized = true, false
         ToggleDocHold(true)
         setActiveDocLink(link)
@@ -573,7 +596,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         -- ESX (ox): entry.metadata.pdf_link
         local link = (item and item.metadata and item.metadata.pdf_link) or nil
         if not link or link == '' then return end
-        SendNuiMessage(json.encode({ action = 'openUI', link = link, first = false, type = 'pdf', recordPrinter = true }))
+        SendNuiMessage(json.encode({ action = 'openUI', link = link, first = false, type = 'pdf', recordPrinter = true, standalone = isStandaloneMode() }))
         uiOpen, uiMinimized = true, false
         ToggleDocHold(true)
         setActiveDocLink(link)
@@ -585,7 +608,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
     RegisterNetEvent('SonoranPDF:Open', function(url)
         if not url or url == '' then return end
         setActiveDocLink(url)
-        SendNuiMessage(json.encode({ action = 'openUI', link = url, first = true, type = 'pdf', recordPrinter = true })) -- first=true -> inventory put-away
+        SendNuiMessage(json.encode({ action = 'openUI', link = url, first = true, type = 'pdf', recordPrinter = true, standalone = isStandaloneMode() })) -- first=true -> inventory put-away
         uiOpen, uiMinimized = true, false
         ToggleDocHold(true)
         SetNuiFocusKeepInput(false)
@@ -599,8 +622,10 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         -- data.link (pdf url), data.first (bool), type='pdf'
         local link = data and data.link or nil
         local isFirst = data and data.first or false
+        local dropToWorld = data and data.dropToWorld or false
         uiOpen, uiMinimized = false, false
         SetNuiFocusKeepInput(false)
+        SendNuiMessage(json.encode({ action = 'closeui', recordPrinter = true }))
 
         if pluginConfig.frameworks.use_qbcore and not pluginConfig.frameworks.use_quasar_inventory then
             if isFirst then
@@ -653,11 +678,9 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         else
             -- No inventory: drop to world if “first”
             SetNuiFocus(false, false)
-            local pos = GetEntityCoords(PlayerPedId())
-            TriggerServerEvent('SonoranPDF:SaveToWorld', link, pos.x, pos.y, pos.z - 0.8)
-            if isFirst then
-                DisplayNotification(pluginConfig.translations.putAwayCamera)
-            else
+            if dropToWorld then
+                local pos = GetEntityCoords(PlayerPedId())
+                TriggerServerEvent('SonoranPDF:SaveToWorld', link, pos.x, pos.y, pos.z)
                 DisplayNotification(pluginConfig.translations.imageDropped)
             end
             if cb then cb() end
@@ -684,11 +707,6 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         releaseFocus()
         if cb then cb({ ok = true }) end
     end)
-
-    local function releaseFocus()
-        SetNuiFocus(false, false)
-        SetNuiFocusKeepInput(false)
-    end
 
     -- Extra guard: if minimized, make sure focus stays released
     CreateThread(function()
