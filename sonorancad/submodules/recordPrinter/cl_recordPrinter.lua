@@ -12,6 +12,10 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
     local holdingDoc = false
     local uiOpen = false
     local uiMinimized = false
+    local function releaseFocus()
+        SetNuiFocus(false, false)
+        SetNuiFocusKeepInput(false)
+    end
     local radius = pluginConfig.interactRadius or 3.0
     local baseCommand = pluginConfig.commandPrefix or "printer"
     local defaultCommands = { queue = "queue", clear = "clear", print = "print", share = "share", accept = "accept" }
@@ -601,6 +605,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         local isFirst = data and data.first or false
         uiOpen, uiMinimized = false, false
         SetNuiFocusKeepInput(false)
+        SendNuiMessage(json.encode({ action = 'closeui', recordPrinter = true }))
 
         if pluginConfig.frameworks.use_qbcore and not pluginConfig.frameworks.use_quasar_inventory then
             if isFirst then
@@ -684,11 +689,6 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         releaseFocus()
         if cb then cb({ ok = true }) end
     end)
-
-    local function releaseFocus()
-        SetNuiFocus(false, false)
-        SetNuiFocusKeepInput(false)
-    end
 
     -- Extra guard: if minimized, make sure focus stays released
     CreateThread(function()
