@@ -167,6 +167,16 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 - `Meaning`: The `tablet` resource exists but is not in a usable runtime state.
 - `Potential Fix`: Use `exec sonorancad.cfg`, confirm it contains `ensure tablet`, and fix the startup errors reported by `tablet`.
 
+### ERR-CORE-033
+- `Key`: `LOCAL_NETWORK_TIMEOUT`
+- `Meaning`: The local server network timed out while connecting to SonoranCAD.
+- `Potential Fix`: If you are seeing this routinely, contact your server host. The network may be overwhelmed or experiencing degraded performance. This suggests your FiveM server is getting timeouts and connection drops.
+
+### ERR-CORE-034
+- `Key`: `LOCAL_NETWORK_CONNECT_TIMEOUT`
+- `Meaning`: The local server connection to SonoranCAD timed out.
+- `Potential Fix`: If you are seeing this routinely, contact your server host. Check the server host, firewall, proxy, or upstream network connection for connection setup delays or blocked outbound traffic.
+
 ### ERR-CORE-900
 - `Key`: `UNHANDLED_SERVER_ERROR`
 - `Meaning`: An unexpected server-side error occurred and was normalized into a generic coded failure.

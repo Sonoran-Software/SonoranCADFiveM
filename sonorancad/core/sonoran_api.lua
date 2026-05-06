@@ -226,18 +226,33 @@ function CadApiReasonText(value)
     return tostring(value)
 end
 
-local function is_local_network_timeout(response)
+local function get_local_network_error(response)
     local reason = response and response.reason
     if type(reason) ~= "table" then
-        return false
+        return nil
     end
 
-    return reason.code == "ECONNRESET"
+    if reason.code == "ECONNRESET" then
+        return {
+            key = "LOCAL_NETWORK_TIMEOUT",
+            message = "The local server network timed out while connecting to SonoranCAD."
+        }
+    end
+
+    if reason.code == "ETIMEDOUT" then
+        return {
+            key = "LOCAL_NETWORK_CONNECT_TIMEOUT",
+            message = "The local server connection to SonoranCAD timed out."
+        }
+    end
+
+    return nil
 end
 
 function CadApiSupportErrorText(request_name, response)
-    if is_local_network_timeout(response) then
-        return BuildSupportErrorMessage("LOCAL_NETWORK_TIMEOUT", "The local server network timed out while connecting to SonoranCAD.")
+    local localNetworkError = get_local_network_error(response)
+    if localNetworkError ~= nil then
+        return BuildSupportErrorMessage(localNetworkError.key, localNetworkError.message)
     end
 
     local baseMessage = "A CAD request failed. Please give this error to support."
@@ -249,7 +264,8 @@ function CadApiSupportErrorText(request_name, response)
 end
 
 function CadApiLogFailure(request_name, response, payload)
-    local errorCode = is_local_network_timeout(response) and "LOCAL_NETWORK_TIMEOUT" or "CAD_API_REQUEST_FAILED"
+    local localNetworkError = get_local_network_error(response)
+    local errorCode = localNetworkError and localNetworkError.key or "CAD_API_REQUEST_FAILED"
     logError(errorCode, ("CAD API ERROR (%s): %s payload=%s"):format(
         tostring(request_name),
         CadApiReasonText(response and response.reason),
