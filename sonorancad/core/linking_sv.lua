@@ -209,6 +209,11 @@ local function parse_link_response(data)
     }
 end
 
+local function is_explicit_unlinked_link_response(data)
+    local parsed = coerce_link_data(data)
+    return type(parsed) == "table" and parsed.linked == false
+end
+
 local function update_link_cache(identifier, identifier_type, parsed)
     local existing = CadLinkCache[identifier] or {}
     CadLinkCache[identifier] = {
@@ -270,16 +275,29 @@ local function refresh_link_status_by_identifier(identifier, identifier_type, co
             tostring(identifier_type),
             tostring(response.reason)
         ))
-        return update_link_cache(identifier, identifier_type, {
+        if cached ~= nil then
+            return cached
+        end
+        return {
+            identifier = identifier,
+            identifierType = identifier_type or tostring(Config.primaryIdentifier or "license"),
             linked = false,
             code = code,
-            url = cached and cached.url or nil,
-            communityUserId = cached and cached.communityUserId or nil,
+            url = nil,
+            communityUserId = nil,
+            updatedAt = nil,
             raw = response.reason
-        })
+        }
     end
 
-    return update_link_cache(identifier, identifier_type, parse_link_response(response.data))
+    local parsed = parse_link_response(response.data)
+    if is_explicit_unlinked_link_response(response.data) then
+        return update_link_cache(identifier, identifier_type, parsed)
+    end
+    if parsed.linked == true then
+        return update_link_cache(identifier, identifier_type, parsed)
+    end
+    return parsed
 end
 
 local function create_link_session_by_identifier(identifier, identifier_type, community_user_id)
