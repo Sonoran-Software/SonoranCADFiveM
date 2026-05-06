@@ -670,7 +670,7 @@ local config = {
                     name = "Painter’s Overalls",
                     colors = { [0] = "Paint Splatter" }
                 },
-                [124] = { name = "Cf’s Jacket", colors = { [0] = "White" } },
+                [124] = { name = "Chef’s Jacket", colors = { [0] = "White" } },
                 [125] = { name = "Lab Coat", colors = { [0] = "White" } },
                 [126] = { name = "Chef’s Apron", colors = { [0] = "White" } },
                 [127] = { name = "Doctor’s Scrubs", colors = { [0] = "Green" } },
