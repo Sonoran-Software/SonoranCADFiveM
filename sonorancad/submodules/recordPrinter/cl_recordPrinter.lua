@@ -460,6 +460,22 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
             SetEntityCoords(entity, 0.0, 0.0, -100.0, false, false, false, true)
         end
     end
+    local function createGroundedWorldDoc(hash, pos)
+        local x = pos.x or 0.0
+        local y = pos.y or 0.0
+        local z = pos.z or 0.0
+        local entity = CreateObject(hash, x, y, z, false, true, false)
+        if not entity or entity == 0 then
+            return nil
+        end
+
+        PlaceObjectOnGroundProperly(entity)
+        FreezeEntityPosition(entity, true)
+
+        local actualPos = GetEntityCoords(entity)
+        pos.x, pos.y, pos.z = actualPos.x, actualPos.y, actualPos.z
+        return entity
+    end
 
     -- =========================
     -- World doc spawn/update
@@ -486,7 +502,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
 
         for i = 1, #WorldDocs do
             local pos = WorldDocs[i].Position or {}
-            local e = CreateObject(hash, pos.x or 0.0, pos.y or 0.0, (pos.z or 0.0) - 0.2, false, true, false)
+            local e = createGroundedWorldDoc(hash, pos)
             WorldDocs[i].entityObject = e
         end
     end)
@@ -664,7 +680,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
             SetNuiFocus(false, false)
             if dropToWorld then
                 local pos = GetEntityCoords(PlayerPedId())
-                TriggerServerEvent('SonoranPDF:SaveToWorld', link, pos.x, pos.y, pos.z - 0.8)
+                TriggerServerEvent('SonoranPDF:SaveToWorld', link, pos.x, pos.y, pos.z)
                 DisplayNotification(pluginConfig.translations.imageDropped)
             end
             if cb then cb() end
