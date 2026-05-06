@@ -52,7 +52,7 @@ local config = {
         callTemplates = {     -- Templates for different call types | Place holders: {street} and {description}
             pistol = {
                 "Someone is waving a handgun around near {street}! I think it's a {description}!",
-                "There's a guy showing off a pistol on {street}! {description}!",
+                "There's a person showing off a pistol on {street}! {description}!",
                 "Help! I just saw someone flashing a pistol on {street}. {description}.",
                 "Looks like a handgun on {street}. {description}!",
                 "They're brandishing a pistol openly at {street}. {description}!",
@@ -60,15 +60,15 @@ local config = {
                 "A handgun! I saw a {description} on {street}!",
                 "They've got a sidearm on {street}, just flashing it around. {description}.",
                 "Looks like a concealed pistol being shown on {street}. {description}.",
-                "Man with a pistol spotted near {street}! {description}!"
+                "Person with a pistol spotted near {street}! {description}!"
             },
             knife = {
                 "Someone's got a knife out on {street}! {description}!",
                 "There’s a person waving a blade around on {street}! {description}!",
                 "Looks like a knife! They're on {street}. {description}.",
-                "Dangerous looking guy with a knife near {street}! {description}.",
-                "He's swinging a knife around {street}. {description}!",
-                "This guy has a knife in his hand on {street}. {description}!",
+                "Dangerous looking person with a knife near {street}! {description}.",
+                "They're swinging a knife around {street}. {description}!",
+                "This person has a knife in his hand on {street}. {description}!",
                 "They're brandishing a blade at {street}. {description}.",
                 "Knife-wielding person spotted on {street}! {description}!",
                 "They're acting threatening with a knife at {street}. {description}.",
@@ -76,18 +76,18 @@ local config = {
             },
             longgun = {
                 "Someone’s got a rifle out on {street}! {description}!",
-                "He’s walking around with a long gun on {street}. {description}.",
-                "There’s a guy carrying a rifle down {street}. {description}!",
+                "Someone's walking around with a long gun on {street}. {description}.",
+                "There’s a person carrying a rifle down {street}. {description}!",
                 "I saw a scoped rifle on {street}! {description}.",
                 "That looks like an assault weapon on {street}! {description}.",
                 "Rifle spotted near {street}! {description}.",
-                "Man with a long weapon walking near {street}! {description}.",
+                "Person with a long weapon walking near {street}! {description}.",
                 "They're carrying something like a sniper on {street}. {description}!",
                 "Definitely a long gun, I saw it near {street}. {description}!",
                 "They’ve got a rifle out on {street}. {description}!"
             },
             shotgun = {
-                "He’s carrying a shotgun down {street}! {description}!",
+                "Someone's carrying a shotgun down {street}! {description}!",
                 "There’s a person with a pump-action shotgun on {street}! {description}.",
                 "I just saw someone with a shotgun at {street}. {description}.",
                 "Sawed-off or not, it’s a shotgun on {street}! {description}!",
@@ -103,7 +103,7 @@ local config = {
                 "They're carrying a compact SMG on {street}. {description}.",
                 "That looked like an SMG on {street}. {description}!",
                 "Small automatic weapon spotted on {street}! {description}!",
-                "He’s got a machine pistol on {street}. {description}!",
+                "They've got a machine pistol on {street}. {description}!",
                 "They're holding something like a Uzi at {street}! {description}!",
                 "I swear that was a mini-SMG at {street}. {description}!",
                 "Rapid-fire gun seen on {street}! {description}!",
@@ -127,9 +127,9 @@ local config = {
                 "They’re holding a melee weapon on {street}. {description}!",
                 "Looks like a crowbar or something at {street}! {description}!",
                 "He’s threatening folks with a wrench on {street}. {description}!",
-                "That guy has a hammer on {street}! {description}!",
+                "That person has a hammer on {street}! {description}!",
                 "There’s a person with a club at {street}! {description}!",
-                "He’s got something blunt on {street}. {description}!",
+                "Someone has a blunt object on {street}. {description}!",
                 "Looks like a flashlight used as a weapon at {street}! {description}!",
                 "They’re ready to swing something on {street}. {description}!",
                 "Blunt weapon spotted on {street}! {description}!"
@@ -139,7 +139,7 @@ local config = {
                 "Heavy weapon spotted at {street}. {description}!",
                 "That looked like a minigun near {street}! {description}!",
                 "Big launcher spotted on {street}. {description}!",
-                "He’s carrying military-grade stuff on {street}! {description}!",
+                "They're carrying military-grade stuff on {street}! {description}!",
                 "I swear I saw a railgun on {street}. {description}!",
                 "That’s a heavy-duty launcher at {street}! {description}!",
                 "Huge weapon on display at {street}. {description}!",
@@ -155,7 +155,7 @@ local config = {
                 "Person is holding an explosive on {street}. {description}!",
                 "They’ve got some kind of bomb at {street}! {description}!",
                 "Looks like tear gas or something worse on {street}! {description}!",
-                "That guy’s got an explosive device at {street}. {description}!",
+                "That person's got an explosive device at {street}. {description}!",
                 "That’s not safe! Explosive spotted on {street}! {description}!"
             },
             throwable = {
@@ -163,7 +163,7 @@ local config = {
                 "Someone’s throwing snowballs on {street}! {description}!",
                 "I think I saw a ball fly past on {street}. {description}!",
                 "That looked like something tossed on {street}! {description}!",
-                "He’s throwing random stuff on {street}. {description}!",
+                "They're throwing random stuff on {street}. {description}!",
                 "Could be a distraction—something just flew on {street}! {description}!",
                 "They’re throwing stuff! On {street}! {description}!",
                 "Tossed something on {street}! {description}!",
@@ -670,7 +670,7 @@ local config = {
                     name = "Painter’s Overalls",
                     colors = { [0] = "Paint Splatter" }
                 },
-                [124] = { name = "Chef’s Jacket", colors = { [0] = "White" } },
+                [124] = { name = "Cf’s Jacket", colors = { [0] = "White" } },
                 [125] = { name = "Lab Coat", colors = { [0] = "White" } },
                 [126] = { name = "Chef’s Apron", colors = { [0] = "White" } },
                 [127] = { name = "Doctor’s Scrubs", colors = { [0] = "Green" } },
