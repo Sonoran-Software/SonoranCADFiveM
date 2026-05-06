@@ -680,6 +680,11 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 - `Meaning`: A player connected without the configured primary identifier, so some CAD features may not work for that player.
 - `Potential Fix`: Ensure the configured identifier type is actually available on your server and that the player is connecting through the expected identity provider.
 
+### WRN-CAD-102
+- `Key`: `PLAYER_LINK_REQUIRED`
+- `Meaning`: A player attempted a CAD-linked workflow without having a linked CAD account.
+- `Potential Fix`: Have the player run the configured link command, complete the link flow, and retry after the CAD link exists.
+
 ### WRN-WS-101
 - `Key`: `LEGACY_HTTP_PUSH_EVENT`
 - `Meaning`: SonoranCAD received a legacy HTTP push event on `/event` while WebSocket push delivery is preferred.

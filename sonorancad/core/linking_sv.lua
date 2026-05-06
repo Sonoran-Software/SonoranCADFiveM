@@ -167,6 +167,14 @@ local function is_unlinked_link_check_reason(reason)
         return true
     end
 
+    local message = parsed.message or parsed.error or parsed.reason or parsed.details
+    if type(message) == "string" then
+        local normalized = message:lower()
+        if normalized:find("not linked", 1, true) ~= nil or normalized:find("no link", 1, true) ~= nil then
+            return true
+        end
+    end
+
     -- Some CAD responses currently return {"success":false} for "not linked"
     -- instead of a successful payload with linked=false.
     if parsed.success == false and parsed.accountUuid == nil and parsed.uuid == nil and parsed.error == nil and parsed.message == nil then
@@ -270,9 +278,10 @@ local function refresh_link_status_by_identifier(identifier, identifier_type, co
             })
         end
 
-        warnLog("UNHANDLED_WARNING", ("CAD link status check failed for %s (%s): %s"):format(
+        warnLog("PLAYER_LINK_REQUIRED", ("CAD link status check failed for %s (%s). Have the player run /%s to link their account. CAD response: %s"):format(
             tostring(identifier),
             tostring(identifier_type),
+            get_link_command_name(),
             tostring(json.encode(response.reason))
         ))
         if cached ~= nil then
