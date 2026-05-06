@@ -3,17 +3,20 @@ var firstView = false;
 var isOpen = false;
 var isMinimized = false;
 var isFullscreen = false;
+var isStandaloneMode = false;
 
 $(function () {
 	var $wrapper = $("#wrapper");
 	var $pdfWindow = $("#pdfWindow");
 	var $pdfViewer = $("#pdfViewer");
 	var $statusText = $("#statusText");
+	var $dropBtn = $("#dropBtn");
 	var $minimizeBtn = $("#minimizeBtn");
 	var $fullscreenBtn = $("#fullscreenBtn");
 	var $closeBtn = $("#closeBtn");
 	var pdfRenderToken = 0;
 	var pdfLoadingTask = null;
+	$dropBtn.hide();
 	function notifyMinimizeChanged() {
 		try {
 			$.post("https://sonorancad/RecordPrinter:MinimizeChanged", JSON.stringify({ minimized: isMinimized }));
@@ -116,9 +119,9 @@ $(function () {
 		if (isMinimized) {
 			$statusText.text("Press Backspace to restore.");
 		} else if (isFullscreen) {
-			$statusText.text("Scroll to view the record. Backspace to minimize, ESC to close.");
+			$statusText.text(isStandaloneMode ? "Scroll to view the record. Use the drop button to place it on the ground. Backspace to minimize, ESC to close." : "Scroll to view the record. Backspace to minimize, ESC to close.");
 		} else {
-			$statusText.text("Press Backspace to minimize, ESC to close.");
+			$statusText.text(isStandaloneMode ? "Use the drop button to place the record on the ground. Backspace to minimize, ESC to close." : "Press Backspace to minimize, ESC to close.");
 		}
 	}
 
@@ -136,6 +139,7 @@ $(function () {
 		$fullscreenBtn.find(".icon")
 			.toggleClass("icon-maximize", !shouldFullscreen)
 			.toggleClass("icon-restore", shouldFullscreen);
+		$dropBtn.toggle(isStandaloneMode);
 
 		updateStatusText();
 	}
@@ -226,7 +230,7 @@ $(function () {
 		notifyMinimizeChanged();
 	}
 
-	function closeUI(sendMessage) {
+	function closeUI(sendMessage, dropToWorld) {
 		if (!isOpen) return;
 		isOpen = false;
 		isMinimized = false;
@@ -239,7 +243,7 @@ $(function () {
 		});
 
 		if (sendMessage !== false) {
-			$.post("https://sonorancad/CloseUI", JSON.stringify({ link: pdfLink, first: firstView }));
+			$.post("https://sonorancad/CloseUI", JSON.stringify({ link: pdfLink, first: firstView, dropToWorld: !!dropToWorld }));
 		}
 	}
 
@@ -293,12 +297,16 @@ $(function () {
 		toggleMinimize();
 	});
 
+	$dropBtn.on("click", function () {
+		closeUI(true, true);
+	});
+
 	$fullscreenBtn.on("click", function () {
 		toggleFullscreen();
 	});
 
 	$closeBtn.on("click", function () {
-		closeUI(true);
+		closeUI(true, false);
 	});
 
 	window.addEventListener("message", function (event) {
@@ -310,13 +318,16 @@ $(function () {
 		if (typeof data.first !== "undefined") {
 			firstView = !!data.first;
 		}
+		if (typeof data.standalone !== "undefined") {
+			isStandaloneMode = !!data.standalone;
+		}
 
 		switch (data.action) {
 			case "openUI":
 				openUI(pdfLink, firstView);
 				break;
 			case "closeui":
-				closeUI(true);
+				closeUI(false, false);
 				break;
 			case "toggleMinimize":
 				toggleMinimize();
@@ -336,7 +347,7 @@ $(function () {
 
 		if (event.key === "Escape") {
 			event.preventDefault();
-			closeUI(true);
+			closeUI(true, false);
 		} else if (event.key === "Backspace") {
 			event.preventDefault();
 			toggleMinimize(); 
