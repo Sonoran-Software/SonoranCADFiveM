@@ -113,6 +113,9 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
                 end
             end
         end
+        function HasValidBlipId(tower)
+            return tower and type(tower.BlipID) == "number" and tower.BlipID > 0
+        end
         function GetTowerCapacity(tower)
             if #tower.DishStatus < 1 then
                 return 1.0
@@ -201,6 +204,11 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
                 for i=1, #TowerCache do
                     if TowerCache[i].Modified then
                         debugLog("Change found during batch... Sending")
+                        if not HasValidBlipId(TowerCache[i]) then
+                            debugLog("Tower is still missing a valid BlipID, deferring sonrad blip update")
+                            Wait(2100)
+                            goto continue
+                        end
                         TowerCache[i].Modified = false
                         local color = nil
                         local status = nil
@@ -241,6 +249,7 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
                     else
                         --debugLog("No changes during batch... Ignoring")
                     end
+                    ::continue::
                 end
             end
         end)
@@ -273,6 +282,11 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
             local tower = GetTowerFromId(towerId)
             if not tower then return end
             tower.DishStatus = dishStatus
+            if not HasValidBlipId(tower) then
+                tower.Modified = true
+                debugLog("Tower health changed before blip creation completed, deferring sonrad blip update")
+                return
+            end
             local pct = GetTowerCapacity(tower)
             local color = nil
             local status = nil
