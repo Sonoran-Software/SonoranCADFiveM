@@ -273,7 +273,7 @@ local function refresh_link_status_by_identifier(identifier, identifier_type, co
         warnLog("UNHANDLED_WARNING", ("CAD link status check failed for %s (%s): %s"):format(
             tostring(identifier),
             tostring(identifier_type),
-            tostring(response.reason)
+            tostring(json.encode(response.reason))
         ))
         if cached ~= nil then
             return cached

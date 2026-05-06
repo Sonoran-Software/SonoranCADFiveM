@@ -529,7 +529,7 @@ SetHttpHandler(function(req, res)
 				}))
 			else
 				local s = string.gmatch(data.command, '%S+')()
-				if s ~= 'sonoran' then
+				if s ~= 'sonorancad' then
 					res.send(json.encode({
 						['error'] = 'not allowed'
 					}))
