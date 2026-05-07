@@ -18,8 +18,18 @@ function supportHint(code) {
 }
 
 function ensureRecordingsDirectory() {
-	if (!fs.existsSync(RECORDINGS_DIR)) {
-		fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
+	try {
+		if (!fs.existsSync(RECORDINGS_DIR)) {
+			fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
+		}
+		fs.accessSync(RECORDINGS_DIR, fs.constants.W_OK);
+		return true;
+	} catch (err) {
+		log(
+			"error",
+			`${supportHint("ERR-BC-111")} Recordings directory unavailable path=${RECORDINGS_DIR}: ${err && err.message ? err.message : String(err)}`
+		);
+		return false;
 	}
 }
 
@@ -126,7 +136,9 @@ function buildMultipartBody(fields, fileField) {
 }
 
 function buildTempFilePath(uploadId, fileName) {
-	ensureRecordingsDirectory();
+	if (!ensureRecordingsDirectory()) {
+		return null;
+	}
 	const safeName = sanitizeFileName(fileName);
 	return path.join(RECORDINGS_DIR, `${uploadId}-${safeName}`);
 }
@@ -147,6 +159,9 @@ function wait(ms) {
 
 exports("CreateTempBodycamRecordingFile", function (uploadId, fileName) {
 	const tempPath = buildTempFilePath(uploadId, fileName);
+	if (!tempPath) {
+		return null;
+	}
 	safeDeleteFile(tempPath);
 	return tempPath;
 });
@@ -310,7 +325,14 @@ async function uploadSavedBodycamClip(src, session) {
 }
 
 function createUploadSession(src, payload) {
-	ensureRecordingsDirectory();
+	if (!ensureRecordingsDirectory()) {
+		emitNet("SonoranCAD::bodycam::UploadResult", src, {
+			ok: false,
+			errorCode: "ERR-BC-111",
+			reason: "file_write_failed",
+		});
+		return null;
+	}
 	const summary = summarizeInitPayload(payload);
 	const uploadId = summary.uploadId;
 	if (!uploadId) {
@@ -399,7 +421,21 @@ async function finalizeUploadSession(src, uploadId) {
 			}
 			orderedChunks.push(chunkBase64);
 		}
-		fs.writeFileSync(session.filePath, Buffer.from(orderedChunks.join(""), "base64"));
+		try {
+			ensureRecordingsDirectory();
+			fs.writeFileSync(session.filePath, Buffer.from(orderedChunks.join(""), "base64"));
+		} catch (err) {
+			log(
+				"error",
+				`${supportHint("ERR-BC-111")} Failed to persist upload uploadId=${uploadId} path=${session.filePath}: ${err && err.message ? err.message : String(err)}`
+			);
+			emitNet("SonoranCAD::bodycam::UploadResult", src, {
+				ok: false,
+				errorCode: "ERR-BC-111",
+				reason: "file_write_failed",
+			});
+			return;
+		}
 		await uploadSavedBodycamClip(src, session);
 	} finally {
 		safeDeleteFile(session.filePath);
