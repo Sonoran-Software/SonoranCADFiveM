@@ -407,6 +407,27 @@ function Client:_resolve_server_id(server_id)
   return resolved
 end
 
+function Client:_resolve_radio_community_id(community_id)
+  local resolved = community_id
+  if resolved == nil then
+    resolved = self._config.communityId
+  end
+  if resolved == nil then
+    resolved = self._config.defaultServerId
+  end
+
+  if type(resolved) == "string" then
+    resolved = resolved:match("^%s*(.-)%s*$")
+    if resolved == "" then
+      error("communityId is required.")
+    end
+    return resolved
+  end
+
+  self:_assert_positive_integer(resolved, "communityId")
+  return resolved
+end
+
 function Client:_encode_path_segment(value)
   if value == nil or value == "" then
     error("Path segment is required.")
@@ -1131,57 +1152,63 @@ local function create_client(config, adapter)
   end
 
   instance.getCommunityChannelsV2 = function(self, server_id)
-    local resolved_server_id = self:_resolve_server_id(server_id)
+    local resolved_server_id = self:_resolve_radio_community_id(server_id)
     return self:_request("GET", "v2/servers/" .. tostring(resolved_server_id) .. "/channels")
   end
   instance.getConnectedUsersV2 = function(self, server_id)
-    local resolved_server_id = self:_resolve_server_id(server_id)
+    local resolved_server_id = self:_resolve_radio_community_id(server_id)
     return self:_request("GET", "v2/servers/" .. tostring(resolved_server_id) .. "/connected-users")
   end
+  instance.getMembersV2 = function(self, query, server_id)
+    local resolved_server_id = self:_resolve_radio_community_id(server_id)
+    return self:_request("GET", "v2/servers/" .. tostring(resolved_server_id) .. "/members", {
+      query = shallow_copy(query or {})
+    })
+  end
   instance.getConnectedUserV2 = function(self, room_id, identity, server_id)
-    local resolved_server_id = self:_resolve_server_id(server_id)
+    local resolved_server_id = self:_resolve_radio_community_id(server_id)
     self:_assert_positive_integer(room_id, "roomId")
     return self:_request("GET", "v2/servers/" .. tostring(resolved_server_id) .. "/rooms/" .. tostring(room_id) .. "/users/" .. self:_encode_path_segment(identity))
   end
   instance.setUserChannelsV2 = function(self, room_id, identity, options, server_id)
-    local resolved_server_id = self:_resolve_server_id(server_id)
+    local resolved_server_id = self:_resolve_radio_community_id(server_id)
     self:_assert_positive_integer(room_id, "roomId")
     return self:_request("PATCH", "v2/servers/" .. tostring(resolved_server_id) .. "/rooms/" .. tostring(room_id) .. "/users/" .. self:_encode_path_segment(identity) .. "/channels", {
       body = shallow_copy(options or {})
     })
   end
   instance.setUserDisplayNameV2 = function(self, data)
-    local resolved_server_id = self:_resolve_server_id(data and data.serverId)
+    local resolved_server_id = self:_resolve_radio_community_id(data and (data.communityId or data.serverId))
     return self:_request("PATCH", "v2/servers/" .. tostring(resolved_server_id) .. "/users/display-name", {
-      body = strip_keys(data, { "serverId" })
+      body = strip_keys(data, { "serverId", "communityId" })
     })
   end
   instance.approveMembersV2 = function(self, acc_ids, server_id)
-    local resolved_server_id = self:_resolve_server_id(server_id)
+    local resolved_server_id = self:_resolve_radio_community_id(server_id)
     return self:_request("POST", "v2/servers/" .. tostring(resolved_server_id) .. "/members/approve", {
       body = { accIds = acc_ids }
     })
   end
   instance.kickMembersV2 = function(self, acc_ids, server_id)
-    local resolved_server_id = self:_resolve_server_id(server_id)
+    local resolved_server_id = self:_resolve_radio_community_id(server_id)
     return self:_request("POST", "v2/servers/" .. tostring(resolved_server_id) .. "/members/kick", {
       body = { accIds = acc_ids }
     })
   end
   instance.banMembersV2 = function(self, acc_ids, server_id)
-    local resolved_server_id = self:_resolve_server_id(server_id)
+    local resolved_server_id = self:_resolve_radio_community_id(server_id)
     return self:_request("POST", "v2/servers/" .. tostring(resolved_server_id) .. "/members/ban", {
       body = { accIds = acc_ids }
     })
   end
   instance.setMemberDisplayNamesV2 = function(self, acc_nicknames, server_id)
-    local resolved_server_id = self:_resolve_server_id(server_id)
+    local resolved_server_id = self:_resolve_radio_community_id(server_id)
     return self:_request("PATCH", "v2/servers/" .. tostring(resolved_server_id) .. "/members/display-names", {
       body = { accNicknames = acc_nicknames }
     })
   end
   instance.setMemberPermissionsV2 = function(self, user_perms, server_id)
-    local resolved_server_id = self:_resolve_server_id(server_id)
+    local resolved_server_id = self:_resolve_radio_community_id(server_id)
     return self:_request("PATCH", "v2/servers/" .. tostring(resolved_server_id) .. "/members/permissions", {
       body = { userPerms = user_perms }
     })
@@ -1192,19 +1219,19 @@ local function create_client(config, adapter)
     })
   end
   instance.setServerIpV2 = function(self, data)
-    local resolved_server_id = self:_resolve_server_id(data and data.serverId)
+    local resolved_server_id = self:_resolve_radio_community_id(data and (data.communityId or data.serverId))
     return self:_request("POST", "v2/servers/" .. tostring(resolved_server_id) .. "/server-ip", {
-      body = strip_keys(data, { "serverId" })
+      body = strip_keys(data, { "serverId", "communityId" })
     })
   end
   instance.setInGameSpeakerLocationsV2 = function(self, locations, server_id)
-    local resolved_server_id = self:_resolve_server_id(server_id)
+    local resolved_server_id = self:_resolve_radio_community_id(server_id)
     return self:_request("PUT", "v2/servers/" .. tostring(resolved_server_id) .. "/speakers", {
       body = { locations = locations }
     })
   end
   instance.playToneV2 = function(self, room_id, tones, play_to, server_id)
-    local resolved_server_id = self:_resolve_server_id(server_id)
+    local resolved_server_id = self:_resolve_radio_community_id(server_id)
     self:_assert_positive_integer(room_id, "roomId")
     return self:_request("POST", "v2/servers/" .. tostring(resolved_server_id) .. "/tones/play", {
       body = {
