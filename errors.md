@@ -293,6 +293,11 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 - `Meaning`: TURN credentials for bodycam streaming could not be retrieved.
 - `Potential Fix`: Verify the CAD API is reachable, the API key is valid, and TURN-related config overrides are correct.
 
+### ERR-BC-111
+- `Key`: `BODYCAM_RECORDINGS_UNWRITABLE`
+- `Meaning`: The bodycam recordings directory could not be written by the server process, so upload setup or clip finalization could not save the recording file.
+- `Potential Fix`: Set `sonorancad/submodules/bodycam` and its `recordings` directory to permission mode `777`, then retry the upload.
+
 ### ERR-BC-112
 - `Key`: `BODYCAM_RECORDING_ACTIVE`
 - `Meaning`: A start-recording request was ignored because a recording was already in progress.
