@@ -1,5 +1,8 @@
 const fs = require("fs");
 const path = require("path");
+const fetch = typeof globalThis.fetch === "function"
+	? globalThis.fetch.bind(globalThis)
+	: require("node-fetch");
 
 const MAX_FILE_SIZE_BYTES = 6000000;
 const MAX_DURATION_MS = 120000;
