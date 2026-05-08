@@ -487,6 +487,11 @@ function CadApiGetCharacters(payload)
     return response_with_data(response, unwrap_named_collection(response.data or {}, "characters") or {})
 end
 
+function GetCharactersV2(query)
+    return get_cad_client():getCharactersV2(query or {})
+end
+exports("getCharactersV2", GetCharactersV2)
+
 function CadApiSetUnitStatus(payload)
     payload = payload or {}
     local community_user_id, err = CadApiRequireCommunityUserId(payload.communityUserId)
