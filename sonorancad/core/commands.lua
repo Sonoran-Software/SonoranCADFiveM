@@ -191,6 +191,28 @@ Last 50 Debug Messages
     end
     return false
 end
+
+local function handlePlayerSonoranCommand(source, args)
+    local action = args[1] and string.lower(args[1]) or "help"
+
+    if action == "help" then
+        TriggerClientEvent("SonoranCAD::core:ShowCommandHelp", source, args[2])
+        return
+    end
+
+    if action == "support" then
+        if args[2] == nil or args[2] == "" then
+            TriggerClientEvent("SonoranCAD::core:ShowCommandMessage", source, "Usage: /sonorancad support <id>")
+            return
+        end
+        sendSupportLogs(args[2], source)
+        return
+    end
+
+    TriggerClientEvent("SonoranCAD::core:ShowCommandMessage", source,
+        ("Unknown or console-only action '%s'. Use /sonorancad help."):format(tostring(action)))
+end
+
 RegisterCommand("sonorancad", function(source, args, rawCommand)
     if source ~= 0 then
         handlePlayerSonoranCommand(source, args or {})

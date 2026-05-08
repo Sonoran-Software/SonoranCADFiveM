@@ -82,6 +82,13 @@ if pluginConfig.enabled then
 		return ''
 	end
 
+	local function lookupWraithPlate(plate, callback, communityUserId)
+		cadGetInformation(plate, callback, {
+			autoLookup = communityUserId,
+			cacheTtlMs = 60000
+		})
+	end
+
 	RegisterNetEvent('wk:onPlateLocked')
 	AddEventHandler('wk:onPlateLocked', function(cam, plate, index, vehicle, cbType, returnEvent)
 		debugLog(('plate lock: %s - %s - %s - %s - %s'):format(cam, plate, index, cbType, returnEvent))
@@ -93,7 +100,7 @@ if pluginConfig.enabled then
 		local communityUserId = playerCadStatus.link
 		plate = plate:match('^%s*(.-)%s*$')
 		wraithLastPlates.locked = {cam = cam, plate = plate, index = index, vehicle = cam.vehicle}
-		cadGetInformation(plate, function(regData, vehData, charData, boloData, warrantData)
+		lookupWraithPlate(plate, function(regData, vehData, charData, boloData, warrantData)
 			if cam == 'front' then
 				camCapitalized = 'Front'
 			elseif cam == 'rear' then
@@ -203,7 +210,7 @@ if pluginConfig.enabled then
 		plate = plate:match('^%s*(.-)%s*$')
 		wraithLastPlates.scanned = {cam = cam, plate = plate, index = index, vehicle = cam.vehicle}
 		TriggerEvent('SonoranCAD::wraithv2:PlateScanned', source, reg, cam, plate, index)
-		cadGetInformation(plate, function(regData, vehData, charData, boloData, warrantData)
+		lookupWraithPlate(plate, function(regData, vehData, charData, boloData, warrantData)
 			if returnEvent ~= nil then
 				if cbType == 'client' then
 					TriggerClientEvent(returnEvent, source, {['regData'] = regData, ['vehData'] = vehData, ['charData'] = charData, ['boloData'] = boloData, ['warrantData'] = warrantData, ['plate'] = plate, ['cam'] = cam, ['index'] = index})
@@ -285,7 +292,7 @@ if pluginConfig.enabled then
 					TriggerClientEvent('SonoranCAD::wraithv2:PlaySound', source, 'registration')
 				end
 			end
-		end )
+		end, communityUserId)
 	end)
 
 end

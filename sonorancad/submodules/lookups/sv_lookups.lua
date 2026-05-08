@@ -11,6 +11,8 @@ local pluginConfig = Config.GetPluginConfig("lookups")
 if pluginConfig.enabled then
 
     local LookupCache = {}
+    local PlateInformationCache = {}
+    local DEFAULT_PLATE_INFO_CACHE_TTL_MS = 60000
 
     local Lookup = {
         first = nil,
@@ -149,138 +151,178 @@ if pluginConfig.enabled then
 
     end
 
-    function cadGetInformation(plate, callback, autoLookup)
-        local data = {}
-        data["plate"] = plate
-        if autoLookup ~= nil then
-            data["notifyCommunityUserId"] = autoLookup
-        end
-        cadLookup(data, function(result)
-            local regData = {}
-            local charData = {}
-            local vehData = {}
-            local boloData = {}
-            local warrantData = {}
-            if result ~= nil then
-                for k, v in pairs(result) do
-                    for _, record in pairs(v.sections) do
-                        if v.type == 5 then
-                            debugLog("Record type 5")
-                            -- detect fields to find registration info
-                            for k, field in pairs(record.fields) do
-                                if field.uid == "status" and field.type == "select" then
-                                    debugLog("Found registration data")
-                                    local reg = {}
-                                    for k, field in pairs(record.fields) do
-                                        if field["uid"] ~= nil then
-                                            if string.match(field.uid, "_") then
-                                                local labelKey = field.label ~= nil and field.label:lower() or field.uid
-                                                reg[labelKey] = field.value
-                                                debugLog(("set %s = %s"):format(labelKey, field.value))
-                                            else
-                                                reg[field.uid] = field.value
-                                                debugLog(("set %s = %s"):format(field.uid, field.value))
-                                            end
+    local function buildPlateInformationResult(result)
+        local regData = {}
+        local charData = {}
+        local vehData = {}
+        local boloData = {}
+        local warrantData = {}
+        if result ~= nil then
+            for k, v in pairs(result) do
+                for _, record in pairs(v.sections) do
+                    if v.type == 5 then
+                        debugLog("Record type 5")
+                        -- detect fields to find registration info
+                        for k, field in pairs(record.fields) do
+                            if field.uid == "status" and field.type == "select" then
+                                debugLog("Found registration data")
+                                local reg = {}
+                                for k, field in pairs(record.fields) do
+                                    if field["uid"] ~= nil then
+                                        if string.match(field.uid, "_") then
+                                            local labelKey = field.label ~= nil and field.label:lower() or field.uid
+                                            reg[labelKey] = field.value
+                                            debugLog(("set %s = %s"):format(labelKey, field.value))
+                                        else
                                             reg[field.uid] = field.value
-                                            reg.__fieldLabels = reg.__fieldLabels or {}
-                                            reg.__fieldLabels[field.uid] = field.label ~= nil and field.label or field.uid
+                                            debugLog(("set %s = %s"):format(field.uid, field.value))
                                         end
+                                        reg[field.uid] = field.value
+                                        reg.__fieldLabels = reg.__fieldLabels or {}
+                                        reg.__fieldLabels[field.uid] = field.label ~= nil and field.label or field.uid
                                     end
-                                    table.insert(regData, reg)
-                                elseif field.uid == "first" then
-                                    debugLog("found civilian info")
-                                    local char = {}
-                                    for _, field in pairs(record.fields) do
-                                        if field["uid"] ~= nil then
-                                            if string.match(field.uid, "_") then
-                                                char[field.label:lower()] = field.value
-                                            else
-                                                char[field.uid] = field.value
-                                            end
-                                        end
-                                    end
-                                    table.insert(charData, char)
-                                elseif field.uid == "plate" then
-                                    debugLog("found vehicle info")
-                                    local veh = {}
-                                    for _, field in pairs(record.fields) do
-                                        if field["uid"] ~= nil then
-                                            if string.match(field.uid, "_") then
-                                                veh[field.label:lower()] = field.value
-                                            else
-                                                veh[field.uid] = field.value
-                                            end
-                                        end
-                                    end
-                                    table.insert(vehData, veh)
                                 end
-                            end
-                        elseif v.type == 3 then
-                            local boloActive = true
-                            for _, section in pairs(v.sections) do
-                                for _, field in pairs(section.fields) do
-                                    if field.uid == "status" then
-                                        debugLog(("Found BOLO status field %s with value %s"):format(field.label, field.value))
-                                        if field.value == "0" then
-                                            boloActive = true
-                                        elseif field.value == "1" then
-                                            boloActive = false
+                                table.insert(regData, reg)
+                            elseif field.uid == "first" then
+                                debugLog("found civilian info")
+                                local char = {}
+                                for _, field in pairs(record.fields) do
+                                    if field["uid"] ~= nil then
+                                        if string.match(field.uid, "_") then
+                                            char[field.label:lower()] = field.value
+                                        else
+                                            char[field.uid] = field.value
                                         end
                                     end
                                 end
-                                if section.category == 1 then-- flags
-                                    if section.fields.data ~= nil and section.fields.data.flags ~= nil then
-                                        boloData = section.fields.data.flags
-                                    else
-                                        boloData = {"BOLO"}
-                                    end
-                                end
-                            end
-                            if boloActive and (boloData == nil or #boloData == 0) then
-                                boloData = {"BOLO"}
-                            end
-                            if not boloActive then
-                                debugLog("BOLO inactive, mark as such")
-                                boloData = {}
-                            end
-                        elseif v.type == 2 then
-                            local warrantActive = true
-                            for _, section in pairs(v.sections) do
-                                for _, field in pairs(section.fields) do
-                                    if field.uid == "status" then
-                                        debugLog(("Found Warrant status field %s with value %s"):format(field.label, field.value))
-                                        if field.value == "0" then
-                                            warrantActive = true
-                                        elseif field.value == "1" then
-                                            warrantActive = false
+                                table.insert(charData, char)
+                            elseif field.uid == "plate" then
+                                debugLog("found vehicle info")
+                                local veh = {}
+                                for _, field in pairs(record.fields) do
+                                    if field["uid"] ~= nil then
+                                        if string.match(field.uid, "_") then
+                                            veh[field.label:lower()] = field.value
+                                        else
+                                            veh[field.uid] = field.value
                                         end
                                     end
                                 end
-                                if section.category == 1 then-- flags
-                                    if section.fields[1].data ~= nil and section.fields[1].data.flags ~= nil then
-                                        warrantData = section.fields[1].data.flags
-                                    else
-                                        warrantData = {"Warrant"}
+                                table.insert(vehData, veh)
+                            end
+                        end
+                    elseif v.type == 3 then
+                        local boloActive = true
+                        for _, section in pairs(v.sections) do
+                            for _, field in pairs(section.fields) do
+                                if field.uid == "status" then
+                                    debugLog(("Found BOLO status field %s with value %s"):format(field.label, field.value))
+                                    if field.value == "0" then
+                                        boloActive = true
+                                    elseif field.value == "1" then
+                                        boloActive = false
                                     end
                                 end
                             end
-                            if warrantActive and (warrantData == nil or #warrantData == 0) then
-                                warrantData = {"Warrant"}
+                            if section.category == 1 then-- flags
+                                if section.fields.data ~= nil and section.fields.data.flags ~= nil then
+                                    boloData = section.fields.data.flags
+                                else
+                                    boloData = {"BOLO"}
+                                end
                             end
-                            if not warrantActive then
-                                debugLog("Warrant inactive, mark as such")
-                                warrantData = {}
+                        end
+                        if boloActive and (boloData == nil or #boloData == 0) then
+                            boloData = {"BOLO"}
+                        end
+                        if not boloActive then
+                            debugLog("BOLO inactive, mark as such")
+                            boloData = {}
+                        end
+                    elseif v.type == 2 then
+                        local warrantActive = true
+                        for _, section in pairs(v.sections) do
+                            for _, field in pairs(section.fields) do
+                                if field.uid == "status" then
+                                    debugLog(("Found Warrant status field %s with value %s"):format(field.label, field.value))
+                                    if field.value == "0" then
+                                        warrantActive = true
+                                    elseif field.value == "1" then
+                                        warrantActive = false
+                                    end
+                                end
                             end
+                            if section.category == 1 then-- flags
+                                if section.fields[1].data ~= nil and section.fields[1].data.flags ~= nil then
+                                    warrantData = section.fields[1].data.flags
+                                else
+                                    warrantData = {"Warrant"}
+                                end
+                            end
+                        end
+                        if warrantActive and (warrantData == nil or #warrantData == 0) then
+                            warrantData = {"Warrant"}
+                        end
+                        if not warrantActive then
+                            debugLog("Warrant inactive, mark as such")
+                            warrantData = {}
                         end
                     end
                 end
             end
-            callback(regData, vehData, charData, boloData, warrantData)
+        end
+
+        return {
+            regData = regData,
+            vehData = vehData,
+            charData = charData,
+            boloData = boloData,
+            warrantData = warrantData
+        }
+    end
+
+    local function dispatchPlateInformation(callback, payload)
+        callback(payload.regData, payload.vehData, payload.charData, payload.boloData, payload.warrantData)
+    end
+
+    function cadGetInformation(plate, callback, autoLookupOrOptions)
+        local options = type(autoLookupOrOptions) == "table" and autoLookupOrOptions or { autoLookup = autoLookupOrOptions }
+        local autoLookup = options.autoLookup
+        local bypassCache = options.bypassCache == true
+        local forceRefresh = options.forceRefresh == true
+        local cacheTtlMs = tonumber(options.cacheTtlMs) or DEFAULT_PLATE_INFO_CACHE_TTL_MS
+        local normalizedPlate = plate ~= nil and plate:match("^%s*(.-)%s*$") or ""
+
+        if normalizedPlate ~= "" and not bypassCache and not forceRefresh then
+            local cached = PlateInformationCache[normalizedPlate:lower()]
+            if cached ~= nil and GetGameTimer() < cached.expiresAt then
+                debugLog(("Returning cached plate information for %s"):format(normalizedPlate))
+                dispatchPlateInformation(callback, json.decode(cached.payload))
+                return
+            end
+        end
+
+        local data = {}
+        data["plate"] = normalizedPlate
+        if autoLookup ~= nil then
+            data["notifyCommunityUserId"] = autoLookup
+        end
+        cadLookup(data, function(result)
+            local payload = buildPlateInformationResult(result)
+            if normalizedPlate ~= "" and not bypassCache and cacheTtlMs > 0 then
+                PlateInformationCache[normalizedPlate:lower()] = {
+                    expiresAt = GetGameTimer() + cacheTtlMs,
+                    payload = json.encode(payload)
+                }
+            end
+            dispatchPlateInformation(callback, payload)
         end, autoLookup)
     end
 
     exports('cadNameLookup', cadNameLookup)
     exports('cadPlateLookup', cadPlateLookup)
+    exports('cadGetInformation', cadGetInformation)
+    exports('cadGetPlateInformation', cadGetInformation)
 
     -- The follow two commands are for developer use to analyze API responses
 
