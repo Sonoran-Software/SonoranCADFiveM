@@ -37,7 +37,7 @@ if pluginConfig.enabled then
     end)
 
     local function getCharactersApi(player, callback)
-        local playerCadStatus = getPlayerCadStatus(player, "Civilian Integration", { link = true, unit = true })
+        local playerCadStatus = getPlayerCadStatus(player, "Civilian Integration", { link = true, unit = false })
         if not playerCadStatus.success then
             callback(nil)
             return
