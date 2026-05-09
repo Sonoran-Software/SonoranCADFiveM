@@ -11,7 +11,9 @@
 local pluginConfig = Config.GetPluginConfig("unitstatus")
 
 if pluginConfig.enabled then
-
+    local function notifyClient(payload)
+        NotifyClient(ApplyPluginNotificationOverrides(pluginConfig, payload))
+    end
     local statuses = {}
     for k, v in pairs(pluginConfig.statusCodes) do
         statuses[v] = k
@@ -37,7 +39,7 @@ if pluginConfig.enabled then
     RegisterNetEvent("SonoranCAD::unitstatus:StatusUpdate")
     AddEventHandler("SonoranCAD::unitstatus:StatusUpdate", function(unitIdentity, status, success)
         if success then
-            NotifyClient({
+            notifyClient({
                 title = "SonoranCAD",
                 message = ("Status successfully changed to %s."):format(statuses[status]),
                 type = "success"

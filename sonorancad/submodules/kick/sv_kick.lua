@@ -9,6 +9,9 @@
 local pluginConfig = Config.GetPluginConfig("kick")
 
 if pluginConfig.enabled then
+    local function notifyPlayer(target, payload)
+        NotifyPlayer(target, ApplyPluginNotificationOverrides(pluginConfig, payload))
+    end
 
     local PendingKicks = {}
 
@@ -80,7 +83,7 @@ if pluginConfig.enabled then
         end
 
         processPendingKicks()
-        NotifyPlayer(source, {
+        notifyPlayer(source, {
             title = "SonoranCAD",
             message = ("Kick test sent for CAD user %s"):format(result),
             type = "success"

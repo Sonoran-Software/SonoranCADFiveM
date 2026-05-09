@@ -31,12 +31,12 @@ if pluginConfig.enabled then
     end
 
     local function SendNotification(target, title, message, notificationType, chatMessage)
-        NotifyPlayer(target, {
+        NotifyPlayer(target, ApplyPluginNotificationOverrides(pluginConfig, {
             title = title,
             message = stripColorCodes(message),
             chatMessage = chatMessage or message,
             type = notificationType or "info"
-        })
+        }))
     end
 
     local function findCall(id)

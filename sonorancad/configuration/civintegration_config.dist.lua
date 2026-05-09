@@ -11,6 +11,9 @@ local config = {
     configVersion = "1.3",
     pluginName = "civintegration", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author
+    -- Optional notification override for this submodule only.
+    -- Valid values: "none", "ox_lib", "lation_ui", "pnotify", "chat"
+    notificationOverride = "none",
     -- time to cache characters in seconds
     cacheTime = 3600 -- one hour
 

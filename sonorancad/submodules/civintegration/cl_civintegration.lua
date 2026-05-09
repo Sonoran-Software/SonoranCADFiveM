@@ -15,6 +15,10 @@ if pluginConfig.enabled then
         pluginConfig.commandName = "civid"
     end
 
+    local function notifyClient(payload)
+        NotifyClient(ApplyPluginNotificationOverrides(pluginConfig, payload))
+    end
+
     AddTextEntry("ENTER_NAME", "Enter first and last name")
     AddTextEntry("ENTER_DOB", "Enter character date of birth in format month/day/year")
     TriggerEvent("chat:addSuggestion", "/" .. pluginConfig.commandName, "Show or manage your civilian ID.", {
@@ -32,7 +36,7 @@ if pluginConfig.enabled then
 
     RegisterNetEvent("SonoranCAD::civintegration:SetCustomId")
     AddEventHandler("SonoranCAD::civintegration:SetCustomId", function()
-        NotifyClient({title = "ID", message = "Prompt 1/2: enter first and last name.", type = "info"})
+        notifyClient({title = "ID", message = "Prompt 1/2: enter first and last name.", type = "info"})
         DisplayOnscreenKeyboard(1, "ENTER_NAME", "", customId.first ~= nil and ("%s %s"):format(customId.first, customId.last), "", "", "", 50)
         while (UpdateOnscreenKeyboard() == 0) do
             DisableAllControlActions(0);
@@ -42,7 +46,7 @@ if pluginConfig.enabled then
             local result = GetOnscreenKeyboardResult()
             customId.first = stringsplit(result, " ")[1]
             customId.last = stringsplit(result, " ")[2]
-            NotifyClient({title = "ID", message = "Prompt 2/2: enter DOB as month/day/year.", type = "info"})
+            notifyClient({title = "ID", message = "Prompt 2/2: enter DOB as month/day/year.", type = "info"})
             DisplayOnscreenKeyboard(1, "ENTER_DOB", "", customId.dob ~= nil and customId.dob or "", "", "", "", 50)
             while (UpdateOnscreenKeyboard() == 0) do
                 DisableAllControlActions(0);
@@ -54,7 +58,7 @@ if pluginConfig.enabled then
             end
         end
         TriggerServerEvent("SonoranCAD::civintegration:SetCustomId", customId)
-        NotifyClient({title = "ID", message = "Custom name and DOB set. Use /id show to display it nearby or /id reset to remove it.", type = "success"})
+        notifyClient({title = "ID", message = "Custom name and DOB set. Use /id show to display it nearby or /id reset to remove it.", type = "success"})
     end)
 
 end

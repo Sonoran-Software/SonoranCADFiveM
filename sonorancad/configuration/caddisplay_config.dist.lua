@@ -9,6 +9,9 @@ local config = {
     pluginName = "caddisplay",
     pluginAuthor = "Sonoran Software Systems",
     configVersion = "1.1",
+    -- Optional notification override for this submodule only.
+    -- Valid values: "none", "ox_lib", "lation_ui", "pnotify", "chat"
+    notificationOverride = "none",
 
     lang = {
         addNewDisplayHelp = "Open the menu to begin placing a CAD display",

@@ -8,6 +8,9 @@
 	Config.LoadPlugin('frameworksupport', function(pluginConfig)
 
 		if pluginConfig.enabled then
+			local function notifyPlayer(target, payload)
+				NotifyPlayer(target, ApplyPluginNotificationOverrides(pluginConfig, payload))
+			end
 
 			if GetResourceState('qb-core') ~= "started" and GetResourceState('es_extended') ~= 'started' then
 				errorLog("UNHANDLED_SERVER_ERROR", 'Both qb-core and es_extended are not started. Disabling framework support.')
@@ -351,7 +354,7 @@
 											if citation.issuer ~= '' then
 												finemessage = finemessage .. ' by ' .. citation.issuer
 											end
-											NotifyPlayer(-1, {
+											notifyPlayer(-1, {
 												title = 'Fine Issued',
 												message = finemessage,
 												type = 'warning'
@@ -373,7 +376,7 @@
 										if citation.issuer ~= '' then
 											finemessage = finemessage .. ' by ' .. citation.issuer
 										end
-										NotifyPlayer(-1, {
+										notifyPlayer(-1, {
 											title = 'Fine Issued',
 											message = finemessage,
 											type = 'warning'

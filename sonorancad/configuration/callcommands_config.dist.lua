@@ -10,6 +10,9 @@ local config = {
     pluginName = "callcommands", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author
     configVersion = "2.4",
+    -- Optional notification override for this submodule only.
+    -- Valid values: "none", "ox_lib", "lation_ui", "pnotify", "chat"
+    notificationOverride = "none",
     -- put your configuration options below
     callTypes = {
         {

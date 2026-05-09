@@ -1,6 +1,9 @@
 CreateThread(function()
 	Config.LoadPlugin('vehreg', function(pluginConfig)
 		if pluginConfig.enabled then
+			local function notifyPlayer(target, payload)
+				NotifyPlayer(target, ApplyPluginNotificationOverrides(pluginConfig, payload))
+			end
 			local civData = {}
 			local notSetConfig = false
 			local placeholderReplace = function(message, placeholderTable)
@@ -90,7 +93,7 @@ CreateThread(function()
 							['{{FIRST}}'] = civData.first,
 							['{{LAST}}'] = civData.last
 						}
-						NotifyPlayer(source, {
+						notifyPlayer(source, {
 							title = 'CAD - Success',
 							message = placeholderReplace(pluginConfig.language.successReg, placeHolders),
 							type = 'success'

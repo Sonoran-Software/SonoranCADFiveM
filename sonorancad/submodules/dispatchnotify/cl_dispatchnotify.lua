@@ -41,11 +41,11 @@ CreateThread(function() Config.LoadPlugin("dispatchnotify", function(pluginConfi
         local gpsBlip = false
 
         local function dispatchNotify(title, message, notificationType)
-            NotifyClient({
+            NotifyClient(ApplyPluginNotificationOverrides(pluginConfig, {
                 title = title,
                 message = message,
                 type = notificationType or "info"
-            })
+            }))
         end
 
         RegisterNetEvent("SonoranCAD::dispatchnotify:SetGps")

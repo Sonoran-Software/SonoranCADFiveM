@@ -111,7 +111,11 @@ CreateThread(function()
             end
 
             function notify(message)
-                NotifyClient({title = "CAD Display", message = message, type = "info"})
+                NotifyClient(ApplyPluginNotificationOverrides(pluginConfig, {
+                    title = "CAD Display",
+                    message = message,
+                    type = "info"
+                }))
             end
 
             function ensureModel(model)
