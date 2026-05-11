@@ -276,14 +276,9 @@ local function get_streetsigns_auth_error(response)
     local status = type(response and response.reason) == "table" and tonumber(response.reason.status) or nil
 
     if status == 402 or
-        reasonText:find("pro") ~= nil or
-        reasonText:find("plus") ~= nil or
-        reasonText:find("plan") ~= nil or
-        reasonText:find("payment") ~= nil or
-        reasonText:find("billing") ~= nil or
-        reasonText:find("subscription") ~= nil or
-        reasonText:find("feature") ~= nil or
-        reasonText:find("upgrade") ~= nil then
+        reasonText:find("err%-ss%-101") ~= nil or
+        reasonText:find("payment required", 1, true) ~= nil or
+        reasonText:find("pro subscription", 1, true) ~= nil then
         return {
             key = "SMARTSIGNS_PLAN_REQUIRED",
             message = "Smart Signs authentication failed because this CAD community does not have the required Smart Signs feature or plan."
@@ -292,14 +287,8 @@ local function get_streetsigns_auth_error(response)
 
     if status == 401 or
         status == 403 or
-        reasonText:find("unauthori") ~= nil or
-        reasonText:find("forbidden") ~= nil or
-        reasonText:find("api key") ~= nil or
-        reasonText:find("apikey") ~= nil or
-        reasonText:find("community") ~= nil or
-        reasonText:find("server") ~= nil or
-        reasonText:find("permission") ~= nil or
-        reasonText:find("auth") ~= nil then
+        status == 404 or
+        reasonText:find("err%-ss%-102") ~= nil then
         return {
             key = "SMARTSIGNS_AUTH_FAILED",
             message = "Smart Signs authentication failed. Check the SonoranCAD API key, community ID, and server ID configured for this resource."
