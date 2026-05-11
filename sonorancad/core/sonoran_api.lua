@@ -250,10 +250,52 @@ local function get_local_network_error(response)
     return nil
 end
 
+local function get_streetsigns_auth_error(response)
+    local reason = response and response.reason
+    if type(reason) ~= "table" then
+        return nil
+    end
+
+    local status = tonumber(reason.status)
+    local problemType = type(reason.type) == "string" and reason.type:lower() or ""
+
+    if status == 402 or problemType:find("err%-ss%-101") ~= nil then
+        return {
+            key = "SMARTSIGNS_PLAN_REQUIRED",
+            message = "Smart Signs authentication failed because this CAD community does not have the required Smart Signs feature or plan."
+        }
+    end
+
+    if status == 401 or
+        status == 403 or
+        status == 404 or
+        problemType:find("err%-ss%-102") ~= nil then
+        return {
+            key = "SMARTSIGNS_AUTH_FAILED",
+            message = "Smart Signs authentication failed. Check the SonoranCAD API key, community ID, and server ID configured for this resource."
+        }
+    end
+
+    return nil
+end
+
+local function get_request_specific_error(request_name, response)
+    if tostring(request_name or ""):upper() == "AUTH_STREETSIGNS" then
+        return get_streetsigns_auth_error(response)
+    end
+
+    return nil
+end
+
 function CadApiSupportErrorText(request_name, response)
     local localNetworkError = get_local_network_error(response)
     if localNetworkError ~= nil then
         return BuildSupportErrorMessage(localNetworkError.key, localNetworkError.message)
+    end
+
+    local requestSpecificError = get_request_specific_error(request_name, response)
+    if requestSpecificError ~= nil then
+        return BuildSupportErrorMessage(requestSpecificError.key, requestSpecificError.message)
     end
 
     local baseMessage = "A CAD request failed. Please give this error to support."
@@ -280,6 +322,22 @@ function CadApiLogFailure(request_name, response, payload)
 
         if localNetworkError.key == "LOCAL_NETWORK_CONNECT_TIMEOUT" then
             logError("LOCAL_NETWORK_CONNECT_TIMEOUT", detail)
+            return
+        end
+
+        logError("CAD_API_REQUEST_FAILED", detail)
+        return
+    end
+
+    local requestSpecificError = get_request_specific_error(request_name, response)
+    if requestSpecificError ~= nil then
+        if requestSpecificError.key == "SMARTSIGNS_PLAN_REQUIRED" then
+            logError("SMARTSIGNS_PLAN_REQUIRED", detail)
+            return
+        end
+
+        if requestSpecificError.key == "SMARTSIGNS_AUTH_FAILED" then
+            logError("SMARTSIGNS_AUTH_FAILED", detail)
             return
         end
 
