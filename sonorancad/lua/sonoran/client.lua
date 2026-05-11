@@ -435,6 +435,12 @@ function Client:_resolve_radio_room_id()
   return resolved
 end
 
+function Client:_with_radio_room_id(body)
+  local with_room_id = shallow_copy(body or {})
+  with_room_id.roomId = self:_resolve_radio_room_id()
+  return with_room_id
+end
+
 function Client:_encode_path_segment(value)
   if value == nil or value == "" then
     error("Path segment is required.")
@@ -1182,43 +1188,43 @@ local function create_client(config, adapter)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     local room_id = self:_resolve_radio_room_id()
     return self:_request("PATCH", "v2/servers/" .. tostring(resolved_community_id) .. "/rooms/" .. tostring(room_id) .. "/users/" .. self:_encode_path_segment(identity) .. "/channels", {
-      body = shallow_copy(options or {})
+      body = self:_with_radio_room_id(options or {})
     })
   end
   instance.setUserDisplayNameV2 = function(self, data)
     local resolved_community_id = self:_resolve_radio_community_id(data and data.communityId)
     return self:_request("PATCH", "v2/servers/" .. tostring(resolved_community_id) .. "/users/display-name", {
-      body = strip_keys(data, { "serverId", "communityId" })
+      body = self:_with_radio_room_id(strip_keys(data, { "serverId", "communityId" }))
     })
   end
   instance.approveMembersV2 = function(self, acc_ids, community_id)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     return self:_request("POST", "v2/servers/" .. tostring(resolved_community_id) .. "/members/approve", {
-      body = { accIds = acc_ids }
+      body = self:_with_radio_room_id({ accIds = acc_ids })
     })
   end
   instance.kickMembersV2 = function(self, acc_ids, community_id)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     return self:_request("POST", "v2/servers/" .. tostring(resolved_community_id) .. "/members/kick", {
-      body = { accIds = acc_ids }
+      body = self:_with_radio_room_id({ accIds = acc_ids })
     })
   end
   instance.banMembersV2 = function(self, acc_ids, community_id)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     return self:_request("POST", "v2/servers/" .. tostring(resolved_community_id) .. "/members/ban", {
-      body = { accIds = acc_ids }
+      body = self:_with_radio_room_id({ accIds = acc_ids })
     })
   end
   instance.setMemberDisplayNamesV2 = function(self, acc_nicknames, community_id)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     return self:_request("PATCH", "v2/servers/" .. tostring(resolved_community_id) .. "/members/display-names", {
-      body = { accNicknames = acc_nicknames }
+      body = self:_with_radio_room_id({ accNicknames = acc_nicknames })
     })
   end
   instance.setMemberPermissionsV2 = function(self, user_perms, community_id)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     return self:_request("PATCH", "v2/servers/" .. tostring(resolved_community_id) .. "/members/permissions", {
-      body = { userPerms = user_perms }
+      body = self:_with_radio_room_id({ userPerms = user_perms })
     })
   end
   instance.getServerSubscriptionFromIpV2 = function(self)
@@ -1229,25 +1235,23 @@ local function create_client(config, adapter)
   instance.setServerIpV2 = function(self, data)
     local resolved_community_id = self:_resolve_radio_community_id(data and data.communityId)
     local body = strip_keys(data, { "serverId", "communityId" })
-    body.roomId = self:_resolve_radio_room_id()
     return self:_request("POST", "v2/servers/" .. tostring(resolved_community_id) .. "/server-ip", {
-      body = body
+      body = self:_with_radio_room_id(body)
     })
   end
   instance.setInGameSpeakerLocationsV2 = function(self, locations, community_id)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     return self:_request("PUT", "v2/servers/" .. tostring(resolved_community_id) .. "/speakers", {
-      body = { locations = locations }
+      body = self:_with_radio_room_id({ locations = locations })
     })
   end
   instance.playToneV2 = function(self, tones, play_to, community_id)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     return self:_request("POST", "v2/servers/" .. tostring(resolved_community_id) .. "/tones/play", {
-      body = {
-        roomId = self:_resolve_radio_room_id(),
+      body = self:_with_radio_room_id({
         tones = tones,
         playTo = play_to
-      }
+      })
     })
   end
 
