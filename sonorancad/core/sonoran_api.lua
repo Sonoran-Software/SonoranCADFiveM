@@ -250,35 +250,16 @@ local function get_local_network_error(response)
     return nil
 end
 
-local function collect_reason_text(value, parts)
-    parts = parts or {}
-    if value == nil then
-        return parts
-    end
-
-    if type(value) == "table" then
-        for _, entry in pairs(value) do
-            collect_reason_text(entry, parts)
-        end
-        return parts
-    end
-
-    table.insert(parts, tostring(value))
-    return parts
-end
-
 local function get_streetsigns_auth_error(response)
-    local reasonText = table.concat(collect_reason_text(response and response.reason), " "):lower()
-    if reasonText == "" then
+    local reason = response and response.reason
+    if type(reason) ~= "table" then
         return nil
     end
 
-    local status = type(response and response.reason) == "table" and tonumber(response.reason.status) or nil
+    local status = tonumber(reason.status)
+    local problemType = type(reason.type) == "string" and reason.type:lower() or ""
 
-    if status == 402 or
-        reasonText:find("err%-ss%-101") ~= nil or
-        reasonText:find("payment required", 1, true) ~= nil or
-        reasonText:find("pro subscription", 1, true) ~= nil then
+    if status == 402 or problemType:find("err%-ss%-101") ~= nil then
         return {
             key = "SMARTSIGNS_PLAN_REQUIRED",
             message = "Smart Signs authentication failed because this CAD community does not have the required Smart Signs feature or plan."
@@ -288,7 +269,7 @@ local function get_streetsigns_auth_error(response)
     if status == 401 or
         status == 403 or
         status == 404 or
-        reasonText:find("err%-ss%-102") ~= nil then
+        problemType:find("err%-ss%-102") ~= nil then
         return {
             key = "SMARTSIGNS_AUTH_FAILED",
             message = "Smart Signs authentication failed. Check the SonoranCAD API key, community ID, and server ID configured for this resource."
