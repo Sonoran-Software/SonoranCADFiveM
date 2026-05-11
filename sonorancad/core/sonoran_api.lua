@@ -70,7 +70,8 @@ local function get_cad_client()
 end
 
 function GetCadClient()
-    return get_cad_client()
+    local client = get_cad_client()
+    return client.cad or client
 end
 exports("getCadClient", GetCadClient)
 

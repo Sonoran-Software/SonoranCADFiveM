@@ -389,6 +389,32 @@ end
 local Client = {}
 Client.__index = Client
 
+local function create_bound_proxy(instance)
+  local proxy = {}
+
+  for key, value in pairs(instance) do
+    if type(value) == "function" then
+      local bound = value
+      proxy[key] = function(_, ...)
+        return bound(instance, ...)
+      end
+    elseif type(key) == "string" and not starts_with(key, "_") then
+      proxy[key] = value
+    end
+  end
+
+  for key, value in pairs(Client) do
+    if type(key) == "string" and not starts_with(key, "_") and type(value) == "function" and proxy[key] == nil then
+      local bound = value
+      proxy[key] = function(_, ...)
+        return bound(instance, ...)
+      end
+    end
+  end
+
+  return proxy
+end
+
 function Client:_assert_positive_integer(value, label)
   if not is_positive_integer(value) then
     error(string.format("%s must be a positive integer.", label))
@@ -748,36 +774,6 @@ local function create_client(config, adapter)
   if config and config.logLevel ~= nil then
     instance:setLogLevel(config.logLevel)
   end
-
-  local cad_proxy = setmetatable({}, {
-    __index = function(_, key)
-      local value = instance[key]
-      if type(value) == "function" then
-        return function(_, ...)
-          return value(instance, ...)
-        end
-      end
-
-      return value
-    end
-  })
-
-  instance.cad = cad_proxy
-  local cms_proxy = setmetatable({}, {
-    __index = function(_, key)
-      local value = instance[key]
-      if type(value) == "function" then
-        return function(_, ...)
-          return value(instance, ...)
-        end
-      end
-
-      return value
-    end
-  })
-
-  instance.cms = cms_proxy
-  instance.radio = cad_proxy
 
   instance.getLoginPageV2 = function(self, params)
     params = params or {}
@@ -1426,6 +1422,10 @@ local function create_client(config, adapter)
   instance.cancelSessionV2 = function(self, data)
     return self:_request("DELETE", "v2/community/sessions", { body = data })
   end
+
+  instance.cad = create_bound_proxy(instance)
+  instance.cms = create_bound_proxy(instance)
+  instance.radio = create_bound_proxy(instance)
 
   return instance
 end
