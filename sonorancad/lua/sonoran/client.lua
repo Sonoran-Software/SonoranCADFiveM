@@ -534,6 +534,11 @@ function Client:setLogLevel(level)
   return self
 end
 
+function Client:setRoomId(room_id)
+  self._config.roomId = self:_assert_positive_integer(room_id, "roomId")
+  return self
+end
+
 function Client:_is_debug_enabled()
   return self._config.logLevel == LOG_LEVELS.DEBUG
 end
