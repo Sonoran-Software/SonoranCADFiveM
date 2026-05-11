@@ -246,6 +246,23 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 - `Meaning`: Support logs were uploaded successfully.
 - `Potential Fix`: No action required; provide the generated support reference and upload context to support if requested.
 
+## Smart Signs Errors
+
+### ERR-SS-101
+- `Key`: `SMARTSIGNS_PLAN_REQUIRED`
+- `Meaning`: Smart Signs authentication failed because the CAD community does not have access to the required Smart Signs feature or plan.
+- `Potential Fix`: Verify the CAD community has the required Smart Signs access or subscription, then retry Smart Signs authentication.
+
+### ERR-SS-102
+- `Key`: `SMARTSIGNS_AUTH_FAILED`
+- `Meaning`: Smart Signs authentication failed because SonoranCAD could not authorize the configured community/server.
+- `Potential Fix`: Check the SonoranCAD API key, community ID, and server ID configured for the Smart Signs resource.
+
+### ERR-SS-103
+- `Key`: `SMARTSIGNS_HELPER_STARTED`
+- `Meaning`: The `smartsigns_sonoran_helper` resource was started directly, but it is only intended for Smart Signs internal update handling.
+- `Potential Fix`: Remove `ensure smartsigns_sonoran_helper` or `start smartsigns_sonoran_helper` from the server startup config and start only the main Smart Signs resource.
+
 ## Bodycam Errors
 
 ### ERR-BC-101

@@ -619,6 +619,33 @@ function Client:_error_log_http_failure(request_options, response, parsed, attem
   print("[Sonoran.lua][ERROR]   response body: " .. self:_format_log_value(parsed ~= nil and parsed or response and response.body))
 end
 
+function Client:_failure_reason(response, parsed, fallback)
+  local status = tonumber(response and response.status)
+  if type(parsed) == "table" then
+    local reason = shallow_copy(parsed)
+    if status ~= nil and reason.status == nil then
+      reason.status = status
+    end
+    return reason
+  end
+
+  if parsed ~= nil then
+    return {
+      status = status,
+      message = parsed
+    }
+  end
+
+  if status ~= nil and status > 0 then
+    return {
+      status = status,
+      message = fallback
+    }
+  end
+
+  return fallback
+end
+
 function Client:_request(method, path, options)
   options = options or {}
 
@@ -719,20 +746,20 @@ function Client:_request(method, path, options)
       else
         return {
           success = false,
-          reason = parsed ~= nil and parsed or "Request was rate limited."
+          reason = self:_failure_reason(response, parsed, "Request was rate limited.")
         }
       end
     elseif tonumber(response and response.status) == 429 then
       self:_error_log_http_failure(request_options, response, parsed, attempt, "HTTP 429 rate limit received. Automatic retries have been exhausted.")
       return {
         success = false,
-        reason = parsed ~= nil and parsed or "Request was rate limited."
+        reason = self:_failure_reason(response, parsed, "Request was rate limited.")
       }
     else
       self:_error_log_http_failure(request_options, response, parsed, attempt, "HTTP request failed.")
       return {
         success = false,
-        reason = parsed
+        reason = self:_failure_reason(response, parsed, "HTTP request failed.")
       }
     end
 

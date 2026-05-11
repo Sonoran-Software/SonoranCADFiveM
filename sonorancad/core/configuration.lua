@@ -712,6 +712,10 @@ CreateThread(function()
     if isPluginLoaded('smartsigns') then
         warnLog("UNHANDLED_WARNING", 'smartsigns is now a standalone resource. Please update.')
     end
+    local smartSignsHelperState = GetResourceState('smartsigns_sonoran_helper')
+    if smartSignsHelperState == 'started' or smartSignsHelperState == 'starting' then
+        errorLog("SMARTSIGNS_HELPER_STARTED", ("smartsigns_sonoran_helper is currently %s. Remove it from your server startup config; it should only be used internally by Smart Signs."):format(tostring(smartSignsHelperState)))
+    end
     -- smartsigns improper install check
     if file_exists(('%s/submodules/smartsigns/sv_smartsigns.lua'):format(
                        GetResourcePath(GetCurrentResourceName()))) or
