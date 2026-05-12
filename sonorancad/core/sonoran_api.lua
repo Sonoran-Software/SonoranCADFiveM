@@ -227,6 +227,15 @@ function CadApiReasonText(value)
     return tostring(value)
 end
 
+local function cad_api_reason_contains(response, text)
+    local reason = response and response.reason
+    if text == nil then
+        return false
+    end
+
+    return CadApiReasonText(reason):lower():find(text:lower(), 1, true) ~= nil
+end
+
 local function get_local_network_error(response)
     local reason = response and response.reason
     if type(reason) ~= "table" then
@@ -266,10 +275,26 @@ local function get_streetsigns_auth_error(response)
         }
     end
 
+    if status == 400 and cad_api_reason_contains(response, "VERSION PRO REQUIRED") then
+        return {
+            key = "SMARTSIGNS_PLAN_REQUIRED",
+            message = "Smart Signs authentication failed because this CAD community does not have the required Smart Signs feature or plan."
+        }
+    end
+
     if status == 401 or
         status == 403 or
         status == 404 or
         problemType:find("err%-ss%-102") ~= nil then
+        return {
+            key = "SMARTSIGNS_AUTH_FAILED",
+            message = "Smart Signs authentication failed. Check the SonoranCAD API key, community ID, and server ID configured for this resource."
+        }
+    end
+
+    if cad_api_reason_contains(response, "INVALID API KEY") or
+        cad_api_reason_contains(response, "INVALID COMMUNITY ID") or
+        cad_api_reason_contains(response, "Server not found") then
         return {
             key = "SMARTSIGNS_AUTH_FAILED",
             message = "Smart Signs authentication failed. Check the SonoranCAD API key, community ID, and server ID configured for this resource."
@@ -301,6 +326,9 @@ function CadApiSupportErrorText(request_name, response)
     local baseMessage = "A CAD request failed. Please give this error to support."
     if request_name ~= nil then
         baseMessage = ("A CAD request failed during %s. Please give this error to support."):format(tostring(request_name))
+    end
+    if tostring(request_name or ""):upper() == "AUTH_STREETSIGNS" then
+        baseMessage = ("%s CAD response: %s"):format(baseMessage, CadApiReasonText(response and response.reason))
     end
     local message = BuildSupportErrorMessage("CAD_API_REQUEST_FAILED", baseMessage)
     return message
