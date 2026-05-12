@@ -619,33 +619,6 @@ function Client:_error_log_http_failure(request_options, response, parsed, attem
   print("[Sonoran.lua][ERROR]   response body: " .. self:_format_log_value(parsed ~= nil and parsed or response and response.body))
 end
 
-function Client:_failure_reason(response, parsed, fallback)
-  local status = tonumber(response and response.status)
-  if type(parsed) == "table" then
-    local reason = shallow_copy(parsed)
-    if status ~= nil and reason.status == nil then
-      reason.status = status
-    end
-    return reason
-  end
-
-  if parsed ~= nil then
-    return {
-      status = status,
-      message = parsed
-    }
-  end
-
-  if status ~= nil and status > 0 then
-    return {
-      status = status,
-      message = fallback
-    }
-  end
-
-  return fallback
-end
-
 function Client:_request(method, path, options)
   options = options or {}
 
@@ -746,20 +719,20 @@ function Client:_request(method, path, options)
       else
         return {
           success = false,
-          reason = self:_failure_reason(response, parsed, "Request was rate limited.")
+          reason = parsed ~= nil and parsed or "Request was rate limited."
         }
       end
     elseif tonumber(response and response.status) == 429 then
       self:_error_log_http_failure(request_options, response, parsed, attempt, "HTTP 429 rate limit received. Automatic retries have been exhausted.")
       return {
         success = false,
-        reason = self:_failure_reason(response, parsed, "Request was rate limited.")
+        reason = parsed ~= nil and parsed or "Request was rate limited."
       }
     else
       self:_error_log_http_failure(request_options, response, parsed, attempt, "HTTP request failed.")
       return {
         success = false,
-        reason = self:_failure_reason(response, parsed, "HTTP request failed.")
+        reason = parsed
       }
     end
 
@@ -796,7 +769,7 @@ local function create_client(config, adapter)
       communityId = config and config.communityId or nil,
       apiUrl = trim_trailing_slashes(config and config.apiUrl or (product == 2 and "https://api.sonoranradio.com" or product == 1 and "https://api.sonorancms.com" or "https://api.sonorancad.com")),
       defaultServerId = config and config.defaultServerId or 1,
-      roomId = config and config.roomId or nil,
+      roomId = config and (config.radioRoomId or config.roomId) or nil,
       headers = shallow_copy(config and config.headers or {}),
       timeoutMs = config and config.timeoutMs or 30000,
       logLevel = LOG_LEVELS.ERROR
