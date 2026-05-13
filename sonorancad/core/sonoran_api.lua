@@ -86,7 +86,7 @@ local function createExportClient(config)
         communityId = Config.communityID,
         apiUrl = resolve_api_url(),
         defaultServerId = tonumber(tonumber(Config.serverId)) or 1,
-        setLogLevel = get_sonoran_log_level(sonoran)
+        logLevel = get_sonoran_log_level(sonoran)
     })
     return exportClient
 end
