@@ -284,7 +284,8 @@ local function serialize_debug_value(value, seen)
   end
 
   for _, key in ipairs(map_keys) do
-    parts[#parts + 1] = string.format("[%s]=%s", serialize_debug_value(key, seen), serialize_debug_value(value[key], seen))
+    parts[#parts + 1] = string.format("[%s]=%s", serialize_debug_value(key, seen),
+      serialize_debug_value(value[key], seen))
   end
 
   seen[value] = nil
@@ -298,9 +299,9 @@ end
 local function should_redact_key(key)
   local normalized = sanitize_key(key)
   return SENSITIVE_KEYS[string.lower(tostring(key))] == true
-    or normalized == "authorization"
-    or normalized == "apikey"
-    or normalized == "xapikey"
+      or normalized == "authorization"
+      or normalized == "apikey"
+      or normalized == "xapikey"
 end
 
 local function sanitize_value(value, seen)
@@ -350,9 +351,11 @@ local function parse_http_date(value)
     return nil
   end
 
-  local day, month_name, year, hour, minute, second = value:match("^%a+,%s+(%d%d?)%s+(%a+)%s+(%d%d%d%d)%s+(%d%d):(%d%d):(%d%d)%s+GMT$")
+  local day, month_name, year, hour, minute, second = value:match(
+    "^%a+,%s+(%d%d?)%s+(%a+)%s+(%d%d%d%d)%s+(%d%d):(%d%d):(%d%d)%s+GMT$")
   if day == nil then
-    day, month_name, year, hour, minute, second = value:match("^%a+,%s+(%d%d?)%-(%a+)%-(%d%d)%s+(%d%d):(%d%d):(%d%d)%s+GMT$")
+    day, month_name, year, hour, minute, second = value:match(
+      "^%a+,%s+(%d%d?)%-(%a+)%-(%d%d)%s+(%d%d):(%d%d):(%d%d)%s+GMT$")
     if year ~= nil then
       local numeric_year = tonumber(year)
       if numeric_year ~= nil then
@@ -362,7 +365,8 @@ local function parse_http_date(value)
   end
 
   if day == nil then
-    day, month_name, year, hour, minute, second = value:match("^%a+%s+(%a+)%s+(%d%d?)%s+(%d%d):(%d%d):(%d%d)%s+(%d%d%d%d)$")
+    day, month_name, year, hour, minute, second = value:match(
+      "^%a+%s+(%a+)%s+(%d%d?)%s+(%d%d):(%d%d):(%d%d)%s+(%d%d%d%d)$")
     if day ~= nil then
       local rewritten_day = month_name
       month_name = day
@@ -415,7 +419,116 @@ local function create_bound_proxy(instance)
   return proxy
 end
 
+local exportClient = {}
+
+exportClient.adapterHelpers = {
+  encode_uri_component = function(value)
+    return tostring(value):gsub("([^%w%-%._~])", function(char)
+      return string.format("%%%02X", string.byte(char))
+    end)
+  end,
+  perform_request = function(options, callback)
+    local resource_name = GetCurrentResourceName and GetCurrentResourceName() or nil
+    if resource_name ~= nil and exports ~= nil and exports[resource_name] ~= nil and exports[resource_name].HandleHttpRequest ~= nil then
+      exports[resource_name]:HandleHttpRequest(
+        options.url,
+        callback,
+        options.method or "GET",
+        options.body,
+        options.headers or {}
+      )
+      return
+    end
+
+    PerformHttpRequest(
+      options.url,
+      callback,
+      options.method or "GET",
+      options.body,
+      options.headers or {}
+    )
+  end
+}
+
+exportClient.adapter = {
+  encode = function(value)
+    return json.encode(value)
+  end,
+  decode = function(value)
+    return json.decode(value)
+  end,
+  encodeURIComponent = exportClient.adapterHelpers.encode_uri_component,
+  sleep = function(delay_ms)
+    local deferred = promise.new()
+    local resolved = false
+
+    local function finish()
+      if resolved then
+        return
+      end
+
+      resolved = true
+      deferred:resolve(true)
+    end
+
+    if SetTimeout and tonumber(delay_ms) and tonumber(delay_ms) > 0 then
+      SetTimeout(tonumber(delay_ms), finish)
+    else
+      finish()
+    end
+
+    return Citizen.Await(deferred)
+  end,
+  request = function(options)
+    local deferred = promise.new()
+    local settled = false
+    local timeout_ms = tonumber(options.timeoutMs) or 30000
+
+    local function settle(result)
+      if settled then
+        return
+      end
+
+      settled = true
+      deferred:resolve(result)
+    end
+
+    if SetTimeout and timeout_ms > 0 then
+      SetTimeout(timeout_ms, function()
+        settle({
+          ok = false,
+          status = 408,
+          headers = {},
+          body = "Request timed out."
+        })
+      end)
+    end
+
+    exportClient.adapterHelpers.perform_request(
+      options,
+      function(status_code, body, headers)
+        settle({
+          ok = type(status_code) == "number" and status_code >= 200 and status_code < 300,
+          status = status_code or 0,
+          headers = headers or {},
+          body = body
+        })
+      end
+    )
+
+    return Citizen.Await(deferred)
+  end
+}
+
 function Client:_assert_positive_integer(value, label)
+  if not is_positive_integer(value) then
+    error(string.format("%s must be a positive integer.", label))
+  end
+
+  return value
+end
+
+exportClient.assert_positive_integer = function(value, label)
   if not is_positive_integer(value) then
     error(string.format("%s must be a positive integer.", label))
   end
@@ -430,6 +543,16 @@ function Client:_resolve_server_id(server_id)
   end
 
   self:_assert_positive_integer(resolved, "serverId")
+  return resolved
+end
+
+exportClient.resolve_server_id = function(server_id)
+  local resolved = server_id
+  if resolved == nil then
+    resolved = exportClient.config.defaultServerId
+  end
+
+  exportClient.assert_positive_integer(resolved, "serverId")
   return resolved
 end
 
@@ -451,6 +574,24 @@ function Client:_resolve_radio_community_id(community_id)
   return resolved
 end
 
+exportClient.resolve_radio_community_id = function(community_id)
+  local resolved = community_id
+  if resolved == nil then
+    resolved = exportClient.config.communityId
+  end
+
+  if type(resolved) == "string" then
+    resolved = resolved:match("^%s*(.-)%s*$")
+    if resolved == "" then
+      error("communityId is required.")
+    end
+    return resolved
+  end
+
+  exportClient.assert_positive_integer(resolved, "communityId")
+  return resolved
+end
+
 function Client:_resolve_radio_room_id()
   local resolved = self._config.roomId
   if resolved == nil then
@@ -461,9 +602,25 @@ function Client:_resolve_radio_room_id()
   return resolved
 end
 
+exportClient.resolve_radio_room_id = function()
+  local resolved = exportClient.config.roomId
+  if resolved == nil then
+    error("roomId is required for Radio v2 room-scoped requests.")
+  end
+
+  exportClient.assert_positive_integer(resolved, "roomId")
+  return resolved
+end
+
 function Client:_with_radio_room_id(body)
   local with_room_id = shallow_copy(body or {})
   with_room_id.roomId = self:_resolve_radio_room_id()
+  return with_room_id
+end
+
+exportClient.with_radio_room_id = function(body)
+  local with_room_id = shallow_copy(body or {})
+  with_room_id.roomId = exportClient.resolve_radio_room_id()
   return with_room_id
 end
 
@@ -473,6 +630,14 @@ function Client:_encode_path_segment(value)
   end
 
   return self._adapter.encodeURIComponent(tostring(value))
+end
+
+exportClient.encode_path_segment = function(value)
+  if value == nil or value == "" then
+    error("Path segment is required.")
+  end
+
+  return exportClient.adapterHelpers.encode_uri_component(tostring(value))
 end
 
 function Client:_parse_response(response)
@@ -490,6 +655,29 @@ function Client:_parse_response(response)
   local content_type = tostring(headers["content-type"] or "")
   if starts_with(string.lower(content_type), "application/json") then
     local ok, parsed = pcall(self._adapter.decode, raw_body)
+    if ok then
+      return parsed
+    end
+  end
+
+  return raw_body
+end
+
+exportClient.parse_response = function(response)
+  local status = tonumber(response and response.status) or 0
+  if status == 204 then
+    return nil
+  end
+
+  local raw_body = response and response.body
+  if raw_body == nil or raw_body == "" then
+    return nil
+  end
+
+  local headers = normalize_headers(response and response.headers)
+  local content_type = tostring(headers["content-type"] or "")
+  if starts_with(string.lower(content_type), "application/json") then
+    local ok, parsed = pcall(exportClient.adapter.decode, raw_body)
     if ok then
       return parsed
     end
@@ -534,7 +722,48 @@ function Client:_resolve_retry_delay_ms(response, attempt)
     end
   end
 
-  return math.min(CAD_V2_RATE_LIMIT_DEFAULT_DELAY_MS * (2 ^ attempt), CAD_V2_RATE_LIMIT_MAX_AUTO_RETRY_DELAY_MS), "exponential backoff"
+  return math.min(CAD_V2_RATE_LIMIT_DEFAULT_DELAY_MS * (2 ^ attempt), CAD_V2_RATE_LIMIT_MAX_AUTO_RETRY_DELAY_MS),
+      "exponential backoff"
+end
+
+exportClient.resolve_retry_delay_ms = function(response, attempt)
+  local headers = normalize_headers(response and response.headers)
+  local retry_after = headers["retry-after"]
+
+  if retry_after ~= nil then
+    local retry_after_seconds = tonumber(retry_after)
+    if retry_after_seconds ~= nil and retry_after_seconds >= 0 then
+      return math.max(0, math.floor((retry_after_seconds * 1000) + 0.5)), "Retry-After"
+    end
+
+    local retry_after_timestamp = parse_http_date(retry_after)
+    if retry_after_timestamp ~= nil then
+      return math.max(0, math.floor((os.difftime(retry_after_timestamp, os.time()) * 1000) + 0.5)), "Retry-After"
+    end
+  end
+
+  local rate_limit_reset = headers["ratelimit-reset"]
+  if rate_limit_reset ~= nil then
+    local reset_seconds = tonumber(rate_limit_reset)
+    if reset_seconds ~= nil and reset_seconds >= 0 then
+      return math.max(0, math.floor((reset_seconds * 1000) + 0.5)), "RateLimit-Reset"
+    end
+  end
+
+  local x_rate_limit_reset = headers["x-ratelimit-reset"]
+  if x_rate_limit_reset ~= nil then
+    local reset_seconds = tonumber(x_rate_limit_reset)
+    if reset_seconds ~= nil and reset_seconds >= 0 then
+      if reset_seconds >= 1000000000 then
+        return math.max(0, math.floor((os.difftime(reset_seconds, os.time()) * 1000) + 0.5)), "X-RateLimit-Reset"
+      end
+
+      return math.max(0, math.floor((reset_seconds * 1000) + 0.5)), "X-RateLimit-Reset"
+    end
+  end
+
+  return math.min(CAD_V2_RATE_LIMIT_DEFAULT_DELAY_MS * (2 ^ attempt), CAD_V2_RATE_LIMIT_MAX_AUTO_RETRY_DELAY_MS),
+      "exponential backoff"
 end
 
 function Client:_sleep_ms(delay_ms)
@@ -547,7 +776,25 @@ function Client:_sleep_ms(delay_ms)
   end
 end
 
+exportClient.sleep_ms = function(delay_ms)
+  if delay_ms <= 0 then
+    return
+  end
+
+  if type(exportClient.adapter.sleep) == "function" then
+    exportClient.adapter.sleep(delay_ms)
+  end
+end
+
 function Client:_assert_log_level(level)
+  if level ~= LOG_LEVELS.OFF and level ~= LOG_LEVELS.ERROR and level ~= LOG_LEVELS.DEBUG then
+    error("logLevel must be OFF, ERROR, or DEBUG.")
+  end
+
+  return level
+end
+
+exportClient.assert_log_level = function(level)
   if level ~= LOG_LEVELS.OFF and level ~= LOG_LEVELS.ERROR and level ~= LOG_LEVELS.DEBUG then
     error("logLevel must be OFF, ERROR, or DEBUG.")
   end
@@ -560,20 +807,42 @@ function Client:setLogLevel(level)
   return self
 end
 
+exportClient.setLogLevel = function(level)
+  exportClient.config.logLevel = exportClient.assert_log_level(level or LOG_LEVELS.ERROR)
+  return exportClient
+end
+
 function Client:setRoomId(room_id)
   self._config.roomId = self:_assert_positive_integer(room_id, "roomId")
   return self
+end
+
+exportClient.setRoomId = function(room_id)
+  exportClient.config.roomId = exportClient.assert_positive_integer(room_id, "roomId")
+  return exportClient
 end
 
 function Client:_is_debug_enabled()
   return self._config.logLevel == LOG_LEVELS.DEBUG
 end
 
+exportClient.is_debug_enabled = function()
+  return exportClient.config.logLevel == LOG_LEVELS.DEBUG
+end
+
 function Client:_is_error_enabled()
   return self._config.logLevel == LOG_LEVELS.ERROR or self._config.logLevel == LOG_LEVELS.DEBUG
 end
 
+exportClient.is_error_enabled = function()
+  return exportClient.config.logLevel == LOG_LEVELS.ERROR or exportClient.config.logLevel == LOG_LEVELS.DEBUG
+end
+
 function Client:_format_log_value(value)
+  return serialize_debug_value(sanitize_value(value))
+end
+
+exportClient.format_log_value = function(value)
   return serialize_debug_value(sanitize_value(value))
 end
 
@@ -590,6 +859,19 @@ function Client:_debug_log_http_request(request_options, attempt)
   print("[Sonoran.lua][DEBUG]   body: " .. self:_format_log_value(request_options.logBody))
 end
 
+exportClient.debug_log_http_request = function(request_options, attempt)
+  if not exportClient.is_debug_enabled() then
+    return
+  end
+
+  print("[Sonoran.lua][DEBUG] HTTP request")
+  print("[Sonoran.lua][DEBUG]   attempt: " .. tostring((attempt or 0) + 1))
+  print("[Sonoran.lua][DEBUG]   method: " .. tostring(request_options.method))
+  print("[Sonoran.lua][DEBUG]   url: " .. tostring(request_options.url))
+  print("[Sonoran.lua][DEBUG]   headers: " .. exportClient.format_log_value(request_options.headers))
+  print("[Sonoran.lua][DEBUG]   body: " .. exportClient.format_log_value(request_options.logBody))
+end
+
 function Client:_debug_log_http_response(response, attempt)
   if not self:_is_debug_enabled() then
     return
@@ -601,6 +883,19 @@ function Client:_debug_log_http_response(response, attempt)
   print("[Sonoran.lua][DEBUG]   status: " .. tostring(response and response.status))
   print("[Sonoran.lua][DEBUG]   headers: " .. self:_format_log_value(response and response.headers))
   print("[Sonoran.lua][DEBUG]   body: " .. self:_format_log_value(response and response.body))
+end
+
+exportClient.debug_log_http_response = function(response, attempt)
+  if not exportClient.is_debug_enabled() then
+    return
+  end
+
+  print("[Sonoran.lua][DEBUG] HTTP response")
+  print("[Sonoran.lua][DEBUG]   attempt: " .. tostring((attempt or 0) + 1))
+  print("[Sonoran.lua][DEBUG]   ok: " .. tostring(response and response.ok))
+  print("[Sonoran.lua][DEBUG]   status: " .. tostring(response and response.status))
+  print("[Sonoran.lua][DEBUG]   headers: " .. exportClient.format_log_value(response and response.headers))
+  print("[Sonoran.lua][DEBUG]   body: " .. exportClient.format_log_value(response and response.body))
 end
 
 function Client:_error_log_http_failure(request_options, response, parsed, attempt, message)
@@ -616,7 +911,25 @@ function Client:_error_log_http_failure(request_options, response, parsed, attem
   print("[Sonoran.lua][ERROR]   request body: " .. self:_format_log_value(request_options.logBody))
   print("[Sonoran.lua][ERROR]   response status: " .. tostring(response and response.status))
   print("[Sonoran.lua][ERROR]   response headers: " .. self:_format_log_value(response and response.headers))
-  print("[Sonoran.lua][ERROR]   response body: " .. self:_format_log_value(parsed ~= nil and parsed or response and response.body))
+  print("[Sonoran.lua][ERROR]   response body: " ..
+    self:_format_log_value(parsed ~= nil and parsed or response and response.body))
+end
+
+exportClient.error_log_http_failure = function(request_options, response, parsed, attempt, message)
+  if not exportClient.is_error_enabled() then
+    return
+  end
+
+  print("[Sonoran.lua][ERROR] " .. tostring(message))
+  print("[Sonoran.lua][ERROR]   attempt: " .. tostring((attempt or 0) + 1))
+  print("[Sonoran.lua][ERROR]   method: " .. tostring(request_options.method))
+  print("[Sonoran.lua][ERROR]   url: " .. tostring(request_options.url))
+  print("[Sonoran.lua][ERROR]   request headers: " .. exportClient.format_log_value(request_options.headers))
+  print("[Sonoran.lua][ERROR]   request body: " .. exportClient.format_log_value(request_options.logBody))
+  print("[Sonoran.lua][ERROR]   response status: " .. tostring(response and response.status))
+  print("[Sonoran.lua][ERROR]   response headers: " .. exportClient.format_log_value(response and response.headers))
+  print("[Sonoran.lua][ERROR]   response body: " ..
+    exportClient.format_log_value(parsed ~= nil and parsed or response and response.body))
 end
 
 function Client:_request(method, path, options)
@@ -723,7 +1036,8 @@ function Client:_request(method, path, options)
         }
       end
     elseif tonumber(response and response.status) == 429 then
-      self:_error_log_http_failure(request_options, response, parsed, attempt, "HTTP 429 rate limit received. Automatic retries have been exhausted.")
+      self:_error_log_http_failure(request_options, response, parsed, attempt,
+        "HTTP 429 rate limit received. Automatic retries have been exhausted.")
       return {
         success = false,
         reason = parsed ~= nil and parsed or "Request was rate limited."
@@ -735,7 +1049,131 @@ function Client:_request(method, path, options)
         reason = parsed
       }
     end
+  end
 
+  return {
+    success = false,
+    reason = "Request was rate limited."
+  }
+end
+
+exportClient.request = function(method, path, options)
+  options = options or {}
+
+  local headers = shallow_copy(exportClient.config.headers)
+  headers["Accept"] = "application/json"
+
+  local authenticated = options.authenticated ~= false
+  if authenticated then
+    if not exportClient.config.apiKey or exportClient.config.apiKey == "" then
+      error("apiKey is required for authenticated requests.")
+    end
+
+    headers["Authorization"] = "Bearer " .. exportClient.config.apiKey
+  end
+
+  local body = options.body
+  local raw_body = options.rawBody
+  local encoded_body
+  if raw_body ~= nil then
+    headers["Content-Type"] = options.contentType or "application/octet-stream"
+    encoded_body = raw_body
+  elseif body ~= nil then
+    headers["Content-Type"] = "application/json"
+    encoded_body = exportClient.adapter.encode(body)
+  end
+
+  local request_options = {
+    method = method,
+    url = build_url(exportClient.config.apiUrl, path, options.query, exportClient.adapter.encodeURIComponent),
+    headers = headers,
+    body = encoded_body,
+    logBody = options.logBody ~= nil and options.logBody or body,
+    timeoutMs = exportClient.config.timeoutMs
+  }
+
+  for attempt = 0, CAD_V2_RATE_LIMIT_MAX_RETRIES do
+    exportClient.debug_log_http_request(request_options, attempt)
+    local response = exportClient.adapter.request(request_options)
+    exportClient.debug_log_http_response(response, attempt)
+    local parsed = exportClient.parse_response(response or {})
+    local ok = response and response.ok
+    if ok == nil then
+      local status = tonumber(response and response.status) or 0
+      ok = status >= 200 and status < 300
+    end
+
+    if ok then
+      return {
+        success = true,
+        data = parsed
+      }
+    end
+
+    if tonumber(response and response.status) == 429 and attempt < CAD_V2_RATE_LIMIT_MAX_RETRIES then
+      local retry_delay_ms, retry_source = exportClient.resolve_retry_delay_ms(response, attempt)
+      if retry_delay_ms > CAD_V2_RATE_LIMIT_MAX_AUTO_RETRY_DELAY_MS then
+        exportClient.error_log_http_failure(
+          request_options,
+          response,
+          parsed,
+          attempt,
+          string.format(
+            "HTTP 429 rate limit received. Not retrying because %s requested %d ms, which exceeds the automatic retry limit of %d ms.",
+            tostring(retry_source),
+            retry_delay_ms,
+            CAD_V2_RATE_LIMIT_MAX_AUTO_RETRY_DELAY_MS
+          )
+        )
+      elseif retry_delay_ms > 0 and type(exportClient.adapter.sleep) ~= "function" then
+        exportClient.error_log_http_failure(
+          request_options,
+          response,
+          parsed,
+          attempt,
+          string.format(
+            "HTTP 429 rate limit received. Not retrying because the active adapter cannot wait %d ms from %s.",
+            retry_delay_ms,
+            tostring(retry_source)
+          )
+        )
+      else
+        exportClient.error_log_http_failure(
+          request_options,
+          response,
+          parsed,
+          attempt,
+          string.format(
+            "HTTP 429 rate limit received. Retrying after %d ms from %s.",
+            retry_delay_ms,
+            tostring(retry_source)
+          )
+        )
+        exportClient.sleep_ms(retry_delay_ms)
+      end
+
+      if retry_delay_ms <= CAD_V2_RATE_LIMIT_MAX_AUTO_RETRY_DELAY_MS and (retry_delay_ms <= 0 or type(exportClient.adapter.sleep) == "function") then
+        -- Retry by falling through to the next loop iteration without returning.
+      else
+        return {
+          success = false,
+          reason = parsed ~= nil and parsed or "Request was rate limited."
+        }
+      end
+    elseif tonumber(response and response.status) == 429 then
+      exportClient.error_log_http_failure(request_options, response, parsed, attempt,
+        "HTTP 429 rate limit received. Automatic retries have been exhausted.")
+      return {
+        success = false,
+        reason = parsed ~= nil and parsed or "Request was rate limited."
+      }
+    else
+      exportClient.error_log_http_failure(request_options, response, parsed, attempt, "HTTP request failed.")
+      return {
+        success = false,
+        reason = parsed
+      }
+    end
   end
 
   return {
@@ -767,7 +1205,8 @@ local function create_client(config, adapter)
     _config = {
       apiKey = config and config.apiKey or nil,
       communityId = config and config.communityId or nil,
-      apiUrl = trim_trailing_slashes(config and config.apiUrl or (product == 2 and "https://api.sonoranradio.com" or product == 1 and "https://api.sonorancms.com" or "https://api.sonorancad.com")),
+      apiUrl = trim_trailing_slashes(config and config.apiUrl or
+        (product == 2 and "https://api.sonoranradio.com" or product == 1 and "https://api.sonorancms.com" or "https://api.sonorancad.com")),
       defaultServerId = config and config.defaultServerId or 1,
       roomId = config and (config.radioRoomId or config.roomId) or nil,
       headers = shallow_copy(config and config.headers or {}),
@@ -814,18 +1253,21 @@ local function create_client(config, adapter)
     return self:_request("GET", "v2/general/templates")
   end
   instance.createRecordV2 = function(self, data)
-    return self:_request("POST", "v2/general/records", { body = normalize_v2_target_aliases(normalize_record_replace_values_body(data, self._adapter.encode)) })
+    return self:_request("POST", "v2/general/records",
+      { body = normalize_v2_target_aliases(normalize_record_replace_values_body(data, self._adapter.encode)) })
   end
   instance.updateRecordV2 = function(self, record_id, data)
     self:_assert_positive_integer(record_id, "recordId")
-    return self:_request("PATCH", "v2/general/records/" .. tostring(record_id), { body = normalize_v2_target_aliases(normalize_record_replace_values_body(data, self._adapter.encode)) })
+    return self:_request("PATCH", "v2/general/records/" .. tostring(record_id),
+      { body = normalize_v2_target_aliases(normalize_record_replace_values_body(data, self._adapter.encode)) })
   end
   instance.removeRecordV2 = function(self, record_id)
     self:_assert_positive_integer(record_id, "recordId")
     return self:_request("DELETE", "v2/general/records/" .. tostring(record_id))
   end
   instance.sendRecordDraftV2 = function(self, data)
-    return self:_request("POST", "v2/general/record-drafts", { body = normalize_v2_target_aliases(normalize_record_replace_values_body(data, self._adapter.encode)) })
+    return self:_request("POST", "v2/general/record-drafts",
+      { body = normalize_v2_target_aliases(normalize_record_replace_values_body(data, self._adapter.encode)) })
   end
   instance.lookupV2 = function(self, data)
     return self:_request("POST", "v2/general/lookups", { body = normalize_v2_target_aliases(data) })
@@ -927,10 +1369,12 @@ local function create_client(config, adapter)
     return self:_request("GET", "v2/civilian/character-links", { query = normalize_v2_target_aliases(query or {}) })
   end
   instance.addCharacterLinkV2 = function(self, sync_id, data)
-    return self:_request("PUT", "v2/civilian/character-links/" .. self:_encode_path_segment(sync_id), { body = normalize_v2_target_aliases(data) })
+    return self:_request("PUT", "v2/civilian/character-links/" .. self:_encode_path_segment(sync_id),
+      { body = normalize_v2_target_aliases(data) })
   end
   instance.removeCharacterLinkV2 = function(self, sync_id, data)
-    return self:_request("DELETE", "v2/civilian/character-links/" .. self:_encode_path_segment(sync_id), { body = normalize_v2_target_aliases(data) })
+    return self:_request("DELETE", "v2/civilian/character-links/" .. self:_encode_path_segment(sync_id),
+      { body = normalize_v2_target_aliases(data) })
   end
 
   instance.getUnitsV2 = function(self, query)
@@ -999,7 +1443,8 @@ local function create_client(config, adapter)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
     return self:_request(
       "GET",
-      "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/accounts/" .. self:_encode_path_segment(data.accountUuid) .. "/units",
+      "v2/emergency/servers/" ..
+      tostring(resolved_server_id) .. "/accounts/" .. self:_encode_path_segment(data.accountUuid) .. "/units",
       {
         query = {
           onlyOnline = data.onlyOnline,
@@ -1011,28 +1456,33 @@ local function create_client(config, adapter)
     )
   end
   instance.selectIdentifierV2 = function(self, account_uuid, ident_id)
-    return self:_request("PUT", "v2/emergency/accounts/" .. self:_encode_path_segment(account_uuid) .. "/selected-identifier", {
-      body = { identId = ident_id }
-    })
+    return self:_request("PUT",
+      "v2/emergency/accounts/" .. self:_encode_path_segment(account_uuid) .. "/selected-identifier", {
+        body = { identId = ident_id }
+      })
   end
   instance.createIdentifierV2 = function(self, account_uuid, data)
-    return self:_request("POST", "v2/emergency/accounts/" .. self:_encode_path_segment(account_uuid) .. "/identifiers", { body = data })
+    return self:_request("POST", "v2/emergency/accounts/" .. self:_encode_path_segment(account_uuid) .. "/identifiers",
+      { body = data })
   end
   instance.updateIdentifierV2 = function(self, account_uuid, ident_id, data)
     self:_assert_positive_integer(ident_id, "identId")
-    return self:_request("PATCH", "v2/emergency/accounts/" .. self:_encode_path_segment(account_uuid) .. "/identifiers/" .. tostring(ident_id), {
-      body = data
-    })
+    return self:_request("PATCH",
+      "v2/emergency/accounts/" .. self:_encode_path_segment(account_uuid) .. "/identifiers/" .. tostring(ident_id), {
+        body = data
+      })
   end
   instance.deleteIdentifierV2 = function(self, account_uuid, ident_id)
     self:_assert_positive_integer(ident_id, "identId")
-    return self:_request("DELETE", "v2/emergency/accounts/" .. self:_encode_path_segment(account_uuid) .. "/identifiers/" .. tostring(ident_id))
+    return self:_request("DELETE",
+      "v2/emergency/accounts/" .. self:_encode_path_segment(account_uuid) .. "/identifiers/" .. tostring(ident_id))
   end
   instance.addIdentifiersToGroupV2 = function(self, data)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
     return self:_request(
       "PUT",
-      "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/identifier-groups/" .. self:_encode_path_segment(data.groupName),
+      "v2/emergency/servers/" ..
+      tostring(resolved_server_id) .. "/identifier-groups/" .. self:_encode_path_segment(data.groupName),
       {
         body = normalize_v2_target_aliases(strip_keys(data, { "serverId", "groupName" }))
       }
@@ -1049,7 +1499,8 @@ local function create_client(config, adapter)
   instance.deleteEmergencyCallV2 = function(self, call_id, server_id)
     local resolved_server_id = self:_resolve_server_id(server_id)
     self:_assert_positive_integer(call_id, "callId")
-    return self:_request("DELETE", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/calls/911/" .. tostring(call_id))
+    return self:_request("DELETE",
+      "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/calls/911/" .. tostring(call_id))
   end
   instance.createDispatchCallV2 = function(self, data)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
@@ -1060,47 +1511,54 @@ local function create_client(config, adapter)
   instance.updateDispatchCallV2 = function(self, call_id, data)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
     self:_assert_positive_integer(call_id, "callId")
-    return self:_request("PATCH", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/" .. tostring(call_id), {
-      body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
-    })
+    return self:_request("PATCH",
+      "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/" .. tostring(call_id), {
+        body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
+      })
   end
   instance.attachUnitsToDispatchCallV2 = function(self, call_id, data)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
     self:_assert_positive_integer(call_id, "callId")
-    return self:_request("POST", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/" .. tostring(call_id) .. "/attachments", {
-      body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
-    })
+    return self:_request("POST",
+      "v2/emergency/servers/" ..
+      tostring(resolved_server_id) .. "/dispatch-calls/" .. tostring(call_id) .. "/attachments", {
+        body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
+      })
   end
   instance.detachUnitsFromDispatchCallV2 = function(self, data)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
-    return self:_request("DELETE", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/attachments", {
-      body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
-    })
+    return self:_request("DELETE",
+      "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/attachments", {
+        body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
+      })
   end
   instance.setDispatchPostalV2 = function(self, call_id, postal, server_id)
     local resolved_server_id = self:_resolve_server_id(server_id)
     self:_assert_positive_integer(call_id, "callId")
-    return self:_request("PATCH", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/" .. tostring(call_id) .. "/postal", {
-      body = { postal = postal }
-    })
+    return self:_request("PATCH",
+      "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/" .. tostring(call_id) .. "/postal", {
+        body = { postal = postal }
+      })
   end
   instance.setDispatchPrimaryV2 = function(self, call_id, ident_id, track_primary, server_id)
     local resolved_server_id = self:_resolve_server_id(server_id)
     self:_assert_positive_integer(call_id, "callId")
     self:_assert_positive_integer(ident_id, "identId")
-    return self:_request("PATCH", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/" .. tostring(call_id) .. "/primary", {
-      body = {
-        identId = ident_id,
-        trackPrimary = track_primary == true
-      }
-    })
+    return self:_request("PATCH",
+      "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/" .. tostring(call_id) .. "/primary", {
+        body = {
+          identId = ident_id,
+          trackPrimary = track_primary == true
+        }
+      })
   end
   instance.addDispatchNoteV2 = function(self, call_id, data)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
     self:_assert_positive_integer(call_id, "callId")
-    return self:_request("POST", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/" .. tostring(call_id) .. "/notes", {
-      body = strip_keys(data, { "serverId" })
-    })
+    return self:_request("POST",
+      "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/" .. tostring(call_id) .. "/notes", {
+        body = strip_keys(data, { "serverId" })
+      })
   end
   instance.closeDispatchCallsV2 = function(self, call_ids, server_id)
     local resolved_server_id = self:_resolve_server_id(server_id)
@@ -1155,9 +1613,10 @@ local function create_client(config, adapter)
   instance.updateBlipV2 = function(self, blip_id, data)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
     self:_assert_positive_integer(blip_id, "blipId")
-    return self:_request("PATCH", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/blips/" .. tostring(blip_id), {
-      body = strip_keys(data, { "serverId" })
-    })
+    return self:_request("PATCH",
+      "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/blips/" .. tostring(blip_id), {
+        body = strip_keys(data, { "serverId" })
+      })
   end
   instance.deleteBlipsV2 = function(self, ids, server_id)
     local resolved_server_id = self:_resolve_server_id(server_id)
@@ -1183,14 +1642,20 @@ local function create_client(config, adapter)
   instance.getConnectedUserV2 = function(self, identity, community_id)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     local room_id = self:_resolve_radio_room_id()
-    return self:_request("GET", "v2/servers/" .. tostring(resolved_community_id) .. "/rooms/" .. tostring(room_id) .. "/users/" .. self:_encode_path_segment(identity))
+    return self:_request("GET",
+      "v2/servers/" ..
+      tostring(resolved_community_id) ..
+      "/rooms/" .. tostring(room_id) .. "/users/" .. self:_encode_path_segment(identity))
   end
   instance.setUserChannelsV2 = function(self, identity, options, community_id)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     local room_id = self:_resolve_radio_room_id()
-    return self:_request("PATCH", "v2/servers/" .. tostring(resolved_community_id) .. "/rooms/" .. tostring(room_id) .. "/users/" .. self:_encode_path_segment(identity) .. "/channels", {
-      body = self:_with_radio_room_id(options or {})
-    })
+    return self:_request("PATCH",
+      "v2/servers/" ..
+      tostring(resolved_community_id) ..
+      "/rooms/" .. tostring(room_id) .. "/users/" .. self:_encode_path_segment(identity) .. "/channels", {
+        body = self:_with_radio_room_id(options or {})
+      })
   end
   instance.setUserDisplayNameV2 = function(self, data)
     local resolved_community_id = self:_resolve_radio_community_id(data and data.communityId)
@@ -1284,7 +1749,8 @@ local function create_client(config, adapter)
     return self:_request("POST", "v2/community/promotion-flows/trigger", { body = data })
   end
   instance.undoRankChangeV2 = function(self, undo_id, data)
-    return self:_request("POST", "v2/community/rank-changes/" .. self:_encode_path_segment(undo_id) .. "/undo", { body = data or {} })
+    return self:_request("POST", "v2/community/rank-changes/" .. self:_encode_path_segment(undo_id) .. "/undo",
+      { body = data or {} })
   end
   instance.createShortUrlV2 = function(self, data)
     return self:_request("POST", "v2/community/short-urls", { body = data })
@@ -1305,28 +1771,35 @@ local function create_client(config, adapter)
     return self:_request("GET", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/identifiers")
   end
   instance.registerAccountIdentifiersV2 = function(self, account_id, data)
-    return self:_request("POST", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/identifiers", { body = data })
+    return self:_request("POST", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/identifiers",
+      { body = data })
   end
   instance.setAccountNameV2 = function(self, account_id, data)
-    return self:_request("PATCH", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/name", { body = data })
+    return self:_request("PATCH", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/name",
+      { body = data })
   end
   instance.setAccountRanksV2 = function(self, account_id, data)
-    return self:_request("PATCH", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/ranks", { body = data })
+    return self:_request("PATCH", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/ranks",
+      { body = data })
   end
   instance.editProfileFieldsV2 = function(self, account_id, data)
-    return self:_request("PATCH", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/profile-fields", { body = data })
+    return self:_request("PATCH", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/profile-fields",
+      { body = data })
   end
   instance.clockAccountV2 = function(self, account_id, data)
-    return self:_request("POST", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/clock", { body = data })
+    return self:_request("POST", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/clock",
+      { body = data })
   end
   instance.getCurrentClockInV2 = function(self, account_id)
     return self:_request("GET", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/clock/current")
   end
   instance.getLatestActivityV2 = function(self, account_id, query)
-    return self:_request("GET", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/activity/latest", { query = query })
+    return self:_request("GET", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/activity/latest",
+      { query = query })
   end
   instance.forceSyncV2 = function(self, account_id, data)
-    return self:_request("POST", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/sync", { body = data or {} })
+    return self:_request("POST", "v2/community/accounts/" .. self:_encode_path_segment(account_id) .. "/sync",
+      { body = data or {} })
   end
   instance.getServersV2 = function(self)
     return self:_request("GET", "v2/community/servers")
@@ -1341,37 +1814,46 @@ local function create_client(config, adapter)
     return self:_request("GET", "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/ace-config")
   end
   instance.setAceConfigV2 = function(self, server_id, data)
-    return self:_request("PATCH", "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/ace-config", { body = data })
+    return self:_request("PATCH",
+      "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/ace-config", { body = data })
   end
   instance.setServerTypeV2 = function(self, server_id, data)
-    return self:_request("PATCH", "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/type", { body = data })
+    return self:_request("PATCH", "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/type",
+      { body = data })
   end
   instance.verifyWhitelistV2 = function(self, server_id, data)
-    return self:_request("POST", "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/whitelist/check", { body = data })
+    return self:_request("POST",
+      "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/whitelist/check", { body = data })
   end
   instance.getWhitelistV2 = function(self, server_id)
     return self:_request("GET", "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/whitelist")
   end
   instance.createActivityV2 = function(self, server_id, data)
-    return self:_request("POST", "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/activity", { body = data or {} })
+    return self:_request("POST", "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/activity",
+      { body = data or {} })
   end
   instance.startActivityV2 = function(self, server_id, data)
-    return self:_request("POST", "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/activity/start", { body = data or {} })
+    return self:_request("POST",
+      "v2/community/servers/" .. tostring(self:_resolve_server_id(server_id)) .. "/activity/start", { body = data or {} })
   end
   instance.rsvpEventV2 = function(self, event_id, data)
-    return self:_request("POST", "v2/community/events/" .. self:_encode_path_segment(event_id) .. "/rsvps", { body = data })
+    return self:_request("POST", "v2/community/events/" .. self:_encode_path_segment(event_id) .. "/rsvps",
+      { body = data })
   end
   instance.changeFormStageV2 = function(self, form_id, data)
-    return self:_request("PATCH", "v2/community/forms/" .. self:_encode_path_segment(form_id) .. "/stage", { body = data })
+    return self:_request("PATCH", "v2/community/forms/" .. self:_encode_path_segment(form_id) .. "/stage",
+      { body = data })
   end
   instance.getFormSubmissionsV2 = function(self, template_id, query)
-    return self:_request("GET", "v2/community/forms/" .. self:_encode_path_segment(template_id) .. "/submissions", { query = query })
+    return self:_request("GET", "v2/community/forms/" .. self:_encode_path_segment(template_id) .. "/submissions",
+      { query = query })
   end
   instance.getFormLockV2 = function(self, template_id)
     return self:_request("GET", "v2/community/forms/" .. self:_encode_path_segment(template_id) .. "/lock")
   end
   instance.setFormLockV2 = function(self, template_id, data)
-    return self:_request("PATCH", "v2/community/forms/" .. self:_encode_path_segment(template_id) .. "/lock", { body = data })
+    return self:_request("PATCH", "v2/community/forms/" .. self:_encode_path_segment(template_id) .. "/lock",
+      { body = data })
   end
   instance.getSubmissionV2 = function(self, submission_id)
     return self:_request("GET", "v2/community/forms/submissions/" .. self:_encode_path_segment(submission_id))
@@ -1380,22 +1862,28 @@ local function create_client(config, adapter)
     return self:_request("GET", "v2/community/rosters/" .. self:_encode_path_segment(roster_id), { query = query })
   end
   instance.getDisciplinaryPointsV2 = function(self, account_id)
-    return self:_request("GET", "v2/community/disciplinary/accounts/" .. self:_encode_path_segment(account_id) .. "/points")
+    return self:_request("GET",
+      "v2/community/disciplinary/accounts/" .. self:_encode_path_segment(account_id) .. "/points")
   end
   instance.getDisciplinaryRecordsV2 = function(self, account_id)
-    return self:_request("GET", "v2/community/disciplinary/accounts/" .. self:_encode_path_segment(account_id) .. "/records")
+    return self:_request("GET",
+      "v2/community/disciplinary/accounts/" .. self:_encode_path_segment(account_id) .. "/records")
   end
   instance.addDisciplinaryRecordV2 = function(self, account_id, data)
-    return self:_request("POST", "v2/community/disciplinary/accounts/" .. self:_encode_path_segment(account_id) .. "/records", { body = data })
+    return self:_request("POST",
+      "v2/community/disciplinary/accounts/" .. self:_encode_path_segment(account_id) .. "/records", { body = data })
   end
   instance.setDisciplinaryRecordPointsV2 = function(self, record_id, data)
-    return self:_request("PATCH", "v2/community/disciplinary/records/" .. self:_encode_path_segment(record_id) .. "/points", { body = data })
+    return self:_request("PATCH",
+      "v2/community/disciplinary/records/" .. self:_encode_path_segment(record_id) .. "/points", { body = data })
   end
   instance.setDisciplinaryRecordReasonV2 = function(self, record_id, data)
-    return self:_request("PATCH", "v2/community/disciplinary/records/" .. self:_encode_path_segment(record_id) .. "/reason", { body = data })
+    return self:_request("PATCH",
+      "v2/community/disciplinary/records/" .. self:_encode_path_segment(record_id) .. "/reason", { body = data })
   end
   instance.setDisciplinaryRecordStatusV2 = function(self, record_id, data)
-    return self:_request("PATCH", "v2/community/disciplinary/records/" .. self:_encode_path_segment(record_id) .. "/status", { body = data })
+    return self:_request("PATCH",
+      "v2/community/disciplinary/records/" .. self:_encode_path_segment(record_id) .. "/status", { body = data })
   end
   instance.getOnlinePlayersV2 = function(self, query)
     return self:_request("GET", "v2/community/erlc/players/online", { query = query })
@@ -1416,7 +1904,8 @@ local function create_client(config, adapter)
     return self:_request("POST", "v2/community/erlc/teams/unlock", { body = data })
   end
   instance.getCurrentSessionV2 = function(self, server_id)
-    return self:_request("GET", "v2/community/sessions/current", { query = { serverId = self:_resolve_server_id(server_id) } })
+    return self:_request("GET", "v2/community/sessions/current",
+      { query = { serverId = self:_resolve_server_id(server_id) } })
   end
   instance.startSessionV2 = function(self, data)
     return self:_request("POST", "v2/community/sessions", { body = data })
@@ -1435,4 +1924,841 @@ local function create_client(config, adapter)
   return instance
 end
 
-return create_client
+exportClient.checkApiIdV2 = function(api_id)
+  return exportClient.request("GET", "v2/general/api-ids/" .. exportClient.encode_path_segment(api_id))
+end
+exportClient.applyPermissionKeyV2 = function(data)
+  return exportClient.request("POST", "v2/general/permission-keys/applications",
+    { body = normalize_v2_target_aliases(data) })
+end
+exportClient.banUserV2 = function(data)
+  return exportClient.request("POST", "v2/general/account-bans", { body = normalize_v2_target_aliases(data) })
+end
+exportClient.setPenalCodesV2 = function(codes)
+  return exportClient.request("PUT", "v2/general/penal-codes", { body = { codes = codes } })
+end
+exportClient.setApiIdsV2 = function(data)
+  return exportClient.request("PUT", "v2/general/api-ids", { body = data })
+end
+exportClient.getTemplatesV2 = function(record_type_id)
+  if record_type_id ~= nil then
+    exportClient.assert_positive_integer(record_type_id, "recordTypeId")
+    return exportClient.request("GET", "v2/general/templates/" .. tostring(record_type_id))
+  end
+  return exportClient.request("GET", "v2/general/templates")
+end
+exportClient.createRecordV2 = function(data)
+  return exportClient.request("POST", "v2/general/records",
+    { body = normalize_v2_target_aliases(normalize_record_replace_values_body(data, self._adapter.encode)) })
+end
+exportClient.updateRecordV2 = function(record_id, data)
+  exportClient.assert_positive_integer(record_id, "recordId")
+  return exportClient.request("PATCH", "v2/general/records/" .. tostring(record_id),
+    { body = normalize_v2_target_aliases(normalize_record_replace_values_body(data, self._adapter.encode)) })
+end
+exportClient.removeRecordV2 = function(record_id)
+  exportClient.assert_positive_integer(record_id, "recordId")
+  return exportClient.request("DELETE", "v2/general/records/" .. tostring(record_id))
+end
+exportClient.sendRecordDraftV2 = function(data)
+  return exportClient.request("POST", "v2/general/record-drafts",
+    { body = normalize_v2_target_aliases(normalize_record_replace_values_body(data, self._adapter.encode)) })
+end
+exportClient.lookupV2 = function(data)
+  return exportClient.request("POST", "v2/general/lookups", { body = normalize_v2_target_aliases(data) })
+end
+exportClient.lookupByValueV2 = function(data)
+  return exportClient.request("POST", "v2/general/lookups/by-value", { body = normalize_v2_target_aliases(data) })
+end
+exportClient.lookupCustomV2 = function(data)
+  return exportClient.request("POST", "v2/general/lookups/custom", { body = data })
+end
+exportClient.getAccountV2 = function(query)
+  return exportClient.request("GET", "v2/general/accounts/account",
+    { query = normalize_v2_target_aliases(query or {}) })
+end
+exportClient.getAccountsV2 = function(query)
+  return exportClient.request("GET", "v2/general/accounts", { query = query or {} })
+end
+exportClient.createCommunityLinkV2 = function(data)
+  return exportClient.request("POST", "v2/general/links", { body = data })
+end
+exportClient.checkCommunityLinkV2 = function(data)
+  return exportClient.request("POST", "v2/general/links/check", { body = data })
+end
+exportClient.setAccountPermissionsV2 = function(data)
+  return exportClient.request("PATCH", "v2/general/accounts/permissions", { body = normalize_v2_target_aliases(data) })
+end
+exportClient.heartbeatV2 = function(server_id, player_count)
+  local resolved_server_id = exportClient.resolve_server_id(server_id)
+  return exportClient.request("POST", "v2/general/servers/" .. tostring(resolved_server_id) .. "/heartbeat", {
+    body = { playerCount = player_count }
+  })
+end
+exportClient.getVersionV2 = function()
+  return exportClient.request("GET", "v2/general/version")
+end
+exportClient.getTurnCredentialsV2 = function(query)
+  return exportClient.request("GET", "v2/general/turn", { query = query or {} })
+end
+exportClient.getServersV2 = function()
+  return exportClient.request("GET", "v2/general/servers")
+end
+exportClient.setServersV2 = function(servers, deploy_map)
+  return exportClient.request("PUT", "v2/general/servers", {
+    body = {
+      servers = servers,
+      deployMap = deploy_map == true
+    }
+  })
+end
+exportClient.verifySecretV2 = function(secret)
+  return exportClient.request("POST", "v2/general/secrets/verify", { body = { secret = secret } })
+end
+exportClient.authorizeStreetSignsV2 = function(server_id)
+  local resolved_server_id = exportClient.resolve_server_id(server_id)
+  return exportClient.request("POST", "v2/general/servers/" .. tostring(resolved_server_id) .. "/street-sign-auth")
+end
+exportClient.setPostalsV2 = function(postals)
+  return exportClient.request("PUT", "v2/general/postals", { body = { postals = postals } })
+end
+exportClient.sendPhotoV2 = function(data)
+  return exportClient.request("POST", "v2/general/photos", { body = normalize_v2_target_aliases(data) })
+end
+exportClient.uploadBodycamRecordingV2 = function(data)
+  local payload = normalize_v2_target_aliases(shallow_copy(data or {}))
+  local file_name = payload.fileName
+  local file_content = payload.fileContent
+  local content_type = payload.contentType or "video/webm"
+
+  payload.fileName = nil
+  payload.fileContent = nil
+  payload.contentType = nil
+
+  local boundary, multipart_body = build_multipart_form_data(payload, file_name, file_content, content_type)
+  return exportClient.request("POST", "v2/general/bodycam-recordings", {
+    rawBody = multipart_body,
+    contentType = "multipart/form-data; boundary=" .. boundary,
+    logBody = {
+      fields = payload,
+      fileName = file_name,
+      contentType = content_type,
+      fileSize = type(file_content) == "string" and #file_content or nil
+    }
+  })
+end
+exportClient.getInfoV2 = function()
+  return exportClient.request("GET", "v2/general/info")
+end
+
+exportClient.getCharactersV2 = function(query)
+  return exportClient.request("GET", "v2/civilian/characters", { query = normalize_v2_target_aliases(query or {}) })
+end
+exportClient.removeCharacterV2 = function(character_id)
+  exportClient.assert_positive_integer(character_id, "characterId")
+  return exportClient.request("DELETE", "v2/civilian/characters/" .. tostring(character_id))
+end
+exportClient.setSelectedCharacterV2 = function(data)
+  return exportClient.request("PUT", "v2/civilian/selected-character", { body = normalize_v2_target_aliases(data) })
+end
+exportClient.getCharacterLinksV2 = function(query)
+  return exportClient.request("GET", "v2/civilian/character-links",
+    { query = normalize_v2_target_aliases(query or {}) })
+end
+exportClient.addCharacterLinkV2 = function(sync_id, data)
+  return exportClient.request("PUT", "v2/civilian/character-links/" .. exportClient.encode_path_segment(sync_id),
+    { body = normalize_v2_target_aliases(data) })
+end
+exportClient.removeCharacterLinkV2 = function(sync_id, data)
+  return exportClient.request("DELETE", "v2/civilian/character-links/" .. exportClient.encode_path_segment(sync_id),
+    { body = normalize_v2_target_aliases(data) })
+end
+
+exportClient.getUnitsV2 = function(query)
+  query = query or {}
+  local resolved_server_id = exportClient.resolve_server_id(query.serverId)
+  return exportClient.request("GET", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/units", {
+    query = {
+      includeOffline = query.includeOffline,
+      onlyUnits = query.onlyUnits,
+      limit = query.limit,
+      offset = query.offset
+    }
+  })
+end
+exportClient.getCallsV2 = function(query)
+  query = query or {}
+  local resolved_server_id = exportClient.resolve_server_id(query.serverId)
+  return exportClient.request("GET", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/calls", {
+    query = {
+      closedLimit = query.closedLimit,
+      closedOffset = query.closedOffset,
+      type = query.type
+    }
+  })
+end
+exportClient.getCurrentCallV2 = function(account_uuid)
+  return exportClient.request("GET",
+    "v2/emergency/accounts/" .. exportClient.encode_path_segment(account_uuid) .. "/current-call")
+end
+exportClient.updateUnitLocationsV2 = function(data)
+  local resolved_server_id = exportClient.resolve_server_id(data and data.serverId)
+  local updates = {}
+  for index, update in ipairs(data and data.updates or {}) do
+    updates[index] = normalize_v2_target_aliases(update)
+  end
+  return exportClient.request("PATCH", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/unit-locations", {
+    body = { updates = updates }
+  })
+end
+exportClient.setUnitPanicV2 = function(data)
+  local resolved_server_id = exportClient.resolve_server_id(data and data.serverId)
+  return exportClient.request("PATCH", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/units/panic", {
+    body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
+  })
+end
+exportClient.setUnitStatusV2 = function(data)
+  local resolved_server_id = exportClient.resolve_server_id(data and data.serverId)
+  return exportClient.request("PATCH", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/units/status", {
+    body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
+  })
+end
+exportClient.kickUnitV2 = function(data)
+  local resolved_server_id = exportClient.resolve_server_id(data and data.serverId)
+  local target = normalize_v2_target_aliases(data or {})
+  return exportClient.request("POST", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/units/kick", {
+    body = {
+      communityUserId = target and target.communityUserId or nil,
+      roblox = target and target.roblox or nil,
+      reason = data and data.reason or nil
+    }
+  })
+end
+exportClient.getIdentifiersV2 = function(account_uuid)
+  return exportClient.request("GET",
+    "v2/emergency/accounts/" .. exportClient.encode_path_segment(account_uuid) .. "/identifiers")
+end
+exportClient.getAccountUnitsV2 = function(data)
+  local resolved_server_id = exportClient.resolve_server_id(data and data.serverId)
+  return exportClient.request(
+    "GET",
+    "v2/emergency/servers/" ..
+    tostring(resolved_server_id) .. "/accounts/" .. exportClient.encode_path_segment(data.accountUuid) .. "/units",
+    {
+      query = {
+        onlyOnline = data.onlyOnline,
+        onlyUnits = data.onlyUnits,
+        limit = data.limit,
+        offset = data.offset
+      }
+    }
+  )
+end
+exportClient.selectIdentifierV2 = function(account_uuid, ident_id)
+  return exportClient.request("PUT",
+    "v2/emergency/accounts/" .. exportClient.encode_path_segment(account_uuid) .. "/selected-identifier", {
+      body = { identId = ident_id }
+    })
+end
+exportClient.createIdentifierV2 = function(account_uuid, data)
+  return exportClient.request("POST",
+    "v2/emergency/accounts/" .. exportClient.encode_path_segment(account_uuid) .. "/identifiers",
+    { body = data })
+end
+exportClient.updateIdentifierV2 = function(account_uuid, ident_id, data)
+  exportClient.assert_positive_integer(ident_id, "identId")
+  return exportClient.request("PATCH",
+    "v2/emergency/accounts/" .. exportClient.encode_path_segment(account_uuid) .. "/identifiers/" .. tostring(ident_id),
+    {
+      body = data
+    })
+end
+exportClient.deleteIdentifierV2 = function(account_uuid, ident_id)
+  exportClient.assert_positive_integer(ident_id, "identId")
+  return exportClient.request("DELETE",
+    "v2/emergency/accounts/" .. exportClient.encode_path_segment(account_uuid) .. "/identifiers/" .. tostring(ident_id))
+end
+exportClient.addIdentifiersToGroupV2 = function(data)
+  local resolved_server_id = exportClient.resolve_server_id(data and data.serverId)
+  return exportClient.request(
+    "PUT",
+    "v2/emergency/servers/" ..
+    tostring(resolved_server_id) .. "/identifier-groups/" .. exportClient.encode_path_segment(data.groupName),
+    {
+      body = normalize_v2_target_aliases(strip_keys(data, { "serverId", "groupName" }))
+    }
+  )
+end
+exportClient.createEmergencyCallV2 = function(data)
+  local resolved_server_id = exportClient.resolve_server_id(data and data.serverId)
+  local body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
+  body.metaData = stringify_table_values(body.metaData)
+  return exportClient.request("POST", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/calls/911", {
+    body = body
+  })
+end
+exportClient.deleteEmergencyCallV2 = function(call_id, server_id)
+  local resolved_server_id = exportClient.resolve_server_id(server_id)
+  exportClient.assert_positive_integer(call_id, "callId")
+  return exportClient.request("DELETE",
+    "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/calls/911/" .. tostring(call_id))
+end
+exportClient.createDispatchCallV2 = function(data)
+  local resolved_server_id = exportClient.resolve_server_id(data and data.serverId)
+  return exportClient.request("POST", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls", {
+    body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
+  })
+end
+exportClient.updateDispatchCallV2 = function(call_id, data)
+  local resolved_server_id = exportClient.resolve_server_id(data and data.serverId)
+  exportClient.assert_positive_integer(call_id, "callId")
+  return exportClient.request("PATCH",
+    "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/" .. tostring(call_id), {
+      body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
+    })
+end
+exportClient.attachUnitsToDispatchCallV2 = function(call_id, data)
+  local resolved_server_id = exportClient.resolve_server_id(data and data.serverId)
+  exportClient.assert_positive_integer(call_id, "callId")
+  return exportClient.request("POST",
+    "v2/emergency/servers/" ..
+    tostring(resolved_server_id) .. "/dispatch-calls/" .. tostring(call_id) .. "/attachments", {
+      body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
+    })
+end
+exportClient.detachUnitsFromDispatchCallV2 = function(data)
+  local resolved_server_id = exportClient.resolve_server_id(data and data.serverId)
+  return exportClient.request("DELETE",
+    "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/attachments", {
+      body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
+    })
+end
+exportClient.setDispatchPostalV2 = function(call_id, postal, server_id)
+  local resolved_server_id = exportClient.resolve_server_id(server_id)
+  exportClient.assert_positive_integer(call_id, "callId")
+  return exportClient.request("PATCH",
+    "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/" .. tostring(call_id) .. "/postal", {
+      body = { postal = postal }
+    })
+end
+exportClient.setDispatchPrimaryV2 = function(call_id, ident_id, track_primary, server_id)
+  local resolved_server_id = exportClient.resolve_server_id(server_id)
+  exportClient.assert_positive_integer(call_id, "callId")
+  exportClient.assert_positive_integer(ident_id, "identId")
+  return exportClient.request("PATCH",
+    "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/" .. tostring(call_id) .. "/primary", {
+      body = {
+        identId = ident_id,
+        trackPrimary = track_primary == true
+      }
+    })
+end
+exportClient.addDispatchNoteV2 = function(call_id, data)
+  local resolved_server_id = exportClient.resolve_server_id(data and data.serverId)
+  exportClient.assert_positive_integer(call_id, "callId")
+  return exportClient.request("POST",
+    "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/" .. tostring(call_id) .. "/notes", {
+      body = strip_keys(data, { "serverId" })
+    })
+end
+exportClient.closeDispatchCallsV2 = function(call_ids, server_id)
+  local resolved_server_id = exportClient.resolve_server_id(server_id)
+  return exportClient.request("POST",
+    "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls/close", {
+      body = { callIds = call_ids }
+    })
+end
+exportClient.updateStreetSignsV2 = function(data)
+  local resolved_server_id = exportClient.resolve_server_id(data and data.serverId)
+  return exportClient.request("PATCH", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/street-signs", {
+    body = strip_keys(data, { "serverId" })
+  })
+end
+exportClient.setStreetSignConfigV2 = function(signs, server_id)
+  local resolved_server_id = exportClient.resolve_server_id(server_id)
+  return exportClient.request("PUT", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/street-sign-config",
+    {
+      body = { signs = signs }
+    })
+end
+exportClient.setAvailableCalloutsV2 = function(callouts, server_id)
+  local resolved_server_id = exportClient.resolve_server_id(server_id)
+  return exportClient.request("PUT", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/callouts", {
+    body = { callouts = callouts }
+  })
+end
+exportClient.getPagerConfigV2 = function(server_id)
+  local resolved_server_id = exportClient.resolve_server_id(server_id)
+  return exportClient.request("GET", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/pager-config")
+end
+exportClient.setPagerConfigV2 = function(data)
+  local resolved_server_id = exportClient.resolve_server_id(data and data.serverId)
+  return exportClient.request("PUT", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/pager-config", {
+    body = strip_keys(data, { "serverId" })
+  })
+end
+exportClient.setStationsV2 = function(config_value, server_id)
+  local resolved_server_id = exportClient.resolve_server_id(server_id)
+  return exportClient.request("PUT", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/stations", {
+    body = config_value
+  })
+end
+exportClient.getBlipsV2 = function(server_id)
+  local resolved_server_id = exportClient.resolve_server_id(server_id)
+  return exportClient.request("GET", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/blips")
+end
+exportClient.createBlipV2 = function(data)
+  local resolved_server_id = exportClient.resolve_server_id(data and data.serverId)
+  return exportClient.request("POST", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/blips", {
+    body = strip_keys(data, { "serverId" })
+  })
+end
+exportClient.updateBlipV2 = function(blip_id, data)
+  local resolved_server_id = exportClient.resolve_server_id(data and data.serverId)
+  exportClient.assert_positive_integer(blip_id, "blipId")
+  return exportClient.request("PATCH",
+    "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/blips/" .. tostring(blip_id), {
+      body = strip_keys(data, { "serverId" })
+    })
+end
+exportClient.deleteBlipsV2 = function(ids, server_id)
+  local resolved_server_id = exportClient.resolve_server_id(server_id)
+  return exportClient.request("POST", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/blips/delete", {
+    body = { ids = ids }
+  })
+end
+
+exportClient.getCommunityChannelsV2 = function(community_id)
+  local resolved_community_id = exportClient.resolve_radio_community_id(community_id)
+  return exportClient.request("GET", "v2/servers/" .. tostring(resolved_community_id) .. "/channels")
+end
+exportClient.getConnectedUsersV2 = function(community_id)
+  local resolved_community_id = exportClient.resolve_radio_community_id(community_id)
+  return exportClient.request("GET", "v2/servers/" .. tostring(resolved_community_id) .. "/connected-users")
+end
+exportClient.getMembersV2 = function(query, community_id)
+  local resolved_community_id = exportClient.resolve_radio_community_id(community_id)
+  return exportClient.request("GET", "v2/servers/" .. tostring(resolved_community_id) .. "/members", {
+    query = shallow_copy(query or {})
+  })
+end
+exportClient.getConnectedUserV2 = function(identity, community_id)
+  local resolved_community_id = exportClient.resolve_radio_community_id(community_id)
+  local room_id = exportClient.resolve_radio_room_id()
+  return exportClient.request("GET",
+    "v2/servers/" ..
+    tostring(resolved_community_id) ..
+    "/rooms/" .. tostring(room_id) .. "/users/" .. exportClient.encode_path_segment(identity))
+end
+exportClient.setUserChannelsV2 = function(identity, options, community_id)
+  local resolved_community_id = exportClient.resolve_radio_community_id(community_id)
+  local room_id = exportClient.resolve_radio_room_id()
+  return exportClient.request("PATCH",
+    "v2/servers/" ..
+    tostring(resolved_community_id) ..
+    "/rooms/" .. tostring(room_id) .. "/users/" .. exportClient.encode_path_segment(identity) .. "/channels", {
+      body = exportClient.with_radio_room_id(options or {})
+    })
+end
+exportClient.setUserDisplayNameV2 = function(data)
+  local resolved_community_id = exportClient.resolve_radio_community_id(data and data.communityId)
+  return exportClient.request("PATCH", "v2/servers/" .. tostring(resolved_community_id) .. "/users/display-name", {
+    body = exportClient.with_radio_room_id(strip_keys(data, { "serverId", "communityId" }))
+  })
+end
+exportClient.approveMembersV2 = function(acc_ids, community_id)
+  local resolved_community_id = exportClient.resolve_radio_community_id(community_id)
+  return exportClient.request("POST", "v2/servers/" .. tostring(resolved_community_id) .. "/members/approve", {
+    body = exportClient.with_radio_room_id({ accIds = acc_ids })
+  })
+end
+exportClient.kickMembersV2 = function(acc_ids, community_id)
+  local resolved_community_id = exportClient.resolve_radio_community_id(community_id)
+  return exportClient.request("POST", "v2/servers/" .. tostring(resolved_community_id) .. "/members/kick", {
+    body = exportClient.with_radio_room_id({ accIds = acc_ids })
+  })
+end
+exportClient.banMembersV2 = function(acc_ids, community_id)
+  local resolved_community_id = exportClient.resolve_radio_community_id(community_id)
+  return exportClient.request("POST", "v2/servers/" .. tostring(resolved_community_id) .. "/members/ban", {
+    body = exportClient.with_radio_room_id({ accIds = acc_ids })
+  })
+end
+exportClient.setMemberDisplayNamesV2 = function(acc_nicknames, community_id)
+  local resolved_community_id = exportClient.resolve_radio_community_id(community_id)
+  return exportClient.request("PATCH", "v2/servers/" .. tostring(resolved_community_id) .. "/members/display-names", {
+    body = exportClient.with_radio_room_id({ accNicknames = acc_nicknames })
+  })
+end
+exportClient.setMemberPermissionsV2 = function(user_perms, community_id)
+  local resolved_community_id = exportClient.resolve_radio_community_id(community_id)
+  return exportClient.request("PATCH", "v2/servers/" .. tostring(resolved_community_id) .. "/members/permissions", {
+    body = exportClient.with_radio_room_id({ userPerms = user_perms })
+  })
+end
+exportClient.getServerSubscriptionFromIpV2 = function()
+  return exportClient.request("GET", "v2/server-subscriptions/by-ip", {
+    authenticated = false
+  })
+end
+exportClient.setServerIpV2 = function(data)
+  local resolved_community_id = exportClient.resolve_radio_community_id(data and data.communityId)
+  local body = strip_keys(data, { "serverId", "communityId" })
+  return exportClient.request("POST", "v2/servers/" .. tostring(resolved_community_id) .. "/server-ip", {
+    body = exportClient.with_radio_room_id(body)
+  })
+end
+exportClient.setInGameSpeakerLocationsV2 = function(locations, community_id)
+  local resolved_community_id = exportClient.resolve_radio_community_id(community_id)
+  return exportClient.request("PUT", "v2/servers/" .. tostring(resolved_community_id) .. "/speakers", {
+    body = exportClient.with_radio_room_id({ locations = locations })
+  })
+end
+exportClient.playToneV2 = function(tones, play_to, community_id)
+  local resolved_community_id = exportClient.resolve_radio_community_id(community_id)
+  return exportClient.request("POST", "v2/servers/" .. tostring(resolved_community_id) .. "/tones/play", {
+    body = exportClient.with_radio_room_id({
+      tones = tones,
+      playTo = play_to
+    })
+  })
+end
+
+exportClient.getCommunityV2 = function()
+  return exportClient.request("GET", "v2/community")
+end
+
+exportClient.getSubVersionV2 = function()
+  return exportClient.request("GET", "v2/community/sub-version")
+end
+
+exportClient.lookupCommunityV2 = function(query)
+  return exportClient.request("GET", "v2/community/lookup", { query = query })
+end
+
+exportClient.getDepartmentsV2 = function()
+  return exportClient.request("GET", "v2/community/departments")
+end
+
+exportClient.getProfileFieldsV2 = function()
+  return exportClient.request("GET", "v2/community/profile-fields")
+end
+
+exportClient.getClockInTypesV2 = function()
+  return exportClient.request("GET", "v2/community/clockin-types")
+end
+
+exportClient.getCustomLogTypesV2 = function()
+  return exportClient.request("GET", "v2/community/custom-log-types")
+end
+
+exportClient.getPromotionFlowsV2 = function()
+  return exportClient.request("GET", "v2/community/promotion-flows")
+end
+
+exportClient.triggerPromotionFlowsV2 = function(data)
+  return exportClient.request("POST", "v2/community/promotion-flows/trigger", { body = data })
+end
+
+exportClient.undoRankChangeV2 = function(undo_id, data)
+  return exportClient.request("POST",
+    "v2/community/rank-changes/" .. exportClient.encode_path_segment(undo_id) .. "/undo", {
+      body = data or {}
+    })
+end
+
+exportClient.createShortUrlV2 = function(data)
+  return exportClient.request("POST", "v2/community/short-urls", { body = data })
+end
+
+exportClient.getAccountsV2 = function(query)
+  return exportClient.request("GET", "v2/community/accounts", { query = query })
+end
+
+exportClient.searchAccountsV2 = function(query)
+  return exportClient.request("GET", "v2/community/accounts/search", { query = query })
+end
+
+exportClient.getAccountV2 = function(account_id)
+  return exportClient.request("GET", "v2/community/accounts/" .. exportClient.encode_path_segment(account_id))
+end
+
+exportClient.getAccountRanksV2 = function(account_id)
+  return exportClient.request("GET", "v2/community/accounts/" .. exportClient.encode_path_segment(account_id) .. "/ranks")
+end
+
+exportClient.getAccountIdentifiersV2 = function(account_id)
+  return exportClient.request("GET",
+    "v2/community/accounts/" .. exportClient.encode_path_segment(account_id) .. "/identifiers")
+end
+
+exportClient.registerAccountIdentifiersV2 = function(account_id, data)
+  return exportClient.request("POST",
+    "v2/community/accounts/" .. exportClient.encode_path_segment(account_id) .. "/identifiers", {
+      body = data
+    })
+end
+
+exportClient.setAccountNameV2 = function(account_id, data)
+  return exportClient.request("PATCH",
+    "v2/community/accounts/" .. exportClient.encode_path_segment(account_id) .. "/name", {
+      body = data
+    })
+end
+
+exportClient.setAccountRanksV2 = function(account_id, data)
+  return exportClient.request("PATCH",
+    "v2/community/accounts/" .. exportClient.encode_path_segment(account_id) .. "/ranks", {
+      body = data
+    })
+end
+
+exportClient.editProfileFieldsV2 = function(account_id, data)
+  return exportClient.request("PATCH",
+    "v2/community/accounts/" .. exportClient.encode_path_segment(account_id) .. "/profile-fields", {
+      body = data
+    })
+end
+
+exportClient.clockAccountV2 = function(account_id, data)
+  return exportClient.request("POST",
+    "v2/community/accounts/" .. exportClient.encode_path_segment(account_id) .. "/clock", {
+      body = data
+    })
+end
+
+exportClient.getCurrentClockInV2 = function(account_id)
+  return exportClient.request("GET",
+    "v2/community/accounts/" .. exportClient.encode_path_segment(account_id) .. "/clock/current")
+end
+
+exportClient.getLatestActivityV2 = function(account_id, query)
+  return exportClient.request("GET",
+    "v2/community/accounts/" .. exportClient.encode_path_segment(account_id) .. "/activity/latest", {
+      query = query
+    })
+end
+
+exportClient.forceSyncV2 = function(account_id, data)
+  return exportClient.request("POST", "v2/community/accounts/" .. exportClient.encode_path_segment(account_id) .. "/sync",
+    {
+      body = data or {}
+    })
+end
+
+exportClient.addServersV2 = function(data)
+  return exportClient.request("POST", "v2/community/servers", { body = data })
+end
+
+exportClient.getAceConfigV2 = function(server_id)
+  return exportClient.request("GET",
+    "v2/community/servers/" .. tostring(exportClient.resolve_server_id(server_id)) .. "/ace-config")
+end
+
+exportClient.setAceConfigV2 = function(server_id, data)
+  return exportClient.request("PATCH",
+    "v2/community/servers/" .. tostring(exportClient.resolve_server_id(server_id)) .. "/ace-config", {
+      body = data
+    })
+end
+
+exportClient.setServerTypeV2 = function(server_id, data)
+  return exportClient.request("PATCH",
+    "v2/community/servers/" .. tostring(exportClient.resolve_server_id(server_id)) .. "/type", {
+      body = data
+    })
+end
+
+exportClient.verifyWhitelistV2 = function(server_id, data)
+  return exportClient.request("POST",
+    "v2/community/servers/" .. tostring(exportClient.resolve_server_id(server_id)) .. "/whitelist/check", {
+      body = data
+    })
+end
+
+exportClient.getWhitelistV2 = function(server_id)
+  return exportClient.request("GET",
+    "v2/community/servers/" .. tostring(exportClient.resolve_server_id(server_id)) .. "/whitelist")
+end
+
+exportClient.createActivityV2 = function(server_id, data)
+  return exportClient.request("POST",
+    "v2/community/servers/" .. tostring(exportClient.resolve_server_id(server_id)) .. "/activity", {
+      body = data or {}
+    })
+end
+
+exportClient.startActivityV2 = function(server_id, data)
+  return exportClient.request("POST",
+    "v2/community/servers/" .. tostring(exportClient.resolve_server_id(server_id)) .. "/activity/start", {
+      body = data or {}
+    })
+end
+
+exportClient.rsvpEventV2 = function(event_id, data)
+  return exportClient.request("POST", "v2/community/events/" .. exportClient.encode_path_segment(event_id) .. "/rsvps", {
+    body = data
+  })
+end
+
+exportClient.changeFormStageV2 = function(form_id, data)
+  return exportClient.request("PATCH", "v2/community/forms/" .. exportClient.encode_path_segment(form_id) .. "/stage", {
+    body = data
+  })
+end
+
+exportClient.getFormSubmissionsV2 = function(template_id, query)
+  return exportClient.request("GET",
+    "v2/community/forms/" .. exportClient.encode_path_segment(template_id) .. "/submissions", {
+      query = query
+    })
+end
+
+exportClient.getFormLockV2 = function(template_id)
+  return exportClient.request("GET", "v2/community/forms/" .. exportClient.encode_path_segment(template_id) .. "/lock")
+end
+
+exportClient.setFormLockV2 = function(template_id, data)
+  return exportClient.request("PATCH", "v2/community/forms/" .. exportClient.encode_path_segment(template_id) .. "/lock",
+    {
+      body = data
+    })
+end
+
+exportClient.getSubmissionV2 = function(submission_id)
+  return exportClient.request("GET", "v2/community/forms/submissions/" .. exportClient.encode_path_segment(submission_id))
+end
+
+exportClient.getRosterV2 = function(roster_id, query)
+  return exportClient.request("GET", "v2/community/rosters/" .. exportClient.encode_path_segment(roster_id), {
+    query = query
+  })
+end
+
+exportClient.getDisciplinaryPointsV2 = function(account_id)
+  return exportClient.request("GET",
+    "v2/community/disciplinary/accounts/" .. exportClient.encode_path_segment(account_id) .. "/points")
+end
+
+exportClient.getDisciplinaryRecordsV2 = function(account_id)
+  return exportClient.request("GET",
+    "v2/community/disciplinary/accounts/" .. exportClient.encode_path_segment(account_id) .. "/records")
+end
+
+exportClient.addDisciplinaryRecordV2 = function(account_id, data)
+  return exportClient.request("POST",
+    "v2/community/disciplinary/accounts/" .. exportClient.encode_path_segment(account_id) .. "/records", {
+      body = data
+    })
+end
+
+exportClient.setDisciplinaryRecordPointsV2 = function(record_id, data)
+  return exportClient.request("PATCH",
+    "v2/community/disciplinary/records/" .. exportClient.encode_path_segment(record_id) .. "/points", {
+      body = data
+    })
+end
+
+exportClient.setDisciplinaryRecordReasonV2 = function(record_id, data)
+  return exportClient.request("PATCH",
+    "v2/community/disciplinary/records/" .. exportClient.encode_path_segment(record_id) .. "/reason", {
+      body = data
+    })
+end
+
+exportClient.setDisciplinaryRecordStatusV2 = function(record_id, data)
+  return exportClient.request("PATCH",
+    "v2/community/disciplinary/records/" .. exportClient.encode_path_segment(record_id) .. "/status", {
+      body = data
+    })
+end
+
+exportClient.getOnlinePlayersV2 = function(query)
+  return exportClient.request("GET", "v2/community/erlc/players/online", { query = query })
+end
+
+exportClient.getPlayerQueueV2 = function(query)
+  return exportClient.request("GET", "v2/community/erlc/players/queue", { query = query })
+end
+
+exportClient.addErlcRecordV2 = function(data)
+  return exportClient.request("POST", "v2/community/erlc/records", { body = data })
+end
+
+exportClient.executeErlcCommandV2 = function(data)
+  return exportClient.request("POST", "v2/community/erlc/commands", { body = data })
+end
+
+exportClient.lockTeamV2 = function(data)
+  return exportClient.request("POST", "v2/community/erlc/teams/lock", { body = data })
+end
+
+exportClient.unlockTeamV2 = function(data)
+  return exportClient.request("POST", "v2/community/erlc/teams/unlock", { body = data })
+end
+
+exportClient.getCurrentSessionV2 = function(server_id)
+  return exportClient.request("GET", "v2/community/sessions/current", {
+    query = {
+      serverId = exportClient.resolve_server_id(server_id)
+    }
+  })
+end
+
+exportClient.startSessionV2 = function(data)
+  return exportClient.request("POST", "v2/community/sessions", { body = data })
+end
+
+exportClient.stopSessionV2 = function(data)
+  return exportClient.request("PATCH", "v2/community/sessions", { body = data })
+end
+
+exportClient.cancelSessionV2 = function(data)
+  return exportClient.request("DELETE", "v2/community/sessions", { body = data })
+end
+
+local function create_export_client(config)
+  local product = config and config.product
+  if product == nil then
+    error("product is required when instancing.")
+  end
+
+  if product ~= 0 and product ~= 1 and product ~= 2 then
+    error("Only productEnums.CAD, productEnums.CMS, and productEnums.RADIO are currently supported in Sonoran.lua.")
+  end
+
+  exportClient.config = {
+    apiKey = config and config.apiKey or nil,
+    communityId = config and config.communityId or nil,
+    apiUrl = trim_trailing_slashes(config and config.apiUrl or
+      (product == 2 and "https://api.sonoranradio.com" or product == 1 and "https://api.sonorancms.com" or "https://api.sonorancad.com")),
+    defaultServerId = config and config.defaultServerId or 1,
+    roomId = config and (config.radioRoomId or config.roomId) or nil,
+    headers = shallow_copy(config and config.headers or {}),
+    timeoutMs = config and config.timeoutMs or 30000,
+    logLevel = LOG_LEVELS.ERROR
+  }
+
+  if config and config.logLevel ~= nil then
+    exportClient = exportClient.setLogLevel(config.logLevel)
+  end
+
+  exportClient.getLoginPageV2 = function(params)
+    params = params or {}
+    return exportClient.request("GET", "v2/general/login-page", {
+      authenticated = false,
+      query = {
+        url = params.url,
+        communityId = params.communityId or exportClient.config.communityId
+      }
+    })
+  end
+
+  exportClient.cad = create_bound_proxy(exportClient)
+  exportClient.cms = create_bound_proxy(exportClient)
+  exportClient.radio = create_bound_proxy(exportClient)
+
+  return exportClient
+end
+
+return create_client, create_export_client
