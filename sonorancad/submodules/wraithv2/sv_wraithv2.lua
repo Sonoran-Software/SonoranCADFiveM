@@ -11,7 +11,7 @@
 if pluginConfig.enabled then
 
 	local function sendAlprNotification(target, title, plainMessage, htmlMessage, notificationType, queueName, duration)
-		NotifyPlayer(target, {
+		NotifyPlayer(target, ApplyPluginNotificationOverrides(pluginConfig, {
 			title = title,
 			message = plainMessage,
 			htmlMessage = htmlMessage,
@@ -19,7 +19,7 @@ if pluginConfig.enabled then
 			queue = queueName,
 			layout = 'centerLeft',
 			timeout = duration
-		})
+		}))
 	end
 
 	local wk_wars2xVersion = GetResourceMetadata('wk_wars2x', 'version')

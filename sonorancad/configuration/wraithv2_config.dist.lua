@@ -11,6 +11,9 @@ local config = {
     pluginAuthor = "SonoranCAD", -- author
     configVersion = "1.7",
     requiresPlugins = {{name = "lookups", critical = true}}, -- required plugins for this plugin to work, separated by commas
+    -- Optional notification override for this submodule only.
+    -- Valid values: "none", "ox_lib", "lation_ui", "pnotify", "chat"
+    notificationOverride = "none",
     -- use vehicle registration expirations, or not
     useExpires = true,
     -- use middle initials?

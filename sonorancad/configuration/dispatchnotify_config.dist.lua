@@ -22,6 +22,13 @@ local config = {
     ]]
     enableUnitNotify = true,
     --[[
+        Optional notification override for this submodule only.
+        Valid values: "none", "ox_lib", "lation_ui", "pnotify", "chat"
+        Example: set to "chat" to keep dispatch notifications in chat while the
+        rest of SonoranCAD follows the global notificationSystem setting.
+    ]]
+    notificationOverride = "none",
+    --[[
         Specifies what emergency calls are displayed as. Some countries use different numbers (like 999)
     ]]
     emergencyCallType = "911",

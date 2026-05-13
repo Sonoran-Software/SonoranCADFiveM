@@ -6,6 +6,10 @@
     Description: Integrates SonoranCAD PDFs in-game.
 ]]
 CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig)
+    local function notifyPlayer(target, payload)
+        NotifyPlayer(target, ApplyPluginNotificationOverrides(pluginConfig, payload))
+    end
+
     TriggerEvent('SonoranCAD::RegisterPushEvent', 'EVENT_PRINT_RECORD', function(data)
         local printData = data.data
         local unitCache = GetUnitCache()
@@ -189,7 +193,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         if ox_inventory:CanCarryItem(source, 'sonoran_evidence_pdf', 1) then
             ox_inventory:AddItem(source, 'sonoran_evidence_pdf', 1, info, nil, function(success, reason) end)
         else
-            NotifyPlayer(source, {
+            notifyPlayer(source, {
                 title = "Record Printer",
                 message = pluginConfig.translations.couldNotHold,
                 type = "error"

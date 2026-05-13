@@ -13,6 +13,9 @@ local config = {
     pluginName = "frameworksupport", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author
     requiresPlugins = {}, -- required plugins for this plugin to work, separated by commas
+    -- Optional notification override for this submodule only.
+    -- Valid values: "none", "ox_lib", "lation_ui", "pnotify", "chat"
+    notificationOverride = "none",
 
     -- Newer ESX versions use license instead of steam for identity, specify the other below if different
     identityType = "license",

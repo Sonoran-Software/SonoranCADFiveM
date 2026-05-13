@@ -14,6 +14,9 @@ if pluginConfig.enabled then
     if type(pluginConfig.commandName) ~= "string" or pluginConfig.commandName == "" then
         pluginConfig.commandName = "civid"
     end
+    local function notifyPlayer(target, payload)
+        NotifyPlayer(target, ApplyPluginNotificationOverrides(pluginConfig, payload))
+    end
     if pluginConfig.enableIDCardUI then
         if GetResourceState('sonoran_idcard') ~= 'started' then
             if GetResourceState('sonoran_idcard') == 'stopped' then
@@ -118,7 +121,7 @@ if pluginConfig.enabled then
             elseif colorTag == "^3" then
                 notificationType = "warning"
             end
-            NotifyPlayer(player, {
+            notifyPlayer(player, {
                 title = title,
                 message = message,
                 type = notificationType
@@ -181,7 +184,7 @@ if pluginConfig.enabled then
                         if pluginConfig.enableIDCardUI then
                             TriggerClientEvent("SonoranCAD::civint:DisplayID", viewer, char.img, source, name, dob)
                         else
-                            NotifyPlayer(viewer, {
+                            notifyPlayer(viewer, {
                                 title = "ID Lookup",
                                 message = ("Player ID: %s | Name: %s | Date of Birth: %s"):format(source, name, dob),
                                 htmlMessage = ("<h3>ID Lookup</h3><img width=\"96px\" height=\"128px\" align=\"left\" src=\"%s\"></image><p><strong>Player ID:</strong> %s </p><p><strong>Name:</strong> %s </p><p><strong>Date of Birth:</strong> %s</p>"):format(char.img, source, name, dob),
@@ -208,7 +211,7 @@ if pluginConfig.enabled then
                     sendChatMessage(source, "^1", "Error", "Custom IDs are disabled on this server.")
                     return
                 end
-                NotifyPlayer(source, {
+                notifyPlayer(source, {
                     title = "ID",
                     message = "Enter your first and last name, then enter your DOB. Use /id reset to clear it later.",
                     type = "info"

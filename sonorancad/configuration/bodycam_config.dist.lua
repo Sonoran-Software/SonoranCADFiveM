@@ -11,6 +11,9 @@ local config = {
     pluginName = "bodycam", -- name your plugin here
     pluginAuthor = "digitalfire", -- author
     configVersion = "1.3",
+    -- Optional notification override for this submodule only.
+    -- Valid values: "none", "ox_lib", "lation_ui", "pnotify", "chat"
+    notificationOverride = "none",
 
     -- The command name to toggle your body camera on or off.
     command="bodycam",

@@ -10,6 +10,10 @@ CreateThread(function()
     Config.LoadPlugin("calltemplates", function(pluginConfig)
         if not pluginConfig.enabled then return end
 
+        local function notifyPlayer(target, payload)
+            NotifyPlayer(target, ApplyPluginNotificationOverrides(pluginConfig, payload))
+        end
+
         local templateCache = {}
         local templateDirectory = pluginConfig.callTypeDirectory or "submodules/calltemplates/calltypes"
 
@@ -177,7 +181,7 @@ CreateThread(function()
                 debugLog(("[calltemplates] sending dispatch from /%s"):format(commandName or "unknown"))
                 local response = CadApiCreateDispatchCall(payload)
                 if response.success then
-                    NotifyPlayer(source, {
+                    notifyPlayer(source, {
                         title = "SonoranCAD",
                         message = "Your call has been sent to CAD.",
                         type = "success"

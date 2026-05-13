@@ -273,11 +273,15 @@ CreateThread(function()
             end
 
             local function notifyPlayer(playerId, message, notificationType)
-                NotifyPlayer(playerId, {
+                NotifyPlayer(playerId, ApplyPluginNotificationOverrides(pluginConfig, {
                     title = "CAD Display",
                     message = message,
                     type = notificationType or "info"
-                })
+                }))
+            end
+
+            local function notifyPlayerPayload(playerId, payload)
+                NotifyPlayer(playerId, ApplyPluginNotificationOverrides(pluginConfig, payload))
             end
 
             local function clearPendingForPlayer(playerId)
@@ -396,7 +400,7 @@ CreateThread(function()
             RegisterCommand(pluginConfig.commands.cadDisplayMenu, function(source)
                 local allowed, isAdmin = checkPermissions(source)
                 if not allowed then
-                    NotifyPlayer(source, {
+                    notifyPlayerPayload(source, {
                         title = "CAD Display",
                         message = "You do not have permission to use this command.",
                         type = "error"
@@ -417,7 +421,7 @@ CreateThread(function()
                 local src = source
                 local allowed, isAdmin = checkPermissions(src)
                 if not allowed or not isAdmin then
-                    NotifyPlayer(src, {
+                    notifyPlayerPayload(src, {
                         title = "CAD Display",
                         message = "You do not have permission to save placements.",
                         type = "error"
@@ -431,7 +435,7 @@ CreateThread(function()
                 local src = source
                 local allowed, isAdmin = checkPermissions(src)
                 if not allowed or not isAdmin then
-                    NotifyPlayer(src, {
+                    notifyPlayerPayload(src, {
                         title = "CAD Display",
                         message = "You do not have permission to delete placements.",
                         type = "error"
@@ -455,7 +459,7 @@ CreateThread(function()
             RegisterNetEvent("SonoranCAD::caddisplay::SaveWorldPlacement", function(data)
                 local src = source
                 if not checkWorldPlacementPermission(src) then
-                    NotifyPlayer(src, {
+                    notifyPlayerPayload(src, {
                         title = "CAD Display",
                         message = "You do not have permission to save station displays.",
                         type = "error"
@@ -468,7 +472,7 @@ CreateThread(function()
             RegisterNetEvent("SonoranCAD::caddisplay::DeleteWorldPlacement", function(displayId)
                 local src = source
                 if not checkWorldPlacementPermission(src) then
-                    NotifyPlayer(src, {
+                    notifyPlayerPayload(src, {
                         title = "CAD Display",
                         message = "You do not have permission to delete station displays.",
                         type = "error"
@@ -504,7 +508,7 @@ CreateThread(function()
                 local src = source
                 local veh = NetworkGetEntityFromNetworkId(vehNet)
                 if veh == 0 or not DoesEntityExist(veh) then
-                    NotifyPlayer(src, {
+                    notifyPlayerPayload(src, {
                         title = "CAD Display",
                         message = "Unable to identify this vehicle.",
                         type = "error"
@@ -536,7 +540,7 @@ CreateThread(function()
                         requester = src,
                         requesterName = GetPlayerName(src) or ("Player %s"):format(src)
                     })
-                    NotifyPlayer(src, {
+                    notifyPlayerPayload(src, {
                         title = "CAD Display",
                         message = "Control request sent to the current owner.",
                         type = "info"
@@ -549,7 +553,7 @@ CreateThread(function()
                         end
                     end)
                 else
-                    NotifyPlayer(src, {
+                    notifyPlayerPayload(src, {
                         title = "CAD Display",
                         message = "Only the driver or front passenger can take control.",
                         type = "warning"
@@ -588,7 +592,7 @@ CreateThread(function()
                     requester = src,
                     requesterName = GetPlayerName(src) or ("Player %s"):format(src)
                 })
-                NotifyPlayer(src, {
+                notifyPlayerPayload(src, {
                     title = "CAD Display",
                     message = "Control request sent to the current owner.",
                     type = "info"
@@ -610,7 +614,7 @@ CreateThread(function()
                 end
                 pendingRequests[vehNet] = nil
                 if not accepted then
-                    NotifyPlayer(requester, {
+                    notifyPlayerPayload(requester, {
                         title = "CAD Display",
                         message = "Your control request was denied.",
                         type = "error"
@@ -621,12 +625,12 @@ CreateThread(function()
 
                 displayOwners[tostring(vehNet)] = requester
                 syncOwners()
-                NotifyPlayer(requester, {
+                notifyPlayerPayload(requester, {
                     title = "CAD Display",
                     message = "You now have control of the CAD display.",
                     type = "success"
                 })
-                NotifyPlayer(src, {
+                notifyPlayerPayload(src, {
                     title = "CAD Display",
                     message = "You granted control of the CAD display.",
                     type = "success"

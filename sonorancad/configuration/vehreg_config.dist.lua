@@ -9,6 +9,9 @@ local config = {
     pluginName = "vehreg", -- name your plugin here
     pluginAuthor = "Jordan.#2139", -- author
 	configVersion = "1.3",
+    -- Optional notification override for this submodule only.
+    -- Valid values: "none", "ox_lib", "lation_ui", "pnotify", "chat"
+    notificationOverride = "none",
 
     reigsterCommand = "reg", -- Command to register car
     defaultRegExpire = '01/02/2030', -- The default date that all registrations will expire

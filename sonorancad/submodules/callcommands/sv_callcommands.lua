@@ -7,6 +7,9 @@
 ]] CreateThread(function()
     Config.LoadPlugin("callcommands", function(pluginConfig)
         if pluginConfig.enabled then
+            local function notifyPlayer(target, payload)
+                NotifyPlayer(target, ApplyPluginNotificationOverrides(pluginConfig, payload))
+            end
             local random = math.random
             local function uuid()
                 math.randomseed(os.time())
@@ -50,7 +53,7 @@
                     TriggerEvent('SonoranCAD::callcommands:SendCallApi', isEmergency, caller, callLocation,
                         description, source, nil, pluginConfig.useCallLocation, type)
                     -- Sending the user a message stating the call has been sent
-                    NotifyPlayer(source, {
+                    notifyPlayer(source, {
                         title = "SonoranCAD",
                         message = "Your call has been sent to dispatch. Help is on the way!",
                         type = "success"

@@ -240,6 +240,32 @@ local function buildNotificationPayload(input)
     return {message = tostring(input or "")}
 end
 
+function ApplyPluginNotificationOverrides(pluginConfig, input)
+    local notification = buildNotificationPayload(input)
+    if type(pluginConfig) ~= "table" or notification.system ~= nil then
+        return notification
+    end
+
+    local configured = nil
+    if pluginConfig.notificationOverride ~= nil then
+        local override = normalizeNotificationSystem(pluginConfig.notificationOverride)
+        if override ~= nil and override ~= "auto" and override ~= "none" and ValidNotificationSystems[override] then
+            configured = override
+        end
+    elseif pluginConfig.notificationSystem ~= nil then
+        local legacy = normalizeNotificationSystem(pluginConfig.notificationSystem)
+        if legacy ~= nil and ValidNotificationSystems[legacy] then
+            configured = legacy
+        end
+    end
+
+    if configured ~= nil then
+        notification.system = configured
+    end
+
+    return notification
+end
+
 function NotifyClient(input)
     local notification = buildNotificationPayload(input)
     local notificationType = normalizeNotificationType(notification.type)

@@ -14,6 +14,9 @@ local config = {
         {name = "postals", critical = false}
     }, -- required plugins for this plugin to work, separated by commas
     configVersion = "2.0.0",
+    -- Optional notification override for this submodule only.
+    -- Valid values: "none", "ox_lib", "lation_ui", "pnotify", "chat"
+    notificationOverride = "none",
 
     -- Path containing exported call type JSON templates
     callTypeDirectory = "submodules/calltemplates/calltypes",

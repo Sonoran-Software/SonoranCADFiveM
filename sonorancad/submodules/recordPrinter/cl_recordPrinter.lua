@@ -16,6 +16,9 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         SetNuiFocus(false, false)
         SetNuiFocusKeepInput(false)
     end
+    local function notifyClient(payload)
+        NotifyClient(ApplyPluginNotificationOverrides(pluginConfig, payload))
+    end
     local radius = pluginConfig.interactRadius or 3.0
     local baseCommand = pluginConfig.commandPrefix or "printer"
     local defaultCommands = { queue = "queue", clear = "clear", print = "print", share = "share", accept = "accept" }
@@ -70,7 +73,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
             message = ("New record shared by %s."):format(sharedBy)
         end
 
-        NotifyClient({
+        notifyClient({
             title = "Record Printer",
             message = message .. " Use /" .. baseCommand .. " " .. configuredCommands.queue .. " to view queue.",
             type = "success"
@@ -210,7 +213,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
                 notificationType = "success"
             end
         end
-        NotifyClient({
+        notifyClient({
             title = "Record Printer",
             message = msg,
             type = notificationType
@@ -229,7 +232,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
                 rawPath = tostring(rawPath or '')
             end
             local displayName = prettyFileName(rawPath, { keep_ext = true, max_len = pluginConfig.queueDisplayMaxLength or 48 })
-            NotifyClient({
+            notifyClient({
                 title = "Record Printer",
                 message = "Record " .. i .. ": " .. displayName,
                 type = "info"
@@ -365,7 +368,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
             printQueueList()
         elseif action == "clear" then
             printQueue = {}
-            NotifyClient({
+            notifyClient({
                 title = "Record Printer",
                 message = "Print queue cleared.",
                 type = "success"

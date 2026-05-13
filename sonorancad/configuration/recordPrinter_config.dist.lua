@@ -10,6 +10,9 @@ local config = {
     pluginName = "recordPrinter", -- name your plugin here
     pluginAuthor = "SonoranCAD", -- author
     configVersion = "1.1",
+    -- Optional notification override for this submodule only.
+    -- Valid values: "none", "ox_lib", "lation_ui", "pnotify", "chat"
+    notificationOverride = "none",
     recordPurgeDays = 30, -- days until records are purged | set to 0 to disable
     commandPrefix = "printer", -- base command prefix, e.g. /printer queue, /printer print, /printer share
     printQueueCommand = "queue", -- command to print record
