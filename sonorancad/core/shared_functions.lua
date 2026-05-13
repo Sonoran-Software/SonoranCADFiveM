@@ -298,3 +298,10 @@ if IsDuplicityVersion() then
         TriggerClientEvent("SonoranCAD::core:Notify", target, buildNotificationPayload(input))
     end
 end
+
+function isCallbackValid(value)
+    if type(value) == "function" then return true end
+    if type(value) == "table" and rawget(value, "__cfx_functionReference") then return true end
+
+    return false
+end
