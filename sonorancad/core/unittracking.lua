@@ -124,10 +124,16 @@ function GetSourceByCadIdentity(identities)
     return nil
 end
 
-function GetUnitCache(includeDispatchers)
+function GetUnitCache(includeDispatchers, callback)
     if includeDispatchers then
+
+        if isCallbackValid(callback) then callback(UnitCache, ActiveDispatchers) end
+
         return UnitCache, ActiveDispatchers
     end
+
+    if isCallbackValid(callback) then callback(UnitCache, {}) end
+
     return UnitCache
 end
 function GetCallCache() return CallCache end
