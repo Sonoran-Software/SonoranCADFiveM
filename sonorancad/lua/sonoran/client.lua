@@ -878,6 +878,7 @@ local function create_client(config, adapter)
     return self:_request("POST", "v2/general/secrets/verify", { body = { secret = secret } })
   end
   instance.authorizeStreetSignsV2 = function(self, server_id)
+    local server_id = tonumber(server_id)
     local resolved_server_id = self:_resolve_server_id(server_id)
     return self:_request("POST", "v2/general/servers/" .. tostring(resolved_server_id) .. "/street-sign-auth")
   end
