@@ -317,12 +317,12 @@ local function resolve_cached_or_refreshed_community_user_id(identifier, identif
         return identifier
     end
 
+    options = options or {}
     local cached = CadLinkCache[identifier]
-    if cached ~= nil and cached.linked and is_non_empty_string(cached.communityUserId) then
+    if options.forceRefresh ~= true and cached ~= nil and cached.linked and is_non_empty_string(cached.communityUserId) then
         return cached.communityUserId
     end
 
-    options = options or {}
     if options.forceRefresh ~= true and should_use_cached_negative_link(cached) then
         return nil
     end
@@ -340,7 +340,7 @@ local function resolve_cached_or_refreshed_community_user_id(identifier, identif
 
     local refreshed = refresh_link_status_by_identifier(identifier, identifier_type, nil, {
         ttlMs = options.ttlMs,
-        forceRefresh = options.forceRefresh == true
+        forceRefresh = options.forceRefresh == true or options.refreshIfMissing == true
     })
     if refreshed.linked and is_non_empty_string(refreshed.communityUserId) then
         return refreshed.communityUserId
