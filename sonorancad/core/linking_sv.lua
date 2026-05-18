@@ -327,7 +327,13 @@ local function resolve_cached_or_refreshed_community_user_id(identifier, identif
         return nil
     end
 
-    local shouldRefresh = options.forceRefresh == true or options.refreshIfMissing == true or cached == nil
+    -- Negative cache entries only suppress refreshes inside the poll window.
+    -- Once that window expires, default lookups should retry so late account
+    -- linking is eventually observed even without an explicit refresh option.
+    local shouldRefresh = options.forceRefresh == true
+        or options.refreshIfMissing == true
+        or cached == nil
+        or cached.linked ~= true
     if not shouldRefresh then
         return nil
     end
