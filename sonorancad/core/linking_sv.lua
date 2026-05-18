@@ -804,7 +804,7 @@ local function prime_player_link_cache(player)
         tostring(player),
         tostring(communityUserId ~= nil)
     ))
-end)
+end
 
 AddEventHandler("playerJoining", function()
     prime_player_link_cache(source)
