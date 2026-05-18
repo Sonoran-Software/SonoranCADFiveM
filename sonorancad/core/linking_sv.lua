@@ -326,7 +326,9 @@ local function resolve_cached_or_refreshed_community_user_id(identifier, identif
     if options.forceRefresh ~= true and should_use_cached_negative_link(cached) then
         return nil
     end
-    if options.refreshIfMissing ~= true and options.forceRefresh ~= true then
+
+    local shouldRefresh = options.forceRefresh == true or options.refreshIfMissing == true or cached == nil
+    if not shouldRefresh then
         return nil
     end
 
@@ -783,8 +785,7 @@ AddEventHandler("playerDropped", function()
     CadLinkSessions[source] = nil
 end)
 
-AddEventHandler("playerJoining", function()
-    local player = source
+local function prime_player_link_cache(player)
     local identifier, identifier_type = get_player_link_identifier(player)
     if not is_non_empty_string(identifier) then
         return
@@ -797,4 +798,18 @@ AddEventHandler("playerJoining", function()
         tostring(player),
         tostring(communityUserId ~= nil)
     ))
+end)
+
+AddEventHandler("playerJoining", function()
+    prime_player_link_cache(source)
+end)
+
+AddEventHandler("onResourceStart", function(resourceName)
+    if resourceName ~= GetCurrentResourceName() then
+        return
+    end
+
+    for _, player in ipairs(GetPlayers()) do
+        prime_player_link_cache(tonumber(player) or player)
+    end
 end)
