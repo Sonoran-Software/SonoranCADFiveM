@@ -363,7 +363,8 @@ local function handlePushEventPayload(body, rawData, res, source)
 		encodedBody = json.encode(body)
 	end
 
-	infoLog(('Push event received over %s: %s'):format(source, eventType))
+	local encodedPayload = json.encode(body.data or {})
+
 	debugLog(('EVENT[%s]: %s - %s'):format(source, eventType, encodedBody))
 	if Config.enablePushEventForwarding then
 		PerformHttpRequest(Config.pushEventForwardUrl, function(statusCode, forwardRes, headers)
