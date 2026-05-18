@@ -656,6 +656,16 @@ end
 
 exports('isPlayerInCAD', isPlayerInCAD)
 
+local function get_player_error_context(source)
+    local playerName = GetPlayerName(source) or "unknown"
+    return playerName, ("Player ID: %s, Username: %s"):format(tostring(source), tostring(playerName))
+end
+
+local function get_error_message_with_player_context(errorKey, playerContext)
+    local errorText = getErrorText(errorKey) or errorKey or "Unknown error."
+    return ("%s (%s)"):format(errorText, playerContext)
+end
+
 -- Addition Server Functions --
 -- Gets a player's CAD status for a given submodule, checking for link and/or unit as specified in the checks parameter. Returns an object with hasLink, hasUnit and messages array.
 -- @param source - the player's server ID
@@ -676,14 +686,20 @@ function getPlayerCadStatus(source, submodule, checks)
     }
     if checkForLink then
         if not response.hasLink then
-            debugLog(("[cad-status] %s link check failed for player %s"):format(submodule, tostring(source)))
-            sendClientError(source, "PLAYER_NOT_LINKED", nil, chatLinkCommand)
+            local _, playerContext = get_player_error_context(source)
+            debugLog(("[cad-status] %s link check failed for %s"):format(submodule, playerContext))
+            sendClientError(source, "PLAYER_NOT_LINKED", get_error_message_with_player_context("PLAYER_NOT_LINKED", playerContext), chatLinkCommand)
         end
     end
     if checkForUnit then
         if not response.hasUnit then
-            debugLog(("[cad-status] %s unit check failed for player %s"):format(submodule, tostring(source)))
-            sendClientError(source, response.hasLink and "PLAYER_NOT_ONLINE" or "PLAYER_NOT_IN_CAD")
+            local _, playerContext = get_player_error_context(source)
+            debugLog(("[cad-status] %s unit check failed for %s"):format(submodule, playerContext))
+            if response.hasLink then
+                sendClientError(source, "PLAYER_NOT_ONLINE")
+            else
+                sendClientError(source, "PLAYER_NOT_IN_CAD", get_error_message_with_player_context("PLAYER_NOT_IN_CAD", playerContext))
+            end
         end
     end
     if not response.hasLink and checkForLink then
