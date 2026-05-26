@@ -1217,6 +1217,12 @@ local function create_client(config, adapter)
       body = self:_with_radio_room_id({ accIds = acc_ids })
     })
   end
+  instance.unbanMembersV2 = function(self, acc_ids, community_id)
+    local resolved_community_id = self:_resolve_radio_community_id(community_id)
+    return self:_request("POST", "v2/servers/" .. tostring(resolved_community_id) .. "/members/unban", {
+      body = self:_with_radio_room_id({ accIds = acc_ids })
+    })
+  end
   instance.setMemberDisplayNamesV2 = function(self, acc_nicknames, community_id)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     return self:_request("PATCH", "v2/servers/" .. tostring(resolved_community_id) .. "/members/display-names", {
