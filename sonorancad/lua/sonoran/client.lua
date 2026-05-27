@@ -389,32 +389,6 @@ end
 local Client = {}
 Client.__index = Client
 
-local function create_bound_proxy(instance)
-  local proxy = {}
-
-  for key, value in pairs(instance) do
-    if type(value) == "function" then
-      local bound = value
-      proxy[key] = function(_, ...)
-        return bound(instance, ...)
-      end
-    elseif type(key) == "string" and not starts_with(key, "_") then
-      proxy[key] = value
-    end
-  end
-
-  for key, value in pairs(Client) do
-    if type(key) == "string" and not starts_with(key, "_") and type(value) == "function" and proxy[key] == nil then
-      local bound = value
-      proxy[key] = function(_, ...)
-        return bound(instance, ...)
-      end
-    end
-  end
-
-  return proxy
-end
-
 function Client:_assert_positive_integer(value, label)
   if not is_positive_integer(value) then
     error(string.format("%s must be a positive integer.", label))
@@ -1172,6 +1146,18 @@ local function create_client(config, adapter)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     return self:_request("GET", "v2/servers/" .. tostring(resolved_community_id) .. "/channels")
   end
+  instance.setZonesV2 = function(self, data)
+    local resolved_community_id = self:_resolve_radio_community_id(community_id)
+    return self:_request("PUT", "v2/servers/" .. resolved_community_id .. "/zones", {
+      body = strip_keys(data, { "serverId", "apiKey", "id", "key" })
+    })
+  end
+  instance.createGuestTokenV2 = function(self, data)
+    local resolved_community_id = self:_resolve_radio_community_id(community_id)
+    return self:_request("POST", "v2/servers/" .. resolved_community_id .. "/guest-tokens", {
+      body = strip_keys(data, { "serverId", "apiKey", "id", "key" })
+    })
+  end
   instance.getConnectedUsersV2 = function(self, community_id)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     return self:_request("GET", "v2/servers/" .. tostring(resolved_community_id) .. "/connected-users")
@@ -1436,9 +1422,49 @@ local function create_client(config, adapter)
     return self:_request("DELETE", "v2/community/sessions", { body = data })
   end
 
-  instance.cad = create_bound_proxy(instance)
-  instance.cms = create_bound_proxy(instance)
-  instance.radio = create_bound_proxy(instance)
+  local public_methods = {
+    setLogLevel = Client.setLogLevel,
+    setRoomId = Client.setRoomId,
+  }
+
+  for key, value in pairs(instance) do
+    if type(value) == "function" and not starts_with(key, "_") then
+      public_methods[key] = value
+    end
+  end
+
+  local function bind_public_method(name, method)
+    local bound
+    bound = function(first, ...)
+      if type(first) == "table" and (first.__sonoranClient == true or first.__sonoranNamespace == true or type(first[name]) == "function") then
+        return method(instance, ...)
+      end
+
+      return method(instance, first, ...)
+    end
+    return bound
+  end
+
+  local function create_namespace()
+    local namespace = {
+      __sonoranNamespace = true
+    }
+
+    for key, method in pairs(public_methods) do
+      namespace[key] = bind_public_method(key, method)
+    end
+
+    return namespace
+  end
+
+  instance.__sonoranClient = true
+  for key, method in pairs(public_methods) do
+    instance[key] = bind_public_method(key, method)
+  end
+
+  instance.cad = create_namespace()
+  instance.cms = create_namespace()
+  instance.radio = create_namespace()
 
   return instance
 end
