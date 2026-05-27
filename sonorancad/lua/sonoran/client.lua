@@ -441,6 +441,18 @@ function Client:_with_radio_room_id(body)
   return with_room_id
 end
 
+function Client:_store_radio_room_id_from_response(response)
+  local room_id = response
+    and response.success == true
+    and type(response.data) == "table"
+    and response.data.roomId
+    or nil
+
+  if room_id ~= nil and is_positive_integer(room_id) then
+    self._config.roomId = room_id
+  end
+end
+
 function Client:_encode_path_segment(value)
   if value == nil or value == "" then
     error("Path segment is required.")
@@ -1230,9 +1242,14 @@ local function create_client(config, adapter)
   instance.setServerIpV2 = function(self, data)
     local resolved_community_id = self:_resolve_radio_community_id(data and data.communityId)
     local body = strip_keys(data, { "serverId", "communityId" })
-    return self:_request("POST", "v2/servers/" .. tostring(resolved_community_id) .. "/server-ip", {
-      body = self:_with_radio_room_id(body)
+    if body.roomId == nil and self._config.roomId ~= nil then
+      body.roomId = self:_resolve_radio_room_id()
+    end
+    local response = self:_request("POST", "v2/servers/" .. tostring(resolved_community_id) .. "/server-ip", {
+      body = body
     })
+    self:_store_radio_room_id_from_response(response)
+    return response
   end
   instance.setInGameSpeakerLocationsV2 = function(self, locations, community_id)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
