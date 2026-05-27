@@ -18,7 +18,7 @@ local function load_module(path)
   return require(module_name)
 end
 
-local create_client = load_module("lua/sonoran/client.lua")
+local create_client, create_export_client = load_module("lua/sonoran/client.lua")
 local create_fivem_adapter = load_module("lua/sonoran/adapters/fivem.lua")
 
 local Sonoran = {}
@@ -37,8 +37,8 @@ function Sonoran.createClient(config)
   return create_client(config or {}, create_fivem_adapter())
 end
 
-if exports then
-  exports("createClient", Sonoran.createClient)
+function Sonoran.createExportClient(config)
+  return create_export_client(config or {})
 end
 
 return Sonoran

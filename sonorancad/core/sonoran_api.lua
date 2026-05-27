@@ -69,6 +69,29 @@ local function get_cad_client()
     return cadV2Client
 end
 
+local exportClient = nil
+local function createExportClient(config)
+    if exportClient ~= nil then
+        return exportClient
+    end
+    local sonoran = nil
+    if type(Sonoran) == "table" and type(Sonoran.createClient) == "function" then
+        sonoran = Sonoran
+    else
+        sonoran = load_sonoran_module()
+    end
+    exportClient = sonoran.createExportClient(config or {
+        product = sonoran.productEnums and sonoran.productEnums.CAD or 0,
+        apiKey = Config.apiKey,
+        communityId = Config.communityID,
+        apiUrl = resolve_api_url(),
+        defaultServerId = tonumber(tonumber(Config.serverId)) or 1,
+        logLevel = get_sonoran_log_level(sonoran)
+    })
+    return exportClient
+end
+exports("createClient", createExportClient)
+
 function GetCadClient()
     local client = get_cad_client()
     return client.cad or client
