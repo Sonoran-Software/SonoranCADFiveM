@@ -989,6 +989,7 @@ local function create_client(config, adapter)
       body = {
         communityUserId = target and target.communityUserId or nil,
         roblox = target and target.roblox or nil,
+        discord = target and target.discord or nil,
         reason = data and data.reason or nil
       }
     })
