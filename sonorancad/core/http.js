@@ -26,6 +26,34 @@
         }
     }
 
+    function sanitizeHeaderValue(value) {
+        if (value === undefined || value === null) {
+            return "";
+        }
+        if (Array.isArray(value)) {
+            return value
+                .filter((entry) => entry !== undefined && entry !== null)
+                .map((entry) => String(entry))
+                .join(", ");
+        }
+        return String(value);
+    }
+
+    function sanitizeHeaders(headers) {
+        const normalized = {};
+        for (const [key, value] of Object.entries(headers || {})) {
+            normalized[String(key)] = sanitizeHeaderValue(value);
+        }
+        return normalized;
+    }
+
+    function safeCallback(callback, statusCode, body, headers) {
+        const safeStatusCode = Number.isInteger(statusCode) ? statusCode : 0;
+        const safeBody = body === undefined || body === null ? "" : String(body);
+        const safeHeaders = JSON.stringify(sanitizeHeaders(headers));
+        callback(safeStatusCode, safeBody, safeHeaders);
+    }
+
     exports('HandleHttpRequest', (dest, callback, method, data, headers) => {
         emit("SonoranCAD::core:writeLog", "debug", "[http] to: " + dest + " - data: " + dest, JSON.stringify(data));
         const urlObj = url.parse(dest)
@@ -51,7 +79,7 @@
             res.on('end', () => {
                 const body = Buffer.concat(chunks);
                 const encoding = String(res.headers["content-encoding"] || "").toLowerCase();
-                const finish = (decoded) => callback(res.statusCode, decoded, res.headers);
+                const finish = (decoded) => safeCallback(callback, res.statusCode, decoded, res.headers);
 
                 if (encoding.includes("gzip")) {
                     zlib.gunzip(body, (error, decoded) => {
@@ -85,7 +113,7 @@
             let ignore_ids = ["EAI_AGAIN", "ETIMEOUT", "ENOTFOUND"]
             if (!ignore_ids.includes(error.code))
                 console.debug("HTTP error caught: " + JSON.stringify(error));
-            callback(0, JSON.stringify({
+            safeCallback(callback, 0, JSON.stringify({
                 error: "HTTP_REQUEST_FAILED",
                 code: error.code || "UNKNOWN",
                 message: error.message || "HTTP request failed.",

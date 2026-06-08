@@ -251,6 +251,11 @@ SonoranCAD Help
         TriggerClientEvent("SonoranCAD::core:debugModeToggle", -1, Config.debugMode)
         local sonoran = sonoranModule or load_sonoran_module()
         GetCadClient():setLogLevel(get_sonoran_log_level(sonoran))
+    elseif args[1] == "quietprint" then
+        local enabled = GetConvar("sonoran_quietPrint", "false") == "true"
+        local convarString = enabled and "false" or "true"
+        SetConvar("sonoran_quietPrint", convarString)
+        print(("SonoranCAD quietPrint toggled to %s"):format(convarString))
     elseif args[1] == "info" then
         print(dumpInfo())
     elseif args[1] == "support" and args[2] ~= nil then
