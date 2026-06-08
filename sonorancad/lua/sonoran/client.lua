@@ -10,6 +10,28 @@ local function is_positive_integer(value)
   return type(value) == "number" and value >= 1 and value % 1 == 0
 end
 
+local function coerce_positive_integer(value)
+  if is_positive_integer(value) then
+    return value
+  end
+
+  local coerced = tonumber(value)
+  if is_positive_integer(coerced) then
+    return coerced
+  end
+
+  return nil
+end
+
+local function is_truthy_string(value)
+  if type(value) ~= "string" then
+    return false
+  end
+
+  value = value:lower()
+  return value == "1" or value == "true" or value == "yes" or value == "on"
+end
+
 local function is_array(value)
   if type(value) ~= "table" then
     return false
@@ -390,11 +412,12 @@ local Client = {}
 Client.__index = Client
 
 function Client:_assert_positive_integer(value, label)
-  if not is_positive_integer(value) then
+  local coerced = coerce_positive_integer(value)
+  if coerced == nil then
     error(string.format("%s must be a positive integer.", label))
   end
 
-  return value
+  return coerced
 end
 
 function Client:_resolve_server_id(server_id)
@@ -559,12 +582,24 @@ function Client:_is_error_enabled()
   return self._config.logLevel == LOG_LEVELS.ERROR or self._config.logLevel == LOG_LEVELS.DEBUG
 end
 
+function Client:_is_quiet_print_enabled()
+  if self._config.quietPrint ~= nil then
+    return self._config.quietPrint == true or is_truthy_string(self._config.quietPrint)
+  end
+
+  if type(GetConvar) == "function" then
+    return is_truthy_string(GetConvar("sonoran_quietPrint", "false"))
+  end
+
+  return false
+end
+
 function Client:_format_log_value(value)
   return serialize_debug_value(sanitize_value(value))
 end
 
 function Client:_debug_log_http_request(request_options, attempt)
-  if not self:_is_debug_enabled() then
+  if not self:_is_debug_enabled() or self:_is_quiet_print_enabled() then
     return
   end
 
@@ -577,7 +612,7 @@ function Client:_debug_log_http_request(request_options, attempt)
 end
 
 function Client:_debug_log_http_response(response, attempt)
-  if not self:_is_debug_enabled() then
+  if not self:_is_debug_enabled() or self:_is_quiet_print_enabled() then
     return
   end
 
@@ -590,7 +625,7 @@ function Client:_debug_log_http_response(response, attempt)
 end
 
 function Client:_error_log_http_failure(request_options, response, parsed, attempt, message)
-  if not self:_is_error_enabled() then
+  if not self:_is_error_enabled() or self:_is_quiet_print_enabled() then
     return
   end
 
@@ -758,6 +793,7 @@ local function create_client(config, adapter)
       roomId = config and (config.radioRoomId or config.roomId) or nil,
       headers = shallow_copy(config and config.headers or {}),
       timeoutMs = config and config.timeoutMs or 30000,
+      quietPrint = config and config.quietPrint,
       logLevel = LOG_LEVELS.ERROR
     }
   }, Client)
