@@ -5,6 +5,7 @@ local SupportErrorBuffer = {}
 local ERROR_DOC_BASE_URL = "https://sonorancad.com/error/"
 local SupportRefCounter = 0
 local sendConsole
+local QuietPrintStartupComplete = false
 
 local WarningCodes = {
     ['INVALID_API_MODE'] = { code = "WRN-CORE-001", message = "An invalid SonoranCAD API mode was configured. The resource is falling back to production." },
@@ -293,6 +294,284 @@ function SanitizeErrorDetail(value)
     return sanitizeErrorDetail(value)
 end
 
+local function getPlayerLabel(playerId)
+    if type(playerId) ~= "number" or playerId <= 0 or type(GetPlayerName) ~= "function" then
+        return nil
+    end
+    local ok, playerName = pcall(GetPlayerName, playerId)
+    if not ok or playerName == nil or playerName == "" then
+        return nil
+    end
+    return playerName
+end
+
+local function summarizeArgs(args)
+    if type(args) ~= "table" then
+        return nil
+    end
+
+    local values = {}
+    for i = 1, math.min(#args, 3) do
+        local text = sanitizeErrorDetail(args[i])
+        if text ~= nil then
+            values[#values + 1] = text
+        end
+    end
+
+    if #values == 0 then
+        return nil
+    end
+
+    return table.concat(values, " ")
+end
+
+local function captureFrameLocals(level)
+    local captured = {}
+    local index = 1
+    while true do
+        local ok, name, value = pcall(debug.getlocal, level, index)
+        if not ok or name == nil then
+            break
+        end
+        if name ~= "(*temporary)" then
+            captured[name] = value
+        end
+        index = index + 1
+    end
+    return captured
+end
+
+local function splitResourceSource(info)
+    local infoSource = info and info.source or ""
+    if type(infoSource) ~= "string" then
+        return nil, "unknown"
+    end
+    if infoSource:find("^@@") then
+        infoSource = infoSource:gsub("^@@", "")
+    elseif infoSource:find("^@") then
+        infoSource = infoSource:gsub("^@", "")
+    end
+
+    local resourceName, relativePath = infoSource:match("^([^/\\]+)[/\\](.+)$")
+    if resourceName == nil or resourceName == "" then
+        resourceName = infoSource
+        relativePath = infoSource
+    end
+
+    return resourceName, relativePath
+end
+
+local function buildActionFrame(level)
+    local ok, info = pcall(debug.getinfo, level, "nSl")
+    if not ok or type(info) ~= "table" then
+        return nil
+    end
+
+    local infoSource = info.source or ""
+    if type(infoSource) ~= "string" then
+        return nil
+    end
+    if not infoSource:find("@@sonorancad") and not infoSource:find("@@tablet") then
+        return nil
+    end
+    if infoSource:find("@@sonorancad/core/logging.lua") then
+        return nil
+    end
+
+    local locals = captureFrameLocals(level)
+    local actionLabel = nil
+    local actionKind = nil
+    local numericSource = tonumber(locals.source)
+    local numericPlayerId = tonumber(locals.playerId)
+    local actorSource = numericSource or numericPlayerId
+    local actorLabel = nil
+    if actorSource == nil and tonumber(_G.source) ~= nil then
+        actorSource = tonumber(_G.source)
+    end
+    if actorSource ~= nil then
+        local playerLabel = getPlayerLabel(actorSource)
+        if playerLabel ~= nil then
+            actorLabel = ("%s (%s)"):format(actorSource, playerLabel)
+        else
+            actorLabel = tostring(actorSource)
+        end
+    end
+
+    local rawCommand = sanitizeErrorDetail(locals.rawCommand)
+    if rawCommand ~= nil then
+        actionKind = "command"
+        actionLabel = rawCommand
+    elseif type(locals.commandName) == "string" and locals.commandName ~= "" then
+        actionKind = "command"
+        actionLabel = ("/%s"):format(locals.commandName)
+    elseif type(locals.action) == "string" and locals.action ~= "" then
+        actionKind = "action"
+        actionLabel = locals.action
+    end
+
+    local eventLabel = nil
+    if type(locals.eventType) == "string" and locals.eventType ~= "" then
+        eventLabel = locals.eventType
+    elseif type(locals.eventName) == "string" and locals.eventName ~= "" then
+        eventLabel = locals.eventName
+    end
+
+    local method = sanitizeErrorDetail(locals.method)
+    local path = sanitizeErrorDetail(locals.path)
+    local httpLabel = method ~= nil and path ~= nil and ("%s %s"):format(method, path) or nil
+
+    local requesterLabel = nil
+    if type(locals.requester) == "number" and locals.requester > 0 then
+        local requesterName = getPlayerLabel(locals.requester)
+        if requesterName ~= nil then
+            requesterLabel = ("%s (%s)"):format(locals.requester, requesterName)
+        else
+            requesterLabel = tostring(locals.requester)
+        end
+    end
+
+    local argsSummary = summarizeArgs(locals.args)
+
+    local resourceName, relativePath = splitResourceSource(info)
+    local lineNumber = info and (info.currentline or info.linedefined) or nil
+    local functionName = sanitizeErrorDetail(info.name)
+    if actionLabel == nil and eventLabel == nil and httpLabel == nil and resourceName == nil and relativePath == nil then
+        return nil
+    end
+
+    return {
+        actionKind = actionKind,
+        actionLabel = actionLabel,
+        event = eventLabel,
+        http = httpLabel,
+        source = actorLabel,
+        requester = requesterLabel,
+        args = rawCommand == nil and argsSummary or nil,
+        resource = resourceName,
+        file = relativePath,
+        line = type(lineNumber) == "number" and lineNumber > 0 and lineNumber or nil,
+        fn = functionName
+    }
+end
+
+local function captureActionTrace()
+    local frames = {}
+    for level = 4, 10 do
+        local frame = buildActionFrame(level)
+        if frame ~= nil then
+            frames[#frames + 1] = frame
+        end
+    end
+    return frames
+end
+
+local function formatActionTrace(frames)
+    if type(frames) ~= "table" or #frames == 0 then
+        return nil
+    end
+
+    local function buildFrameHeader(frame)
+        if frame.actionLabel ~= nil then
+            return ("%s `%s`"):format(frame.actionKind == "action" and "Action" or "Command", frame.actionLabel)
+        end
+        if frame.event ~= nil then
+            return ("Event `%s`"):format(frame.event)
+        end
+        if frame.http ~= nil then
+            return ("HTTP `%s`"):format(frame.http)
+        end
+        return "Execution"
+    end
+
+    local function buildFrameMeta(frame)
+        local meta = {}
+        if frame.event ~= nil and frame.actionLabel ~= nil then
+            meta[#meta + 1] = ("event `%s`"):format(frame.event)
+        end
+        if frame.http ~= nil then
+            meta[#meta + 1] = ("via `%s`"):format(frame.http)
+        end
+        if frame.source ~= nil then
+            meta[#meta + 1] = ("player %s"):format(frame.source)
+        end
+        if frame.requester ~= nil then
+            meta[#meta + 1] = ("requester %s"):format(frame.requester)
+        end
+        if frame.args ~= nil then
+            meta[#meta + 1] = ("args `%s`"):format(frame.args)
+        end
+        if frame.resource ~= nil then
+            meta[#meta + 1] = ("resource `%s`"):format(frame.resource)
+        end
+        return meta
+    end
+
+    local function buildFrameLocation(frame)
+        local location = nil
+        if frame.file ~= nil and frame.line ~= nil then
+            location = ("%s:%s"):format(frame.file, tostring(frame.line))
+        else
+            location = frame.file
+        end
+        if location ~= nil and frame.fn ~= nil then
+            return ("%s in `%s`"):format(location, frame.fn)
+        end
+        if frame.fn ~= nil then
+            return ("function `%s`"):format(frame.fn)
+        end
+        return location
+    end
+
+    local formatted = {}
+    local causeSummary = nil
+    local contextSummary = nil
+    for index, frame in ipairs(frames) do
+        if type(frame) == "table" then
+            local header = buildFrameHeader(frame)
+            local meta = buildFrameMeta(frame)
+            local location = buildFrameLocation(frame)
+
+            if causeSummary == nil and location ~= nil then
+                causeSummary = ("Likely cause: %s"):format(location)
+            end
+            if contextSummary == nil then
+                local contextParts = { header }
+                if #meta > 0 then
+                    contextParts[#contextParts + 1] = ("(%s)"):format(table.concat(meta, ", "))
+                end
+                contextSummary = "Started from: " .. table.concat(contextParts, " ")
+            end
+
+            local line = ("[%d] %s"):format(index, header)
+            if #meta > 0 then
+                line = ("%s (%s)"):format(line, table.concat(meta, ", "))
+            end
+            if location ~= nil then
+                line = ("%s\n    at %s"):format(line, location)
+            end
+            formatted[#formatted + 1] = line
+        elseif frame ~= nil then
+            formatted[#formatted + 1] = ("[%d] %s"):format(index, tostring(frame))
+        end
+    end
+
+    if #formatted == 0 then
+        return nil
+    end
+
+    local sections = {}
+    if causeSummary ~= nil then
+        sections[#sections + 1] = causeSummary
+    end
+    if contextSummary ~= nil then
+        sections[#sections + 1] = contextSummary
+    end
+    sections[#sections + 1] = "Trace:"
+    sections[#sections + 1] = table.concat(formatted, "\n")
+
+    return table.concat(sections, "\n")
+end
+
 local function buildErrorReport(level, err, msg, ...)
     local fallbackKey = level == "WARNING" and "UNHANDLED_WARNING" or "UNHANDLED_SERVER_ERROR"
     local entry = normalize_log_entry(level, err)
@@ -310,10 +589,15 @@ local function buildErrorReport(level, err, msg, ...)
     local formatted = safeStringFormat(template, ...)
     local sanitizedDetail = sanitizeErrorDetail(rawDetail)
     local supportRef = nextSupportReference()
+    local actionTrace = captureActionTrace()
+    local actionTraceText = formatActionTrace(actionTrace)
     local userMessage = ("%s Support ref: %s Docs: %s"):format(formatted, supportRef, entry.shortlink)
     local logMessage = ("%s: %s Support ref: %s Docs: %s"):format(entry.code, formatted, supportRef, entry.shortlink)
     if sanitizedDetail ~= nil and sanitizedDetail ~= formatted then
         logMessage = ("%s Details: %s"):format(logMessage, sanitizedDetail)
+    end
+    if actionTraceText ~= nil then
+        logMessage = ("%s\n%s"):format(logMessage, actionTraceText)
     end
 
     return {
@@ -323,7 +607,9 @@ local function buildErrorReport(level, err, msg, ...)
         sanitizedDetail = sanitizedDetail,
         supportRef = supportRef,
         userMessage = userMessage,
-        logMessage = logMessage
+        logMessage = logMessage,
+        actionTrace = actionTrace,
+        actionTraceText = actionTraceText
     }
 end
 
@@ -333,11 +619,25 @@ local function appendSupportError(report)
     end
 
     local sourceName = "SonoranCAD"
-    local info = debug.getinfo(4, 'S')
-    if info ~= nil and type(info.source) == "string" and info.source:find("@@sonorancad") then
-        sourceName = info.source:gsub("@@sonorancad/", "")
-        if info.linedefined ~= nil then
-            sourceName = ("%s:%s"):format(sourceName, tostring(info.linedefined))
+    local info = debug.getinfo(4, "nSl")
+    if info ~= nil and type(info) == "table" then
+        local resourceName, relativePath = splitResourceSource(info)
+        local lineNumber = info.currentline or info.linedefined
+        local parts = {}
+        if resourceName ~= nil then
+            parts[#parts + 1] = ("resource=%s"):format(resourceName)
+        end
+        if relativePath ~= nil then
+            parts[#parts + 1] = ("file=%s"):format(relativePath)
+        end
+        if type(lineNumber) == "number" and lineNumber > 0 then
+            parts[#parts + 1] = ("line=%s"):format(tostring(lineNumber))
+        end
+        if type(info.name) == "string" and info.name ~= "" then
+            parts[#parts + 1] = ("fn=%s"):format(info.name)
+        end
+        if #parts > 0 then
+            sourceName = table.concat(parts, " | ")
         end
     end
 
@@ -350,7 +650,9 @@ local function appendSupportError(report)
         supportRef = report.supportRef,
         docs = report.entry.shortlink,
         details = report.sanitizedDetail,
-        source = sourceName
+        source = sourceName,
+        actionTrace = report.actionTrace,
+        actionTraceText = report.actionTraceText
     })
 
     if #SupportErrorBuffer > 250 then
@@ -399,7 +701,11 @@ function sendClientError(target, err, msg, ...)
             args = {notification.chatPrefix, notification.message}
         })
     end
-    sendConsole("ERROR", "^1", report.logMessage)
+    if target == nil or tonumber(target) == nil or tonumber(target) <= 0 then
+        sendConsole("ERROR", "^1", report.logMessage)
+    else
+        sendConsole("DEBUG", "^7", ("Client-facing error: %s"):format(report.logMessage))
+    end
 end
 
 function showClientError(err, msg, ...)
@@ -428,8 +734,17 @@ local function LocalTime()
 	return '' .. h .. ':' .. m .. ':' .. s
 end
 
+function SetQuietPrintStartupComplete(value)
+    QuietPrintStartupComplete = value == true
+end
+
+function IsQuietPrintEnabled()
+    return GetConvar("sonoran_quietPrint", "false") == "true"
+end
+
 sendConsole = function(level, color, message)
     local debugging = true
+    local quietPrint = IsQuietPrintEnabled()
     if Config ~= nil then
         debugging = (Config.debugMode == true and Config.debugMode ~= "false")
     end
@@ -440,7 +755,13 @@ sendConsole = function(level, color, message)
         source = info.source:gsub("@@sonorancad/","")..":"..info.linedefined
     end
     local msg = ("[%s][%s:%s%s^7]%s %s^0"):format(time, debugging and source or "SonoranCAD", color, level, color, message)
-    if (debugging and level == "DEBUG") or level ~= "DEBUG" then
+    local shouldPrint = false
+    if quietPrint then
+        shouldPrint = not QuietPrintStartupComplete and level ~= "DEBUG"
+    else
+        shouldPrint = (debugging and level == "DEBUG") or level ~= "DEBUG"
+    end
+    if shouldPrint then
         print(msg)
     end
     if (level == "ERROR" or level == "WARNING") and IsDuplicityVersion() then

@@ -153,4 +153,5 @@ CreateThread(function()
         infoLog(("Disabled Submodules: %s"):format(
                     table.concat(disableFormatted, ", ")))
     end
+    SetQuietPrintStartupComplete(true)
 end)

@@ -389,32 +389,6 @@ end
 local Client = {}
 Client.__index = Client
 
-local function create_bound_proxy(instance)
-  local proxy = {}
-
-  for key, value in pairs(instance) do
-    if type(value) == "function" then
-      local bound = value
-      proxy[key] = function(_, ...)
-        return bound(instance, ...)
-      end
-    elseif type(key) == "string" and not starts_with(key, "_") then
-      proxy[key] = value
-    end
-  end
-
-  for key, value in pairs(Client) do
-    if type(key) == "string" and not starts_with(key, "_") and type(value) == "function" and proxy[key] == nil then
-      local bound = value
-      proxy[key] = function(_, ...)
-        return bound(instance, ...)
-      end
-    end
-  end
-
-  return proxy
-end
-
 function Client:_assert_positive_integer(value, label)
   if not is_positive_integer(value) then
     error(string.format("%s must be a positive integer.", label))
@@ -465,6 +439,18 @@ function Client:_with_radio_room_id(body)
   local with_room_id = shallow_copy(body or {})
   with_room_id.roomId = self:_resolve_radio_room_id()
   return with_room_id
+end
+
+function Client:_store_radio_room_id_from_response(response)
+  local room_id = response
+    and response.success == true
+    and type(response.data) == "table"
+    and response.data.roomId
+    or nil
+
+  if room_id ~= nil and is_positive_integer(room_id) then
+    self._config.roomId = room_id
+  end
 end
 
 function Client:_encode_path_segment(value)
@@ -989,6 +975,7 @@ local function create_client(config, adapter)
       body = {
         communityUserId = target and target.communityUserId or nil,
         roblox = target and target.roblox or nil,
+        discord = target and target.discord or nil,
         reason = data and data.reason or nil
       }
     })
@@ -1171,6 +1158,18 @@ local function create_client(config, adapter)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     return self:_request("GET", "v2/servers/" .. tostring(resolved_community_id) .. "/channels")
   end
+  instance.setZonesV2 = function(self, data)
+    local resolved_community_id = self:_resolve_radio_community_id(community_id)
+    return self:_request("PUT", "v2/servers/" .. resolved_community_id .. "/zones", {
+      body = strip_keys(data, { "serverId", "apiKey", "id", "key" })
+    })
+  end
+  instance.createGuestTokenV2 = function(self, data)
+    local resolved_community_id = self:_resolve_radio_community_id(community_id)
+    return self:_request("POST", "v2/servers/" .. resolved_community_id .. "/guest-tokens", {
+      body = strip_keys(data, { "serverId", "apiKey", "id", "key" })
+    })
+  end
   instance.getConnectedUsersV2 = function(self, community_id)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     return self:_request("GET", "v2/servers/" .. tostring(resolved_community_id) .. "/connected-users")
@@ -1217,6 +1216,12 @@ local function create_client(config, adapter)
       body = self:_with_radio_room_id({ accIds = acc_ids })
     })
   end
+  instance.unbanMembersV2 = function(self, acc_ids, community_id)
+    local resolved_community_id = self:_resolve_radio_community_id(community_id)
+    return self:_request("POST", "v2/servers/" .. tostring(resolved_community_id) .. "/members/unban", {
+      body = self:_with_radio_room_id({ accIds = acc_ids })
+    })
+  end
   instance.setMemberDisplayNamesV2 = function(self, acc_nicknames, community_id)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     return self:_request("PATCH", "v2/servers/" .. tostring(resolved_community_id) .. "/members/display-names", {
@@ -1237,9 +1242,14 @@ local function create_client(config, adapter)
   instance.setServerIpV2 = function(self, data)
     local resolved_community_id = self:_resolve_radio_community_id(data and data.communityId)
     local body = strip_keys(data, { "serverId", "communityId" })
-    return self:_request("POST", "v2/servers/" .. tostring(resolved_community_id) .. "/server-ip", {
-      body = self:_with_radio_room_id(body)
+    if body.roomId == nil and self._config.roomId ~= nil then
+      body.roomId = self:_resolve_radio_room_id()
+    end
+    local response = self:_request("POST", "v2/servers/" .. tostring(resolved_community_id) .. "/server-ip", {
+      body = body
     })
+    self:_store_radio_room_id_from_response(response)
+    return response
   end
   instance.setInGameSpeakerLocationsV2 = function(self, locations, community_id)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
@@ -1429,9 +1439,49 @@ local function create_client(config, adapter)
     return self:_request("DELETE", "v2/community/sessions", { body = data })
   end
 
-  instance.cad = create_bound_proxy(instance)
-  instance.cms = create_bound_proxy(instance)
-  instance.radio = create_bound_proxy(instance)
+  local public_methods = {
+    setLogLevel = Client.setLogLevel,
+    setRoomId = Client.setRoomId,
+  }
+
+  for key, value in pairs(instance) do
+    if type(value) == "function" and not starts_with(key, "_") then
+      public_methods[key] = value
+    end
+  end
+
+  local function bind_public_method(name, method)
+    local bound
+    bound = function(first, ...)
+      if type(first) == "table" and (first.__sonoranClient == true or first.__sonoranNamespace == true or type(first[name]) == "function") then
+        return method(instance, ...)
+      end
+
+      return method(instance, first, ...)
+    end
+    return bound
+  end
+
+  local function create_namespace()
+    local namespace = {
+      __sonoranNamespace = true
+    }
+
+    for key, method in pairs(public_methods) do
+      namespace[key] = bind_public_method(key, method)
+    end
+
+    return namespace
+  end
+
+  instance.__sonoranClient = true
+  for key, method in pairs(public_methods) do
+    instance[key] = bind_public_method(key, method)
+  end
+
+  instance.cad = create_namespace()
+  instance.cms = create_namespace()
+  instance.radio = create_namespace()
 
   return instance
 end
