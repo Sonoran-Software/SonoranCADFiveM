@@ -90,7 +90,7 @@ function PerformHttpRequestS(url, cb, method, data, headers)
     if not headers then
         headers = {["X-User-Agent"] = "SonoranCAD"}
     end
-    exports["sonorancad"]:HandleHttpRequest(url, cb, method, data, headers)
+    PerformHttpRequest(url, cb, method, data, headers)
 end
 
 function has_value(tab, val)
