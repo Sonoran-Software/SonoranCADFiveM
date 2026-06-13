@@ -91,7 +91,7 @@ Config.GetPluginConfig = function(pluginName)
             return {enabled = false, disableReason = 'deprecated plugin'}
         end
         correctConfig = LoadResourceFile(GetCurrentResourceName(),
-                                         '/configuration/' .. pluginName ..
+                                         'configuration/' .. pluginName ..
                                              '_config.lua')
         if not correctConfig then
             infoLog(
@@ -107,11 +107,11 @@ Config.GetPluginConfig = function(pluginName)
                 warnLog("UNHANDLED_WARNING", ('Using default configurations for %s. Please rename %s_config.dist.lua to %s_config.lua to avoid seeing this message'):format(
                         pluginName, pluginName, pluginName))
                 correctConfig = LoadResourceFile(GetCurrentResourceName(),
-                                                 '/configuration/' .. pluginName ..
+                                                 'configuration/' .. pluginName ..
                                                      '_config.dist.lua')
             else
                 correctConfig = LoadResourceFile(GetCurrentResourceName(),
-                                                 '/configuration/' .. pluginName ..
+                                                 'configuration/' .. pluginName ..
                                                      '_config.lua')
             end
         end
@@ -213,7 +213,7 @@ Config.LoadPlugin = function(pluginName, cb)
             return cb({enabled = false, disableReason = 'Template plugin'})
         end
         correctConfig = LoadResourceFile(GetCurrentResourceName(),
-                                         '/configuration/' .. pluginName ..
+                                         'configuration/' .. pluginName ..
                                              '_config.lua')
         if not correctConfig then
             infoLog(
@@ -229,11 +229,11 @@ Config.LoadPlugin = function(pluginName, cb)
                 warnLog("UNHANDLED_WARNING", ('Using default configurations for %s. Please rename %s_config.dist.lua to %s_config.lua to avoid seeing this message'):format(
                         pluginName, pluginName, pluginName))
                 correctConfig = LoadResourceFile(GetCurrentResourceName(),
-                                                 '/configuration/' .. pluginName ..
+                                                 'configuration/' .. pluginName ..
                                                      '_config.dist.lua')
             else
                 correctConfig = LoadResourceFile(GetCurrentResourceName(),
-                                                 '/configuration/' .. pluginName ..
+                                                 'configuration/' .. pluginName ..
                                                      '_config.lua')
             end
         end
@@ -322,7 +322,7 @@ end
 local updateIgnorePath = GetResourcePath(GetCurrentResourceName()) .. '/configuration/updateIgnore.json'
 local defaultIgnorePath = GetResourcePath(GetCurrentResourceName()) .. '/configuration/updateIgnore.CHANGEME.json'
 
-local updateIgnoreContent = LoadResourceFile(GetCurrentResourceName(), '/configuration/updateIgnore.json')
+local updateIgnoreContent = LoadResourceFile(GetCurrentResourceName(), 'configuration/updateIgnore.json')
 
 if not updateIgnoreContent then
     infoLog('No updateIgnore.json found... attempting to copy default template (updateIgnore.CHANGEME.json)')
@@ -330,9 +330,9 @@ if not updateIgnoreContent then
     if not CopyFile(defaultIgnorePath, updateIgnorePath) then
         warnLog("UNHANDLED_WARNING", 'Failed to copy updateIgnore.CHANGEME.json to updateIgnore.json')
         warnLog("UNHANDLED_WARNING", 'Using default ignore list. Please manually copy updateIgnore.CHANGEME.json to updateIgnore.json to suppress this warning.')
-        updateIgnoreContent = LoadResourceFile(GetCurrentResourceName(), '/configuration/updateIgnore.CHANGEME.json')
+        updateIgnoreContent = LoadResourceFile(GetCurrentResourceName(), 'configuration/updateIgnore.CHANGEME.json')
     else
-        updateIgnoreContent = LoadResourceFile(GetCurrentResourceName(), '/configuration/updateIgnore.json')
+        updateIgnoreContent = LoadResourceFile(GetCurrentResourceName(), 'configuration/updateIgnore.json')
     end
 end
 if updateIgnoreContent then
@@ -348,7 +348,7 @@ end
 
 
 local conf = LoadResourceFile(GetCurrentResourceName(),
-                              '/configuration/config.json')
+                              'configuration/config.json')
 if conf == nil then
     logError('CONFIG_ERROR',
         'Unable to load configuration file. Ensure the file is named correctly (config.json). Check for extra extensions (like config.json.json).')

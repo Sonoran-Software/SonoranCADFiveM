@@ -645,7 +645,7 @@ SetHttpHandler(function(req, res)
 			return
 		end
 	elseif path == '/' then
-		local html = LoadResourceFile(GetCurrentResourceName(), '/core/html/index.html')
+		local html = LoadResourceFile(GetCurrentResourceName(), 'core/html/index.html')
 		res.send(html)
 	else
 		res.send('If you\'re seeing this, sonorancad is loaded.')

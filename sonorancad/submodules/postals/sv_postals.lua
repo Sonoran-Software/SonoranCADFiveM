@@ -33,7 +33,7 @@ CreateThread(function()
 					end
 				end
 			elseif pluginConfig.mode and pluginConfig.mode == 'file' then
-				postalFile = LoadResourceFile(GetCurrentResourceName(), ('/submodules/postals/%s'):format(pluginConfig.customPostalCodesFile))
+				postalFile = LoadResourceFile(GetCurrentResourceName(), ('submodules/postals/%s'):format(pluginConfig.customPostalCodesFile))
 				if postalFile == nil then
 					logError('CUSTOM_POSTALS_FILE_NOT_FOUND', geterrorText('CUSTOM_POSTALS_FILE_NOT_FOUND'):format(pluginConfig.customPostalCodesFile))
 					shouldStop = true

@@ -80,7 +80,7 @@ CreateThread(function()
             Config.critError = true
         end
 
-        local versionRaw = LoadResourceFile(GetCurrentResourceName(), "/version.json")
+        local versionRaw = LoadResourceFile(GetCurrentResourceName(), "version.json")
         local versionfile = versionRaw and json.decode(versionRaw) or nil
         local fxversion = versionfile and versionfile.testedFxServerVersion or nil
         local currentFxVersion = getServerVersion()
