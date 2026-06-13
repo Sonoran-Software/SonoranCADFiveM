@@ -63,8 +63,8 @@ function CheckForPluginUpdate(name)
                     end
                 else
                     debugLog(("Submodule %s has the same configuration version."):format(name))
-                    local distConfig = LoadResourceFile(GetCurrentResourceName(), ("/configuration/%s_config.dist.lua"):format(name))
-                    local normalConfig = LoadResourceFile(GetCurrentResourceName(), ("/configuration/%s_config.lua"):format(name))
+                    local distConfig = LoadResourceFile(GetCurrentResourceName(), ("configuration/%s_config.dist.lua"):format(name))
+                    local normalConfig = LoadResourceFile(GetCurrentResourceName(), ("configuration/%s_config.lua"):format(name))
                     if distConfig and normalConfig then
                         local filePath = ("%s/configuration/config-backup"):format(GetResourcePath(GetCurrentResourceName()))
                         exports['sonorancad']:CreateFolderIfNotExisting(filePath)

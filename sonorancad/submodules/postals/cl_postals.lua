@@ -16,7 +16,7 @@ CreateThread(function()
 				if pluginConfig.mode and pluginConfig.mode == 'event' then
 					return eventPostal
 				elseif pluginConfig.mode and pluginConfig.mode == 'file' then
-					local postalFile = LoadResourceFile(GetCurrentResourceName(), ('/submodules/postals/%s'):format(pluginConfig.customPostalCodesFile))
+					local postalFile = LoadResourceFile(GetCurrentResourceName(), ('submodules/postals/%s'):format(pluginConfig.customPostalCodesFile))
 					if postalFile ~= nil then
 						local postalData = json.decode(postalFile)
                         for i, postal in ipairs(postalData) do postalData[i] = { vec(postal.x, postal.y), code = postal.code } end

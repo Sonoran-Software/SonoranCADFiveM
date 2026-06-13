@@ -86,7 +86,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
     end
 
     local function loadConfig()
-        local loaded = LoadResourceFile(GetResourcePath(GetCurrentResourceName()),'/submodules/recordPrinter/pdfs.json')
+        local loaded = LoadResourceFile(GetResourcePath(GetCurrentResourceName()),'submodules/recordPrinter/pdfs.json')
         if loaded and loaded ~= '' then
             Docs = json.decode(loaded) or {}
         else

@@ -75,7 +75,7 @@ function RunAutoUpdater(manualRun)
     if Config.updateBranch == nil then
         return
     end
-    local f = LoadResourceFile(GetCurrentResourceName(), "/update.zip")
+    local f = LoadResourceFile(GetCurrentResourceName(), "update.zip")
     if f ~= nil then
         -- remove the update file and stop the helper
         ExecuteCommand("stop sonoran_updatehelper")
