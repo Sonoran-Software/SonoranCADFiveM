@@ -1216,6 +1216,12 @@ local function create_client(config, adapter)
       query = shallow_copy(query or {})
     })
   end
+  instance.getTransmissionsV2 = function(self, query, community_id)
+    local resolved_community_id = self:_resolve_radio_community_id(community_id)
+    return self:_request("GET", "v2/servers/" .. tostring(resolved_community_id) .. "/transmissions", {
+      query = shallow_copy(query or {})
+    })
+  end
   instance.getConnectedUserV2 = function(self, identity, community_id)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     local room_id = self:_resolve_radio_room_id()
