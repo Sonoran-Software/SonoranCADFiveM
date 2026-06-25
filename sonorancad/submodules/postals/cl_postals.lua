@@ -10,42 +10,83 @@ CreateThread(function()
 	Config.LoadPlugin('postals', function(pluginConfig)
 		local lastPostal = nil
 		local eventPostal = nil
+		local lastPostalErrorCode = nil
+
+		local function reportPostalFailure(code, msg)
+			if lastPostalErrorCode ~= code then
+				showClientError(code, msg)
+				lastPostalErrorCode = code
+			end
+		end
+
+		local function clearPostalFailure()
+			lastPostalErrorCode = nil
+		end
 		if pluginConfig.enabled then
 			-- Don't touch this!
 			function getNearestPostal()
-				if pluginConfig.mode and pluginConfig.mode == 'event' then
-					return eventPostal
-				elseif pluginConfig.mode and pluginConfig.mode == 'file' then
-					local postalFile = LoadResourceFile(GetCurrentResourceName(), ('submodules/postals/%s'):format(pluginConfig.customPostalCodesFile))
-					if postalFile ~= nil then
-						local postalData = json.decode(postalFile)
-                        for i, postal in ipairs(postalData) do postalData[i] = { vec(postal.x, postal.y), code = postal.code } end
-                        local coords = GetEntityCoords(PlayerPedId())
-                        local _nearestIndex, _nearestD
-                        coords = vec(coords[1], coords[2])
-                        local _total = #postalData
-                        for i = 1, _total do
-                            local D = #(coords - postalData[i][1])
-                            if not _nearestD or D < _nearestD then
-                                _nearestIndex = i
-                                _nearestD = D
-                            end
-                        end
-                        local _code = postalData[_nearestIndex].code
-						return _code
+				local ok, postalOrErr = pcall(function()
+					if pluginConfig.mode and pluginConfig.mode == 'event' then
+						return eventPostal
+					elseif pluginConfig.mode and pluginConfig.mode == 'file' then
+						local postalFile = LoadResourceFile(GetCurrentResourceName(), ('submodules/postals/%s'):format(pluginConfig.customPostalCodesFile))
+						if postalFile == nil then
+							reportPostalFailure('POSTALS_FILE_INVALID', 'Custom postal file not found.')
+							return nil
+						end
+
+						local postalData = SafeJsonDecode(postalFile, 'custom postal file', nil)
+						if type(postalData) ~= 'table' or #postalData == 0 then
+							reportPostalFailure('POSTALS_FILE_INVALID', 'Custom postal file is invalid.')
+							return nil
+						end
+
+						for i, postal in ipairs(postalData) do
+							if postal == nil or postal.x == nil or postal.y == nil or postal.code == nil then
+								reportPostalFailure('POSTALS_FILE_INVALID', 'Custom postal file contains invalid entries.')
+								return nil
+							end
+							postalData[i] = { vec(postal.x, postal.y), code = postal.code }
+						end
+
+						local coords = GetEntityCoords(PlayerPedId())
+						local _nearestIndex, _nearestD
+						coords = vec(coords[1], coords[2])
+						local _total = #postalData
+						for i = 1, _total do
+							local D = #(coords - postalData[i][1])
+							if not _nearestD or D < _nearestD then
+								_nearestIndex = i
+								_nearestD = D
+							end
+						end
+
+						if _nearestIndex == nil then
+							reportPostalFailure('POSTALS_LOOKUP_FAILED', 'Custom postal lookup returned no result.')
+							return nil
+						end
+
+						return postalData[_nearestIndex].code
 					else
-						showClientError('POSTALS_FILE_INVALID', 'Custom postal file not found.')
-						return nil
+						if exports[pluginConfig.nearestPostalResourceName] == nil then
+							reportPostalFailure('POSTALS_RESOURCE_UNAVAILABLE', 'Required postal resource is not loaded.')
+							return nil
+						end
+
+						return exports[pluginConfig.nearestPostalResourceName]:getPostal()
 					end
-				else
-					if exports[pluginConfig.nearestPostalResourceName] ~= nil then
-						local p = exports[pluginConfig.nearestPostalResourceName]:getPostal()
-						return p
-					else
-						showClientError('POSTALS_RESOURCE_UNAVAILABLE', 'Required postal resource is not loaded.')
-						return nil
-					end
+				end)
+
+				if not ok then
+					reportPostalFailure('POSTALS_LOOKUP_FAILED', ('Nearest postal lookup failed: %s'):format(tostring(postalOrErr)))
+					return nil
 				end
+
+				if postalOrErr ~= nil and postalOrErr ~= '' then
+					clearPostalFailure()
+				end
+
+				return postalOrErr
 			end
 			if pluginConfig.mode and pluginConfig.nearestPostalEvent and pluginConfig.mode == 'event' then
 				AddEventHandler(pluginConfig.nearestPostalEvent, function(postal)

@@ -14,6 +14,7 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
         local lastSentTime = nil
         local lastCoords = { x = 0, y = 0, z = 0, w = 0 }
         local lastLightsOn = nil
+        local postalLookupUnavailable = false
 
         local function resolveVehicleType(ped, veh)
             if not ped then
@@ -64,7 +65,13 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
             local var1, var2 = GetStreetNameAtCoord(pos.x, pos.y, pos.z, Citizen.ResultAsInteger(), Citizen.ResultAsInteger())
             local postal = nil
             if isPluginLoaded("postals") then
-                postal = getNearestPostal()
+                if type(getNearestPostal) == "function" then
+                    postal = getNearestPostal()
+                    postalLookupUnavailable = false
+                elseif not postalLookupUnavailable then
+                    showClientError("POSTALS_RESOURCE_UNAVAILABLE", "Postal lookup is unavailable. Continuing without a postal prefix.")
+                    postalLookupUnavailable = true
+                end
             else
                 pluginConfig.prefixPostal = false
             end
