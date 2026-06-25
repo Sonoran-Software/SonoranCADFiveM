@@ -82,6 +82,7 @@ local ErrorCodes = {
     ['PLUGIN_CONFIG_PARSE_FAILED'] = { code = "ERR-PLUG-109", message = "A plugin configuration file could not be parsed." },
     ['POSTALS_RESOURCE_UNAVAILABLE'] = { code = "ERR-LOC-104", message = "Nearest postal data is unavailable." },
     ['POSTALS_FILE_INVALID'] = { code = "ERR-LOC-105", message = "The configured postal file is missing or invalid." },
+    ['POSTALS_LOOKUP_FAILED'] = { code = "ERR-LOC-106", message = "Nearest postal lookup failed, but location updates will continue without a postal prefix." },
     ['FRAMEWORK_QUERY_INVALID'] = { code = "ERR-FW-103", message = "A framework database query or parameter set was invalid." },
     ['VEHREG_NO_CHARACTER'] = { code = "ERR-VR-101", message = "No CAD character was found. Make sure you are logged in to a CAD character first." },
     ['VEHREG_CREATE_FAILED'] = { code = "ERR-VR-102", message = "The vehicle registration record could not be created." },
