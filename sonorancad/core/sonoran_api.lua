@@ -236,6 +236,19 @@ local function cad_api_reason_contains(response, text)
     return CadApiReasonText(reason):lower():find(text:lower(), 1, true) ~= nil
 end
 
+local function get_response_status(response)
+    if type(response) ~= "table" then
+        return nil
+    end
+    if response.status ~= nil then
+        return tonumber(response.status)
+    end
+    if type(response.reason) == "table" and response.reason.status ~= nil then
+        return tonumber(response.reason.status)
+    end
+    return nil
+end
+
 local function get_local_network_error(response)
     local reason = response and response.reason
     if type(reason) ~= "table" then
@@ -305,8 +318,18 @@ local function get_streetsigns_auth_error(response)
 end
 
 local function get_request_specific_error(request_name, response)
-    if tostring(request_name or ""):upper() == "AUTH_STREETSIGNS" then
+    local normalized_request_name = tostring(request_name or ""):upper()
+    if normalized_request_name == "AUTH_STREETSIGNS" then
         return get_streetsigns_auth_error(response)
+    end
+
+    if (normalized_request_name == "CREATE_RECORD" or
+        normalized_request_name == "EDIT_RECORD" or
+        normalized_request_name == "UPDATE_RECORD") and get_response_status(response) == 409 then
+        return {
+            key = "CAD_RECORD_UNIQUE_CONFLICT",
+            message = "A CAD record create or edit request was rejected because a unique field value is already used by another record."
+        }
     end
 
     return nil
@@ -366,6 +389,11 @@ function CadApiLogFailure(request_name, response, payload)
 
         if requestSpecificError.key == "SMARTSIGNS_AUTH_FAILED" then
             logError("SMARTSIGNS_AUTH_FAILED", detail)
+            return
+        end
+
+        if requestSpecificError.key == "CAD_RECORD_UNIQUE_CONFLICT" then
+            logError("CAD_RECORD_UNIQUE_CONFLICT", detail)
             return
         end
 
