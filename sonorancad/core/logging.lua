@@ -69,6 +69,7 @@ local ErrorCodes = {
     ['CAD_API_REQUEST_FAILED'] = { code = "ERR-CORE-029", message = "A CAD API request failed." },
     ['LOCAL_NETWORK_TIMEOUT'] = { code = "ERR-CORE-033", message = "The local server network timed out while connecting to SonoranCAD. Check the server host, firewall, proxy, or upstream network connection." },
     ['LOCAL_NETWORK_CONNECT_TIMEOUT'] = { code = "ERR-CORE-034", message = "The local server connection to SonoranCAD timed out. Check the server host, firewall, proxy, or upstream network connection." },
+    ['CAD_RECORD_UNIQUE_CONFLICT'] = { code = "ERR-CORE-035", message = "The CAD record could not be saved because a unique field value is already used by another record." },
     ['SMARTSIGNS_PLAN_REQUIRED'] = { code = "ERR-SS-101", message = "Smart Signs authentication failed because the CAD community does not have access to the required Smart Signs feature or plan." },
     ['SMARTSIGNS_AUTH_FAILED'] = { code = "ERR-SS-102", message = "Smart Signs authentication failed. Check the SonoranCAD API key, community ID, and server ID configured for this resource." },
     ['SMARTSIGNS_HELPER_STARTED'] = { code = "ERR-SS-103", message = "The smartsigns_sonoran_helper resource is for Smart Signs internal update handling and should not be started directly." },

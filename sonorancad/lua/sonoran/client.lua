@@ -740,20 +740,23 @@ function Client:_request(method, path, options)
       else
         return {
           success = false,
-          reason = parsed ~= nil and parsed or "Request was rate limited."
+          reason = parsed ~= nil and parsed or "Request was rate limited.",
+          status = tonumber(response and response.status) or 429
         }
       end
     elseif tonumber(response and response.status) == 429 then
       self:_error_log_http_failure(request_options, response, parsed, attempt, "HTTP 429 rate limit received. Automatic retries have been exhausted.")
       return {
         success = false,
-        reason = parsed ~= nil and parsed or "Request was rate limited."
+        reason = parsed ~= nil and parsed or "Request was rate limited.",
+        status = tonumber(response and response.status) or 429
       }
     else
       self:_error_log_http_failure(request_options, response, parsed, attempt, "HTTP request failed.")
       return {
         success = false,
-        reason = parsed
+        reason = parsed,
+        status = tonumber(response and response.status) or 0
       }
     end
 
@@ -761,7 +764,8 @@ function Client:_request(method, path, options)
 
   return {
     success = false,
-    reason = "Request was rate limited."
+    reason = "Request was rate limited.",
+    status = 429
   }
 end
 
