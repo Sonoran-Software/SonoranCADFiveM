@@ -249,6 +249,43 @@ local function get_response_status(response)
     return nil
 end
 
+local function get_api_support_ref(response)
+    local reason = response and response.reason
+    local traceId = nil
+    if type(reason) == "table" then
+        traceId = reason.traceId or reason.requestId
+        if traceId == nil and type(reason.data) == "table" then
+            traceId = reason.data.traceId or reason.data.requestId
+        end
+    end
+
+    if traceId == nil then
+        traceId = response and (response.traceId or response.requestId)
+    end
+
+    if traceId == nil then
+        return nil
+    end
+
+    traceId = tostring(traceId)
+    if traceId == "" then
+        return nil
+    end
+    if traceId:match("^SC%-") then
+        return traceId
+    end
+    return "SC-" .. traceId
+end
+
+local function log_cad_api_error(key, detail, response)
+    local supportRef = get_api_support_ref(response)
+    if supportRef ~= nil and type(logErrorWithSupportRef) == "function" then
+        logErrorWithSupportRef(key, supportRef, detail)
+        return
+    end
+    logError(key, detail)
+end
+
 local function get_local_network_error(response)
     local reason = response and response.reason
     if type(reason) ~= "table" then
@@ -376,32 +413,32 @@ function CadApiLogFailure(request_name, response, payload)
             return
         end
 
-        logError("CAD_API_REQUEST_FAILED", detail)
+        log_cad_api_error("CAD_API_REQUEST_FAILED", detail, response)
         return
     end
 
     local requestSpecificError = get_request_specific_error(request_name, response)
     if requestSpecificError ~= nil then
         if requestSpecificError.key == "SMARTSIGNS_PLAN_REQUIRED" then
-            logError("SMARTSIGNS_PLAN_REQUIRED", detail)
+            log_cad_api_error("SMARTSIGNS_PLAN_REQUIRED", detail, response)
             return
         end
 
         if requestSpecificError.key == "SMARTSIGNS_AUTH_FAILED" then
-            logError("SMARTSIGNS_AUTH_FAILED", detail)
+            log_cad_api_error("SMARTSIGNS_AUTH_FAILED", detail, response)
             return
         end
 
         if requestSpecificError.key == "CAD_RECORD_UNIQUE_CONFLICT" then
-            logError("CAD_RECORD_UNIQUE_CONFLICT", detail)
+            log_cad_api_error("CAD_RECORD_UNIQUE_CONFLICT", detail, response)
             return
         end
 
-        logError("CAD_API_REQUEST_FAILED", detail)
+        log_cad_api_error("CAD_API_REQUEST_FAILED", detail, response)
         return
     end
 
-    logError("CAD_API_REQUEST_FAILED", detail)
+    log_cad_api_error("CAD_API_REQUEST_FAILED", detail, response)
 end
 
 local function get_v2_response_id(data)

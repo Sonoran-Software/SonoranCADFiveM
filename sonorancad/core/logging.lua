@@ -615,6 +615,24 @@ local function buildErrorReport(level, err, msg, ...)
     }
 end
 
+local function applySupportReference(report, supportRef)
+    if type(report) ~= "table" or type(supportRef) ~= "string" or supportRef == "" then
+        return report
+    end
+
+    report.supportRef = supportRef
+    report.userMessage = ("%s Support ref: %s Docs: %s"):format(report.formatted, supportRef, report.entry.shortlink)
+    report.logMessage = ("%s: %s Support ref: %s Docs: %s"):format(report.entry.code, report.formatted, supportRef, report.entry.shortlink)
+    if report.sanitizedDetail ~= nil and report.sanitizedDetail ~= report.formatted then
+        report.logMessage = ("%s Details: %s"):format(report.logMessage, report.sanitizedDetail)
+    end
+    if report.actionTraceText ~= nil then
+        report.logMessage = ("%s\n%s"):format(report.logMessage, report.actionTraceText)
+    end
+
+    return report
+end
+
 local function appendSupportError(report)
     if not IsDuplicityVersion() or type(report) ~= "table" or type(report.entry) ~= "table" then
         return
@@ -816,6 +834,14 @@ end
 
 function logError(err, msg, ...)
     local report = buildErrorReport("ERROR", err, msg, ...)
+    appendSupportError(report)
+    sendConsole("ERROR", "^1", report.logMessage)
+end
+
+function logErrorWithSupportRef(err, supportRef, msg, ...)
+    local report = buildErrorReport("ERROR", err, msg, ...)
+    -- API responses include a backend trace ID; use it so support can search the exact logged request.
+    report = applySupportReference(report, supportRef)
     appendSupportError(report)
     sendConsole("ERROR", "^1", report.logMessage)
 end
