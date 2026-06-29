@@ -740,23 +740,20 @@ function Client:_request(method, path, options)
       else
         return {
           success = false,
-          reason = parsed ~= nil and parsed or "Request was rate limited.",
-          status = tonumber(response and response.status) or 429
+          reason = parsed ~= nil and parsed or "Request was rate limited."
         }
       end
     elseif tonumber(response and response.status) == 429 then
       self:_error_log_http_failure(request_options, response, parsed, attempt, "HTTP 429 rate limit received. Automatic retries have been exhausted.")
       return {
         success = false,
-        reason = parsed ~= nil and parsed or "Request was rate limited.",
-        status = tonumber(response and response.status) or 429
+        reason = parsed ~= nil and parsed or "Request was rate limited."
       }
     else
       self:_error_log_http_failure(request_options, response, parsed, attempt, "HTTP request failed.")
       return {
         success = false,
-        reason = parsed,
-        status = tonumber(response and response.status) or 0
+        reason = parsed
       }
     end
 
@@ -764,8 +761,7 @@ function Client:_request(method, path, options)
 
   return {
     success = false,
-    reason = "Request was rate limited.",
-    status = 429
+    reason = "Request was rate limited."
   }
 end
 
@@ -889,10 +885,11 @@ local function create_client(config, adapter)
   instance.getTurnCredentialsV2 = function(self, query)
     return self:_request("GET", "v2/general/turn", { query = query or {} })
   end
-  instance.getServersV2 = function(self)
+  local cad_get_servers_v2 = function(self)
     return self:_request("GET", "v2/general/servers")
   end
-  instance.setServersV2 = function(self, servers, deploy_map)
+  instance.getServersV2 = cad_get_servers_v2
+  local cad_set_servers_v2 = function(self, servers, deploy_map)
     return self:_request("PUT", "v2/general/servers", {
       body = {
         servers = servers,
@@ -900,6 +897,7 @@ local function create_client(config, adapter)
       }
     })
   end
+  instance.setServersV2 = cad_set_servers_v2
   instance.verifySecretV2 = function(self, secret)
     return self:_request("POST", "v2/general/secrets/verify", { body = { secret = secret } })
   end
@@ -1483,6 +1481,12 @@ local function create_client(config, adapter)
   end
   instance.cancelSessionV2 = function(self, data)
     return self:_request("DELETE", "v2/community/sessions", { body = data })
+  end
+
+  if product == 0 then
+    -- CMS server helpers share these public names, so restore the CAD routes when this client is created for CAD.
+    instance.getServersV2 = cad_get_servers_v2
+    instance.setServersV2 = cad_set_servers_v2
   end
 
   local public_methods = {
