@@ -189,22 +189,30 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
         RegisterServerEvent('SonoranCAD::locations:SendLocation')
         AddEventHandler('SonoranCAD::locations:SendLocation', function(currentLocation, position, vehicleType, lightsOn, bodycamPeerId)
             local source = source
-            local cadState = isPlayerInCAD(source)
-            local communityUserId = cadState.communityUserId
-            if not cadState.success then
-                debugLog(("user %s is not fully in CAD, skipped location update. linked=%s online=%s"):format(source, tostring(cadState.linked), tostring(cadState.online)))
-                return
-            end
             local normalizedPosition = normalizeCoords(position)
             if normalizedPosition == nil then
-                debugLog(("UNIT_LOCATION: Skipped %s (invalid coordinates payload: %s)"):format(communityUserId, tostring(position)))
+                debugLog(("UNIT_LOCATION: Skipped player %s (invalid coordinates payload: %s)"):format(tostring(source), tostring(position)))
                 return
             end
             if type(currentLocation) ~= "string" or currentLocation == "" then
-                debugLog(("UNIT_LOCATION: Skipped %s (missing location text during join/update)"):format(communityUserId))
+                debugLog(("UNIT_LOCATION: Skipped player %s (missing location text during join/update)"):format(tostring(source)))
                 return
             end
             local vehiclePayload = buildVehiclePayload(vehicleType, lightsOn)
+            -- Cache every player's location so civilian-originated features like /911
+            -- can include location data without requiring an active CAD unit.
+            LocationCache[source] = {
+                ['location'] = currentLocation,
+                ['coordinates'] = normalizedPosition,
+                ['vehicle'] = vehiclePayload
+            }
+            local cadState = isPlayerInCAD(source)
+            local communityUserId = cadState.communityUserId
+            if not cadState.success then
+                -- Only active CAD units should be published to CAD/livemap.
+                debugLog(("user %s is not fully in CAD, skipped location update. linked=%s online=%s"):format(source, tostring(cadState.linked), tostring(cadState.online)))
+                return
+            end
             local lastSent = LastSent[communityUserId]
             local lastCoords = lastSent and lastSent.coordinates or nil
             local lastHeading = lastSent and lastSent.heading or nil
@@ -219,12 +227,8 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
                 return
             end
 
-            local payload = {
-                ['communityUserId'] = communityUserId,
-                ['location'] = currentLocation,
-                ['coordinates'] = normalizedPosition,
-                ['vehicle'] = vehiclePayload
-            }
+            local payload = cloneTable(LocationCache[source])
+            payload['communityUserId'] = communityUserId
             if bodycamPeerId then
                 payload['peerId'] = bodycamPeerId
             end
