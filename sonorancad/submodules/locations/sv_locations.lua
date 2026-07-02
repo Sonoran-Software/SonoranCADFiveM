@@ -18,7 +18,7 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
         local CoordinateThreshold = 2.0
         local HeadingThreshold = 10.0
         local vehicleModelConfig = {}
-        local vehicleModelConfigPath = "/configuration/livemap_vehicle_models.json"
+        local vehicleModelConfigPath = "configuration/livemap_vehicle_models.json"
 
         local function loadVehicleModelConfig()
             local raw = LoadResourceFile(GetCurrentResourceName(), vehicleModelConfigPath)
