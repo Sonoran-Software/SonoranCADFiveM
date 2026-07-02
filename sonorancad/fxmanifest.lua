@@ -49,6 +49,7 @@ files {
     'core/client_nui/js/*.js',
     'core/client_nui/sounds/*.mp3',
     'core/client_nui/img/*.*',
+    'configuration/livemap_vehicle_models.json',
     'submodules/**/*.mp3',
     'submodules/caddisplay/html/**/*',
     'submodules/postals/*.json',
