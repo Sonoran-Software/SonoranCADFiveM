@@ -704,9 +704,18 @@ CreateThread(function()
             warnLog("UNHANDLED_WARNING", ('Warning: wk_wars2x resource in bad start (%s). Ensure it is started to use the wraithv2 resource.'):format(
                     GetResourceState('wk_wars2x')))
         end
-        if GetResourceState('pNotify') ~= 'started' then
-            warnLog("UNHANDLED_WARNING", ('Warning: pNotify is required to see notifications from the wraithv2 plugin but the resource in bad start (%s). Ensure it is started'):format(
-                    GetResourceState('pNotify')))
+        local wraithConfig = Config.GetPluginConfig('wraithv2') or {}
+        local notification = ApplyPluginNotificationOverrides(wraithConfig, {})
+        local notificationSystem = ResolveNotificationSystem(notification.system)
+        local notificationResources = {
+            ox_lib = 'ox_lib',
+            lation_ui = 'lation_ui',
+            pnotify = 'pNotify'
+        }
+        local notificationResource = notificationResources[notificationSystem]
+        if notificationResource ~= nil and GetResourceState(notificationResource) ~= 'started' then
+            warnLog("UNHANDLED_WARNING", ('Warning: %s is configured for wraithv2 notifications but the resource is in bad start (%s). Ensure it is started or set notificationSystem/notificationOverride to auto/chat.'):format(
+                    notificationResource, GetResourceState(notificationResource)))
         end
     end
     if isPluginLoaded('smartsigns') then
