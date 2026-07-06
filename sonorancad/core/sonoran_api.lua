@@ -263,6 +263,16 @@ local function get_api_support_ref(response)
         traceId = response and (response.traceId or response.requestId)
     end
 
+    if traceId == nil and type(response and response.headers) == "table" then
+        for key, value in pairs(response.headers) do
+            local normalized_key = string.lower(tostring(key))
+            if normalized_key == "x-trace-id" or normalized_key == "x-kong-request-id" then
+                traceId = value
+                break
+            end
+        end
+    end
+
     if traceId == nil then
         return nil
     end
@@ -271,10 +281,7 @@ local function get_api_support_ref(response)
     if traceId == "" then
         return nil
     end
-    if traceId:match("^SC%-") then
-        return traceId
-    end
-    return "SC-" .. traceId
+    return traceId
 end
 
 local function log_cad_api_error(key, detail, response)
@@ -373,13 +380,20 @@ local function get_request_specific_error(request_name, response)
 end
 
 function CadApiSupportErrorText(request_name, response)
+    local supportRef = get_api_support_ref(response)
     local localNetworkError = get_local_network_error(response)
     if localNetworkError ~= nil then
+        if supportRef ~= nil and type(BuildSupportErrorMessageWithTraceId) == "function" then
+            return BuildSupportErrorMessageWithTraceId(localNetworkError.key, supportRef, localNetworkError.message)
+        end
         return BuildSupportErrorMessage(localNetworkError.key, localNetworkError.message)
     end
 
     local requestSpecificError = get_request_specific_error(request_name, response)
     if requestSpecificError ~= nil then
+        if supportRef ~= nil and type(BuildSupportErrorMessageWithTraceId) == "function" then
+            return BuildSupportErrorMessageWithTraceId(requestSpecificError.key, supportRef, requestSpecificError.message)
+        end
         return BuildSupportErrorMessage(requestSpecificError.key, requestSpecificError.message)
     end
 
@@ -390,7 +404,12 @@ function CadApiSupportErrorText(request_name, response)
     if tostring(request_name or ""):upper() == "AUTH_STREETSIGNS" then
         baseMessage = ("%s CAD response: %s"):format(baseMessage, CadApiReasonText(response and response.reason))
     end
-    local message = BuildSupportErrorMessage("CAD_API_REQUEST_FAILED", baseMessage)
+    local message
+    if supportRef ~= nil and type(BuildSupportErrorMessageWithTraceId) == "function" then
+        message = BuildSupportErrorMessageWithTraceId("CAD_API_REQUEST_FAILED", supportRef, baseMessage)
+    else
+        message = BuildSupportErrorMessage("CAD_API_REQUEST_FAILED", baseMessage)
+    end
     return message
 end
 

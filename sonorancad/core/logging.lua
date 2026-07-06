@@ -3,7 +3,6 @@ local DebugBuffer = {}
 local ErrorBuffer = {}
 local SupportErrorBuffer = {}
 local ERROR_DOC_BASE_URL = "https://sonorancad.com/error/"
-local SupportRefCounter = 0
 local sendConsole
 local QuietPrintStartupComplete = false
 
@@ -258,12 +257,6 @@ end
 
 function getWarningMeta(err)
     return normalize_warning_entry(err)
-end
-
-local function nextSupportReference()
-    SupportRefCounter = (SupportRefCounter % 9999) + 1
-    local timestamp = os and os.date("%Y%m%d%H%M%S") or tostring(GetGameTimer and GetGameTimer() or 0)
-    return ("SC-%s-%04d"):format(timestamp, SupportRefCounter)
 end
 
 local function safeStringFormat(template, ...)
@@ -574,6 +567,20 @@ local function formatActionTrace(frames)
     return table.concat(sections, "\n")
 end
 
+local function formatUserErrorMessage(formatted, supportRef, docs)
+    if type(supportRef) == "string" and supportRef ~= "" then
+        return ("%s Support ref: %s Docs: %s"):format(formatted, supportRef, docs)
+    end
+    return ("%s Docs: %s"):format(formatted, docs)
+end
+
+local function formatLogErrorMessage(code, formatted, supportRef, docs)
+    if type(supportRef) == "string" and supportRef ~= "" then
+        return ("%s: %s Support ref: %s Docs: %s"):format(code, formatted, supportRef, docs)
+    end
+    return ("%s: %s Docs: %s"):format(code, formatted, docs)
+end
+
 local function buildErrorReport(level, err, msg, ...)
     local fallbackKey = level == "WARNING" and "UNHANDLED_WARNING" or "UNHANDLED_SERVER_ERROR"
     local entry = normalize_log_entry(level, err)
@@ -590,11 +597,10 @@ local function buildErrorReport(level, err, msg, ...)
     local template = msg or (entry and entry.message) or tostring(err)
     local formatted = safeStringFormat(template, ...)
     local sanitizedDetail = sanitizeErrorDetail(rawDetail)
-    local supportRef = nextSupportReference()
     local actionTrace = captureActionTrace()
     local actionTraceText = formatActionTrace(actionTrace)
-    local userMessage = ("%s Support ref: %s Docs: %s"):format(formatted, supportRef, entry.shortlink)
-    local logMessage = ("%s: %s Support ref: %s Docs: %s"):format(entry.code, formatted, supportRef, entry.shortlink)
+    local userMessage = formatUserErrorMessage(formatted, nil, entry.shortlink)
+    local logMessage = formatLogErrorMessage(entry.code, formatted, nil, entry.shortlink)
     if sanitizedDetail ~= nil and sanitizedDetail ~= formatted then
         logMessage = ("%s Details: %s"):format(logMessage, sanitizedDetail)
     end
@@ -607,7 +613,7 @@ local function buildErrorReport(level, err, msg, ...)
         entry = entry,
         formatted = formatted,
         sanitizedDetail = sanitizedDetail,
-        supportRef = supportRef,
+        supportRef = nil,
         userMessage = userMessage,
         logMessage = logMessage,
         actionTrace = actionTrace,
@@ -621,8 +627,8 @@ local function applySupportReference(report, supportRef)
     end
 
     report.supportRef = supportRef
-    report.userMessage = ("%s Support ref: %s Docs: %s"):format(report.formatted, supportRef, report.entry.shortlink)
-    report.logMessage = ("%s: %s Support ref: %s Docs: %s"):format(report.entry.code, report.formatted, supportRef, report.entry.shortlink)
+    report.userMessage = formatUserErrorMessage(report.formatted, supportRef, report.entry.shortlink)
+    report.logMessage = formatLogErrorMessage(report.entry.code, report.formatted, supportRef, report.entry.shortlink)
     if report.sanitizedDetail ~= nil and report.sanitizedDetail ~= report.formatted then
         report.logMessage = ("%s Details: %s"):format(report.logMessage, report.sanitizedDetail)
     end
@@ -702,6 +708,12 @@ end
 
 function BuildSupportErrorMessage(err, msg, ...)
     local report = buildErrorReport("ERROR", err, msg, ...)
+    return ("%s: %s"):format(report.entry.code, report.userMessage), report
+end
+
+function BuildSupportErrorMessageWithTraceId(err, traceId, msg, ...)
+    local report = buildErrorReport("ERROR", err, msg, ...)
+    report = applySupportReference(report, traceId)
     return ("%s: %s"):format(report.entry.code, report.userMessage), report
 end
 
