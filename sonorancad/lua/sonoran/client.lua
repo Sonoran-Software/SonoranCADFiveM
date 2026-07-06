@@ -192,6 +192,29 @@ local function normalize_headers(headers)
   return normalized
 end
 
+local function extract_response_trace_id(response, parsed)
+  local headers = normalize_headers(response and response.headers)
+  local trace_id = headers["x-trace-id"] or headers["x-kong-request-id"]
+
+  if trace_id == nil and type(parsed) == "table" then
+    trace_id = parsed.traceId or parsed.requestId
+    if trace_id == nil and type(parsed.data) == "table" then
+      trace_id = parsed.data.traceId or parsed.data.requestId
+    end
+  end
+
+  if trace_id == nil then
+    return nil
+  end
+
+  trace_id = tostring(trace_id)
+  if trace_id == "" then
+    return nil
+  end
+
+  return trace_id
+end
+
 local function append_query_parts(parts, encode, key, value)
   if value == nil then
     return
@@ -740,20 +763,23 @@ function Client:_request(method, path, options)
       else
         return {
           success = false,
-          reason = parsed ~= nil and parsed or "Request was rate limited."
+          reason = parsed ~= nil and parsed or "Request was rate limited.",
+          traceId = extract_response_trace_id(response, parsed)
         }
       end
     elseif tonumber(response and response.status) == 429 then
       self:_error_log_http_failure(request_options, response, parsed, attempt, "HTTP 429 rate limit received. Automatic retries have been exhausted.")
       return {
         success = false,
-        reason = parsed ~= nil and parsed or "Request was rate limited."
+        reason = parsed ~= nil and parsed or "Request was rate limited.",
+        traceId = extract_response_trace_id(response, parsed)
       }
     else
       self:_error_log_http_failure(request_options, response, parsed, attempt, "HTTP request failed.")
       return {
         success = false,
-        reason = parsed
+        reason = parsed,
+        traceId = extract_response_trace_id(response, parsed)
       }
     end
 
