@@ -391,17 +391,29 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
             }
             warnLog("UNHANDLED_WARNING", 'Missing critial configuration for Sonrad. Missing syncRadioName configuration, using default values... Please update from sonrad_config.dist.lua')
         end
-        AddEventHandler('SonoranCAD::pushevents:UnitLogin', function(unit)
+        local function syncRadioName(unit)
             if pluginConfig.syncRadioName.enabled then
+                if not unit or not unit.data or not unit.accId then
+                    return
+                end
+
                 local radioName = pluginConfig.syncRadioName.nameFormat
-                radioName = radioName:gsub("{UNIT_NUMBER}", unit.data.unitNum)
-                radioName = radioName:gsub("{UNIT_NAME}", unit.data.name)
+                radioName = radioName:gsub("{UNIT_NUMBER}", tostring(unit.data.unitNum or ""))
+                radioName = radioName:gsub("{UNIT_NAME}", tostring(unit.data.name or ""))
                 local postData = {
                     identity = unit.accId,
                     name = radioName
                 }
                 exports['sonoranradio']:serverNameChange(postData)
             end
+        end
+
+        AddEventHandler('SonoranCAD::pushevents:UnitLogin', function(unit)
+            syncRadioName(unit)
+        end)
+
+        AddEventHandler('SonoranCAD::pushevents:UnitUpdate', function(unit)
+            syncRadioName(unit)
         end)
 
     end
