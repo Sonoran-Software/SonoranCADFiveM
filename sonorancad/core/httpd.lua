@@ -50,8 +50,34 @@ local function decodeRequestJson(body, context)
 	return decoded
 end
 
+local function handleUnitUpdate(body)
+	if not body.data or type(body.data.units) ~= 'table' then
+		return false, 'missing units'
+	end
+
+	for _, unit in ipairs(body.data.units) do
+		if unit and unit.id then
+			SetUnitCache(unit.id, unit)
+			TriggerEvent('SonoranCAD::pushevents:UnitUpdate', unit, unit.status)
+		end
+	end
+
+	return true
+end
+
 local PushEventHandler = {
+	EVENT_UNIT_UPDATE = function(body)
+		return handleUnitUpdate(body)
+	end,
 	EVENT_UNIT_STATUS = function(body)
+		if body.data and type(body.data.units) == 'table' then
+			return handleUnitUpdate(body)
+		end
+
+		if not body.data then
+			return false, 'missing data'
+		end
+
 		if (not body.data.identIds) then
 			return false, 'missing identIds'
 		end
@@ -63,10 +89,10 @@ local PushEventHandler = {
 					SetUnitCache(body.data.identIds[i], unit)
 					TriggerEvent('SonoranCAD::pushevents:UnitUpdate', unit, unit.status)
 					TriggerEvent('SonoranCAD::pushevents:UnitStatusUpdate', unit, unit.status)
-					return true
+				else
+					debugLog(('EVENT_UNIT_STATUS: Unknown unit, idents: %s'):format(json.encode(body.data.identIds)))
+					return false, 'unknown unit'
 				end
-				debugLog(('EVENT_UNIT_STATUS: Unknown unit, idents: %s'):format(json.encode(body.data.identIds)))
-				return false, 'unknown unit'
 			end
 		else
 			return false, 'invalid, no idents'
