@@ -259,6 +259,11 @@ local function openCadTablet()
 	SetFocused(true)
 end
 
+RegisterNetEvent("SonoranCAD::Tablet::OpenCad")
+AddEventHandler("SonoranCAD::Tablet::OpenCad", function()
+	openCadTablet()
+end)
+
 local function setCadTabletSize(args)
 	if not args[1] or not args[2] then
 		PrintChatMessage("Usage: /tablet size <width> <height>")

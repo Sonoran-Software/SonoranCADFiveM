@@ -1217,6 +1217,7 @@ CreateThread(function()
                             notify("Move closer to the CAD display to interact.")
                             return
                         end
+                        TriggerEvent("SonoranCAD::Tablet::OpenCad")
                         TriggerServerEvent("SonoranCAD::caddisplay::ClaimWorldDisplay", tonumber(displayId))
                         return
                     end
