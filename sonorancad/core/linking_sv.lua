@@ -649,13 +649,14 @@ local function set_community_link_for_player(player, account_uuid, secret_uuid)
         raw = response_data
     })
     local session = build_player_session(community_user_id, identifier_type, linked_status, CadLinkSessions[player])
-    session.linked = true
     session.popupOpen = false
     session.lastCheckAt = GetGameTimer()
     session.communityUserId = community_user_id
     CadLinkSessions[player] = session
 
-    infoLog(("Player %s linked CAD account through the tablet iframe."):format(tostring(player)))
+    if session.linked then
+        infoLog(("Player %s linked CAD account through the tablet iframe."):format(tostring(player)))
+    end
     return session
 end
 
