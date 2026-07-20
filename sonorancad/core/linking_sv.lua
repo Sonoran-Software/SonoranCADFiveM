@@ -630,7 +630,7 @@ local function set_community_link_for_player(player, account_uuid, secret_uuid)
         return nil, secret_err
     end
 
-    local response = get_cad_client():setCommunityLinkV2({
+    local response = GetCadClient():setCommunityLinkV2({
         accountUuid = sanitized_account_uuid,
         secretUuid = sanitized_secret_uuid,
         communityUserId = community_user_id
