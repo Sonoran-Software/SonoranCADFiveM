@@ -828,9 +828,9 @@ AddEventHandler("SonoranCAD::Tablet::SetCommunityLink", function(account_uuid, s
         return
     end
 
-    send_tablet_link_status(player, true)
+    send_tablet_link_status(player, session.linked == true)
     TriggerClientEvent("SonoranCAD::links:SsoResult", player, {
-        ok = true,
+        ok = session.linked == true,
         communityUserId = session.communityUserId
     })
 end)
