@@ -896,6 +896,9 @@ local function create_client(config, adapter)
   instance.checkCommunityLinkV2 = function(self, data)
     return self:_request("POST", "v2/general/links/check", { body = data })
   end
+  instance.setCommunityLinkV2 = function(self, data)
+    return self:_request("POST", "v2/general/links/set", { body = data })
+  end
   instance.setAccountPermissionsV2 = function(self, data)
     return self:_request("PATCH", "v2/general/accounts/permissions", { body = normalize_v2_target_aliases(data) })
   end
