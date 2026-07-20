@@ -437,6 +437,14 @@ local function sanitize_sso_id(value)
     return sanitized
 end
 
+local function sanitize_account_link_uuid(value, field_name)
+    local sanitized = trim_string(value)
+    if sanitized == nil or not looks_like_uuid(sanitized) then
+        return nil, ("Invalid %s."):format(field_name)
+    end
+    return sanitized
+end
+
 local function get_session_status_text(linked)
     if linked == true then
         return "Linked successfully."
@@ -605,6 +613,52 @@ local function associate_sso_with_player(player, sso_id)
     return session
 end
 
+-- Associates the authenticated CAD account from the tablet iframe with the
+-- current player's server-derived communityUserId. The secret is never logged.
+local function set_community_link_for_player(player, account_uuid, secret_uuid)
+    local community_user_id, identifier_type = get_player_link_identifier(player)
+    if not is_non_empty_string(community_user_id) then
+        return nil, "Missing player link identifier."
+    end
+
+    local sanitized_account_uuid, account_err = sanitize_account_link_uuid(account_uuid, "account UUID")
+    if sanitized_account_uuid == nil then
+        return nil, account_err
+    end
+    local sanitized_secret_uuid, secret_err = sanitize_account_link_uuid(secret_uuid, "secret UUID")
+    if sanitized_secret_uuid == nil then
+        return nil, secret_err
+    end
+
+    local response = get_cad_client():setCommunityLinkV2({
+        accountUuid = sanitized_account_uuid,
+        secretUuid = sanitized_secret_uuid,
+        communityUserId = community_user_id
+    })
+    if type(response) ~= "table" or response.success ~= true then
+        warnLog("UNHANDLED_WARNING", ("CAD account link failed for player %s (%s): %s"):format(
+            tostring(player), tostring(identifier_type), tostring(response and response.reason or "unknown error")
+        ))
+        return nil, response and response.reason or "Failed to link the CAD account."
+    end
+
+    local response_data = coerce_link_data(response.data)
+    local linked_status = update_link_cache(community_user_id, identifier_type, {
+        linked = response_data.linked ~= false,
+        communityUserId = community_user_id,
+        raw = response_data
+    })
+    local session = build_player_session(community_user_id, identifier_type, linked_status, CadLinkSessions[player])
+    session.linked = true
+    session.popupOpen = false
+    session.lastCheckAt = GetGameTimer()
+    session.communityUserId = community_user_id
+    CadLinkSessions[player] = session
+
+    infoLog(("Player %s linked CAD account through the tablet iframe."):format(tostring(player)))
+    return session
+end
+
 local function check_tablet_link_status(player)
     send_tablet_link_status(player, IsPlayerLinkedToCad(player))
 end
@@ -762,6 +816,22 @@ RegisterNetEvent("SonoranCAD::Tablet::AssociateSsoData")
 AddEventHandler("SonoranCAD::Tablet::AssociateSsoData", function(session, username)
     log_link_debug(("tablet iframe submitted SSO data for player %s"):format(tostring(source)))
     associate_tablet_sso_data(source, session, username)
+end)
+
+RegisterNetEvent("SonoranCAD::Tablet::SetCommunityLink")
+AddEventHandler("SonoranCAD::Tablet::SetCommunityLink", function(account_uuid, secret_uuid)
+    local player = source
+    local session, err = set_community_link_for_player(player, account_uuid, secret_uuid)
+    if session == nil then
+        TriggerClientEvent("sonoran:tablet:failed", player, err)
+        return
+    end
+
+    send_tablet_link_status(player, true)
+    TriggerClientEvent("SonoranCAD::links:SsoResult", player, {
+        ok = true,
+        communityUserId = session.communityUserId
+    })
 end)
 
 AddEventHandler("playerDropped", function()

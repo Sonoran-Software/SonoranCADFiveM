@@ -699,7 +699,11 @@ AddEventHandler("SonoranCAD::Tablet::LinkFound", function()
 end)
 
 RegisterNUICallback('SetLinkInformation', function(data,cb)
-	TriggerServerEvent("SonoranCAD::Tablet::AssociateSsoData", data.session, data.username)
+	if type(data) ~= "table" then
+		cb(false)
+		return
+	end
+	TriggerServerEvent("SonoranCAD::Tablet::SetCommunityLink", data.accountUuid, data.secretUuid)
 	requestTabletLinkStatus()
 	cb(true)
 end)
