@@ -125,6 +125,7 @@ local ErrorCodes = {
     ['BODYCAM_WATCH_ACTIVE'] = { code = "ERR-BC-117", message = "Bodycam cannot be turned off while it is being watched." },
     ['BODYCAM_SOUND_LEVEL_INVALID'] = { code = "ERR-BC-118", message = "The requested bodycam sound level is invalid." },
     ['BODYCAM_UPLOAD_FAILED'] = { code = "ERR-BC-119", message = "The bodycam recording upload failed." },
+    ['BODYCAM_RECORDING_START_TIMEOUT'] = { code = "ERR-BC-120", message = "Bodycam recording could not start because the client stream did not become ready." },
     ['ERS_MAPPING_FAILED'] = { code = "ERR-ERS-101", message = "ERS field mapping failed while transforming payload data." },
     ['ERS_PAYLOAD_MALFORMED'] = { code = "ERR-ERS-102", message = "An ERS payload was malformed or missing required fields." },
     ['ERS_COORDS_MISSING'] = { code = "ERR-ERS-103", message = "An ERS event was missing valid coordinates." },

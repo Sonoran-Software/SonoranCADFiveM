@@ -1061,7 +1061,11 @@
 				}
 				if (event.data.type === "bodycamStream") {
 					if (event.data.enabled) {
-						startBodycamStream(event.data);
+						startBodycamStream(event.data).catch(function (err) {
+							const reason = err && err.message ? err.message : String(err);
+							console.warn(`Bodycam stream: ERR-CORE-906 start failed: ${reason}. More: https://sonorancad.com/error/ERR-CORE-906`);
+							notifyBodycamStreamState(false, `start_exception:${reason}`);
+						});
 					} else {
 						stopBodycamStream();
 					}

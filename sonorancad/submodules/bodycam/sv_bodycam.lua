@@ -530,21 +530,26 @@ CreateThread(function()
             end, false)
 
             RegisterNetEvent('SonoranCAD::bodycam::Request', function()
+                local src = source
                 if Config.apiVersion == -1 then
                     debugLog('API version not set, waiting for it to be set...')
                     while Config.apiVersion == -1 do Wait(1000) end
                 end
-                local uploadToken = ensureUploadToken(source)
-                TriggerClientEvent('SonoranCAD::bodycam::Init', source, 1, Config.apiVersion, uploadToken)
-                sendBodycamUploadConfig(source)
+                local uploadToken = ensureUploadToken(src)
+                TriggerClientEvent('SonoranCAD::bodycam::Init', src, 1, Config.apiVersion, uploadToken)
+                sendBodycamUploadConfig(src)
             end)
 
-            RegisterNetEvent('SonoranCAD::core::PlayerReady', function()
+            RegisterNetEvent('SonoranCAD::core:PlayerReady', function()
+                local src = source
                 if Config.apiVersion == -1 then
                     debugLog('API Version not set, waiting for it to be set...')
                     while Config.apiVersion == -1 do Wait(1000) end
                 end
-                    TriggerClientEvent('SonoranCAD::bodycam:Init', source, 0, Config.apiVersion)
+                local uploadToken = ensureUploadToken(src)
+                debugLog(('Sending bodycam initialization from PlayerReady: src=%s'):format(tostring(src)))
+                TriggerClientEvent('SonoranCAD::bodycam::Init', src, 1, Config.apiVersion, uploadToken)
+                sendBodycamUploadConfig(src)
             end)
 
             RegisterNetEvent('SonoranCAD::bodycam::RequestSound', function()
@@ -563,26 +568,36 @@ CreateThread(function()
             end)
 
             RegisterNetEvent('SonoranCAD::bodycam::RequestToggle', function(manualActivation, toggle)
-                local unit = GetUnitByPlayerId(source)
+                local src = source
+                local unit = GetUnitByPlayerId(src)
+                debugLog(('Bodycam toggle requested: src=%s manual=%s toggle=%s unitFound=%s'):format(
+                    tostring(src), tostring(manualActivation), tostring(toggle), tostring(unit ~= nil)))
 
                 if not toggle then
-                    TriggerClientEvent('SonoranCAD::bodycam::Toggle', source, manualActivation, false)
+                    TriggerClientEvent('SonoranCAD::bodycam::Toggle', src, manualActivation, false)
                     return
                 end
 
                 if pluginConfig.requireUnitDuty and unit == nil then
                     if manualActivation then
-                        local cadState = isPlayerInCAD(source)
+                        local cadState = isPlayerInCAD(src)
+                        local rejectionCode = cadState.linked and 'BODYCAM_NOT_ON_DUTY' or 'PLAYER_NOT_IN_CAD'
+                        local rejectionDetails = ('Bodycam enable rejected: src=%s linked=%s online=%s unitFound=false requireUnitDuty=true'):format(
+                            tostring(src), tostring(cadState.linked), tostring(cadState.online))
                         if cadState.linked then
-                            sendClientError(source, "BODYCAM_NOT_ON_DUTY")
+                            warnLog('BODYCAM_NOT_ON_DUTY', rejectionDetails)
+                            sendClientError(src, "BODYCAM_NOT_ON_DUTY")
                         else
-                            sendClientError(source, "PLAYER_NOT_IN_CAD")
+                            warnLog('PLAYER_NOT_IN_CAD', rejectionDetails)
+                            sendClientError(src, "PLAYER_NOT_IN_CAD")
                         end
+                        TriggerClientEvent('SonoranCAD::bodycam::RecordingStartRejected', src, rejectionCode,
+                            rejectionDetails)
                     end
                     return
                 end
 
-                TriggerClientEvent('SonoranCAD::bodycam::Toggle', source, manualActivation, toggle)
+                TriggerClientEvent('SonoranCAD::bodycam::Toggle', src, manualActivation, toggle)
             end)
 
             AddEventHandler('playerDropped', function()

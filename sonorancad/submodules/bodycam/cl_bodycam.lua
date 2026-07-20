@@ -34,9 +34,13 @@ local recordingActive = false
 local recordingConfig = {}
 local recordingCooldowns = {}
 local pendingRecordingStart = nil
+local bodycamInitialized = false
+local bodycamInitRequestGeneration = 0
+local lastBodycamStreamReason = 'not_initialized'
 local StartPeerStream
 local FlushPendingRecordingStart
 local SchedulePendingRecordingStartRetry
+local RequestBodycamInit
 local BODYCAM_UPLOAD_CHUNK_SIZE = 240000
 -- Use FiveM's default latent-event throttle for large client->server bodycam uploads.
 local BODYCAM_UPLOAD_LATENT_BPS = 0
@@ -285,6 +289,17 @@ CreateThread(function()
                 return {}
             end
 
+            local function getRecordingReadinessDetails()
+                return ('initialized=%s peerStreamEnabled=%s bodyCamOn=%s displayOn=%s streamReady=%s streamReason=%s'):format(
+                    tostring(bodycamInitialized),
+                    tostring(peerStreamEnabled),
+                    tostring(bodyCamOn),
+                    tostring(bodyCamDisplayOn),
+                    tostring(peerStreamReady),
+                    tostring(lastBodycamStreamReason or 'unknown')
+                )
+            end
+
             local function canExternalRecordingControl(sourceType)
                 if not forceDisplayOff then
                     return true
@@ -329,7 +344,8 @@ CreateThread(function()
                             action = action,
                             sourceType = sourceType,
                             trigger = normalizedTrigger,
-                            reason = reason
+                            reason = reason,
+                            requestedAt = nowMs()
                         }
                         if not bodyCamDisplayOn then
                             TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', true, true)
@@ -345,15 +361,24 @@ CreateThread(function()
                     logRecordingEvent('debug', 'recording_start', sourceType, normalizedTrigger, reason)
                 else
                     local cancelledPendingStart = false
+                    local cancelledPending = nil
                     if pendingRecordingStart and sourceType == 'manual' then
-                        debugLog('Cancelling pending manual recording start.')
+                        cancelledPending = pendingRecordingStart
                         pendingRecordingStart = nil
                         cancelledPendingStart = true
+                        local elapsedMs = math.max(0, nowMs() - (tonumber(cancelledPending.requestedAt) or nowMs()))
+                        local details = ('Pending recording cancelled after %sms: %s'):format(elapsedMs, getRecordingReadinessDetails())
+                        debugLog(details)
+                        logRecordingEvent('warn', 'recording_start_cancelled', cancelledPending.sourceType,
+                            cancelledPending.trigger, ('ERR-BC-114 %s'):format(details))
                     end
                     if not recordingActive then
                         if sourceType == 'manual' then
                             if cancelledPendingStart then
-                                showClientError('BODYCAM_RECORDING_INACTIVE', 'Pending recording cancelled.')
+                                local elapsedMs = math.max(0, nowMs() - (tonumber(cancelledPending.requestedAt) or nowMs()))
+                                showClientError('BODYCAM_RECORDING_INACTIVE',
+                                    ('Pending recording cancelled before it became ready after %sms (%s).'):format(
+                                        elapsedMs, getRecordingReadinessDetails()))
                             else
                                 showClientError('BODYCAM_RECORDING_INACTIVE')
                             end
@@ -419,12 +444,15 @@ CreateThread(function()
                     return
                 end
                 if attempts <= 0 then
-                    debugLog(('Pending recording start timed out: bodyCamOn=%s displayOn=%s streamReady=%s reason=%s'):format(
-                        tostring(bodyCamOn),
-                        tostring(bodyCamDisplayOn),
-                        tostring(peerStreamReady),
-                        tostring(reason or 'unknown')
-                    ))
+                    local pending = pendingRecordingStart
+                    pendingRecordingStart = nil
+                    local elapsedMs = math.max(0, nowMs() - (tonumber(pending and pending.requestedAt) or nowMs()))
+                    local details = ('Recording start timed out after %sms: %s retryReason=%s'):format(
+                        elapsedMs, getRecordingReadinessDetails(), tostring(reason or 'unknown'))
+                    debugLog(details)
+                    logRecordingEvent('warn', 'recording_start_timeout', pending and pending.sourceType,
+                        pending and pending.trigger, ('ERR-BC-120 %s'):format(details))
+                    showClientError('BODYCAM_RECORDING_START_TIMEOUT', details)
                     return
                 end
                 SetTimeout(500, function()
@@ -524,6 +552,28 @@ CreateThread(function()
                 })
             end
 
+            RequestBodycamInit = function(reason, attemptsRemaining)
+                if bodycamInitialized then
+                    return
+                end
+                bodycamInitRequestGeneration = bodycamInitRequestGeneration + 1
+                local generation = bodycamInitRequestGeneration
+                local function request(remaining)
+                    if bodycamInitialized or generation ~= bodycamInitRequestGeneration then
+                        return
+                    end
+                    debugLog(('Requesting bodycam initialization: reason=%s attemptsRemaining=%s'):format(
+                        tostring(reason or 'unknown'), tostring(remaining)))
+                    TriggerServerEvent('SonoranCAD::bodycam::Request')
+                    if remaining > 1 then
+                        SetTimeout(5000, function()
+                            request(remaining - 1)
+                        end)
+                    end
+                end
+                request(tonumber(attemptsRemaining) or 4)
+            end
+
             RegisterNUICallback('bodycamPeerId', function(data, cb)
                 if data and data.id and data.id ~= lastPeerId then
                     lastPeerId = data.id
@@ -536,6 +586,7 @@ CreateThread(function()
             RegisterNUICallback('bodycamStreamState', function(data, cb)
                 local ready = data and data.ready == true
                 peerStreamReady = ready
+                lastBodycamStreamReason = tostring(data and data.reason or (ready and 'ready' or 'unknown'))
                 debugLog(('Bodycam stream state changed: ready=%s reason=%s active=%s displayOn=%s'):format(
                     tostring(ready),
                     tostring(data and data.reason or 'unknown'),
@@ -722,7 +773,7 @@ CreateThread(function()
             end
 
             AddEventHandler('playerSpawned', function()
-                TriggerServerEvent('SonoranCAD::bodycam::Request')
+                RequestBodycamInit('player_spawned', 4)
             end)
 
             TriggerEvent('chat:addSuggestion', '/' .. pluginConfig.command, '',
@@ -853,13 +904,15 @@ CreateThread(function()
 
             RegisterNetEvent('SonoranCAD::bodycam::Init', function(isReady, apiVersion, uploadToken)
                 if isReady == 0 then
-                    CreateThread(function()
-                        debugLog('Bodycam not ready, retrying in 10s')
-                        Wait(10000)
-                        TriggerServerEvent('SonoranCAD::bodycam::Request')
-                    end)
+                    debugLog('Bodycam server reported not ready; scheduling another initialization request.')
+                    RequestBodycamInit('server_not_ready', 4)
                     return
                 end
+                bodycamInitialized = true
+                bodycamInitRequestGeneration = bodycamInitRequestGeneration + 1
+                lastBodycamStreamReason = 'initializing'
+                debugLog(('Bodycam initialization received: apiVersion=%s hasUploadToken=%s'):format(
+                    tostring(apiVersion), tostring(uploadToken ~= nil and uploadToken ~= '')))
                 if apiVersion ~= -1 then
                     Config.apiVersion = apiVersion
                 end
@@ -870,118 +923,130 @@ CreateThread(function()
 
                 StartPeerStream()
                 applyDisplayState()
-
-                RegisterNetEvent('SonoranCAD::bodycam::Toggle', function(manualActivation, toggle, forceOff)
-                    if forceDisplayOff and not manualActivation then
-                        return
-                    end
-                    if not IsWearingBodycam() then
-                        if manualActivation then
-                            showClientError('BODYCAM_NOT_WORN')
-                            return
-                        end
-                    end
-
-                    if manualActivation and not toggle and watchingDisplayOn and not forceOff then
-                        showClientError('BODYCAM_WATCH_ACTIVE')
-                        return
-                    end
-
-                    if forceOff then
-                        forceDisplayOff = true
-                    elseif manualActivation and toggle then
-                        forceDisplayOff = false
-                    end
-
-                    if manualActivation and doAnimation then
-                        local ped = PlayerPedId()
-                        RequestAnimDict("clothingtie")
-                        while not HasAnimDictLoaded("clothingtie") do
-                            Wait(10)
-                        end
-                        TaskPlayAnim(ped, "clothingtie", "outro", 8.0, 2.0, 1880, 51, 2.0, false, false, false)
-                        Wait(1880)
-                    end
-
-                    local wasDisplayOn = bodyCamDisplayOn
-
-                    if manualActivation then
-                        if toggle then
-                            manualDisplayOn = true
-                        else
-                            manualDisplayOn = false
-                            autoDisplayOn = false
-                        end
-                    else
-                        if toggle then
-                            autoDisplayOn = true
-                        else
-                            autoDisplayOn = false
-                        end
-                    end
-
-                    applyDisplayState()
-                    if toggle and not forceDisplayOff then
-                        StartPeerStream()
-                    elseif forceOff then
-                        StopPeerStream()
-                    end
-
-                    if wasDisplayOn ~= bodyCamDisplayOn then
-                        if bodyCamDisplayOn then
-                            sendBodycamInfo('Bodycam enabled')
-                            PlayBeepSound()
-                            FlushPendingRecordingStart('toggle_enabled')
-                        else
-                            sendBodycamInfo('Bodycam disabled')
-                            PlayOffBeep()
-                            if pluginConfig.enablePadShake then
-                                SetPadShake(0, 2000, 200)
-                            end
-                        end
-                    end
-                end)
-                RegisterNetEvent('SonoranCAD::bodycam::CommandToggle', function()
-                    TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', true, not bodyCamDisplayOn)
-                end)
-                RegisterNetEvent('SonoranCAD::bodycam::SetSoundLevel', function(level)
-                    if level then
-                        level = tonumber(level)
-                        if not level or level <= 0 or level > 1 then
-                            errorLog('BODYCAM_SOUND_LEVEL_INVALID', 'Sound level must be a number greater than 0 and less than or equal to 1.')
-                            showClientError('BODYCAM_SOUND_LEVEL_INVALID')
-                            return
-                        end
-                        soundLevel = tonumber(level)
-                        sendBodycamInfo(('Sound level set to %s'):format(soundLevel))
-                    else
-                        sendBodycamInfo(('Current sound level is %s'):format((soundLevel)))
-                    end
-                end)
-                RegisterNetEvent('SonoranCAD::bodycam::ToggleAnimation', function()
-                    if doAnimation then
-                        doAnimation = false
-                    else
-                        doAnimation = true
-                    end
-                    sendBodycamInfo(('Animations set to %s'):format(doAnimation))
-                end)
-                RegisterNetEvent('SonoranCAD::bodycam::ToggleOverlay', function()
-                    if showOverlay then
-                        showOverlay = false
-                    else
-                        showOverlay = true
-                    end
-                    if bodyCamDisplayOn then
-                        SendNUIMessage({
-                            type = 'bodycamOverlay',
-                            visible = showOverlay,
-                            location = pluginConfig.overlayLocation
-                        })
-                    end
-                    sendBodycamInfo(('Overlay set to %s'):format(showOverlay))
-                end)
             end)
+
+            RegisterNetEvent('SonoranCAD::bodycam::Toggle', function(manualActivation, toggle, forceOff)
+                debugLog(('Bodycam toggle received: manual=%s toggle=%s forceOff=%s initialized=%s'):format(
+                    tostring(manualActivation), tostring(toggle), tostring(forceOff), tostring(bodycamInitialized)))
+                if forceDisplayOff and not manualActivation then
+                    return
+                end
+                if not IsWearingBodycam() then
+                    if manualActivation then
+                        showClientError('BODYCAM_NOT_WORN')
+                        return
+                    end
+                end
+
+                if manualActivation and not toggle and watchingDisplayOn and not forceOff then
+                    showClientError('BODYCAM_WATCH_ACTIVE')
+                    return
+                end
+
+                if forceOff then
+                    forceDisplayOff = true
+                elseif manualActivation and toggle then
+                    forceDisplayOff = false
+                end
+
+                if manualActivation and doAnimation then
+                    local ped = PlayerPedId()
+                    RequestAnimDict("clothingtie")
+                    while not HasAnimDictLoaded("clothingtie") do
+                        Wait(10)
+                    end
+                    TaskPlayAnim(ped, "clothingtie", "outro", 8.0, 2.0, 1880, 51, 2.0, false, false, false)
+                    Wait(1880)
+                end
+
+                local wasDisplayOn = bodyCamDisplayOn
+
+                if manualActivation then
+                    if toggle then
+                        manualDisplayOn = true
+                    else
+                        manualDisplayOn = false
+                        autoDisplayOn = false
+                    end
+                else
+                    if toggle then
+                        autoDisplayOn = true
+                    else
+                        autoDisplayOn = false
+                    end
+                end
+
+                applyDisplayState()
+                if toggle and not forceDisplayOff then
+                    StartPeerStream()
+                elseif forceOff then
+                    StopPeerStream()
+                end
+
+                if wasDisplayOn ~= bodyCamDisplayOn then
+                    if bodyCamDisplayOn then
+                        sendBodycamInfo('Bodycam enabled')
+                        PlayBeepSound()
+                        FlushPendingRecordingStart('toggle_enabled')
+                    else
+                        sendBodycamInfo('Bodycam disabled')
+                        PlayOffBeep()
+                        if pluginConfig.enablePadShake then
+                            SetPadShake(0, 2000, 200)
+                        end
+                    end
+                end
+            end)
+
+            RegisterNetEvent('SonoranCAD::bodycam::RecordingStartRejected', function(code, details)
+                if pendingRecordingStart then
+                    pendingRecordingStart = nil
+                end
+                debugLog(('Bodycam recording start rejected by server: code=%s details=%s'):format(
+                    tostring(code or 'unknown'), tostring(details or 'none')))
+            end)
+            RegisterNetEvent('SonoranCAD::bodycam::CommandToggle', function()
+                TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', true, not bodyCamDisplayOn)
+            end)
+            RegisterNetEvent('SonoranCAD::bodycam::SetSoundLevel', function(level)
+                if level then
+                    level = tonumber(level)
+                    if not level or level <= 0 or level > 1 then
+                        errorLog('BODYCAM_SOUND_LEVEL_INVALID', 'Sound level must be a number greater than 0 and less than or equal to 1.')
+                        showClientError('BODYCAM_SOUND_LEVEL_INVALID')
+                        return
+                    end
+                    soundLevel = tonumber(level)
+                    sendBodycamInfo(('Sound level set to %s'):format(soundLevel))
+                else
+                    sendBodycamInfo(('Current sound level is %s'):format((soundLevel)))
+                end
+            end)
+            RegisterNetEvent('SonoranCAD::bodycam::ToggleAnimation', function()
+                if doAnimation then
+                    doAnimation = false
+                else
+                    doAnimation = true
+                end
+                sendBodycamInfo(('Animations set to %s'):format(doAnimation))
+            end)
+            RegisterNetEvent('SonoranCAD::bodycam::ToggleOverlay', function()
+                if showOverlay then
+                    showOverlay = false
+                else
+                    showOverlay = true
+                end
+                if bodyCamDisplayOn then
+                    SendNUIMessage({
+                        type = 'bodycamOverlay',
+                        visible = showOverlay,
+                        location = pluginConfig.overlayLocation
+                    })
+                end
+                sendBodycamInfo(('Overlay set to %s'):format(showOverlay))
+            end)
+
+            RequestBodycamInit('plugin_loaded', 4)
         end
     end)
 end)

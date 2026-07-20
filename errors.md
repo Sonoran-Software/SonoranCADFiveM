@@ -332,8 +332,8 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 
 ### ERR-BC-114
 - `Key`: `BODYCAM_RECORDING_INACTIVE`
-- `Meaning`: A stop or cancel request was made when there was no active recording to stop.
-- `Potential Fix`: Start a recording first, or suppress duplicate stop/cancel requests in the caller/UI.
+- `Meaning`: A stop or cancel request was made when there was no active recording to stop. If a pending start was cancelled, the error includes initialization, display, stream readiness, and last stream-reason details.
+- `Potential Fix`: Review the included state details to identify why the pending start was not ready, or suppress duplicate stop/cancel requests in the caller/UI.
 
 ### ERR-BC-115
 - `Key`: `BODYCAM_RECORDING_FAILED`
@@ -359,6 +359,11 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 - `Key`: `BODYCAM_UPLOAD_FAILED`
 - `Meaning`: The finalized bodycam clip failed to upload to CAD.
 - `Potential Fix`: Check API connectivity, auth, upload endpoint availability, and the support ref for the upload failure context.
+
+### ERR-BC-120
+- `Key`: `BODYCAM_RECORDING_START_TIMEOUT`
+- `Meaning`: A recording start request timed out while waiting for bodycam initialization, display activation, or the client media stream to become ready.
+- `Potential Fix`: Review the state details printed with the error and the matching `[bodycam-recording]` server warning. Verify bodycam initialization, CAD duty state, TURN connectivity, and the reported NUI stream reason.
 
 ## CAD Display Errors
 
