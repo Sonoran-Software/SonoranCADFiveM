@@ -708,7 +708,12 @@ RegisterNUICallback('SetLinkInformation', function(data,cb)
 		cb(false)
 		return
 	end
-	TriggerServerEvent("SonoranCAD::Tablet::SetCommunityLink", data.accountUuid, data.secretUuid)
+	if type(data.accountUuid) == "string" and type(data.secretUuid) == "string" then
+		TriggerServerEvent("SonoranCAD::Tablet::SetCommunityLink", data.accountUuid, data.secretUuid)
+	else
+		-- Preserve the legacy iframe payload used by older/custom CAD embeds.
+		TriggerServerEvent("SonoranCAD::Tablet::AssociateSsoData", data.session, data.username)
+	end
 	requestTabletLinkStatus()
 	cb(true)
 end)
