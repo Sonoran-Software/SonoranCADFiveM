@@ -283,7 +283,8 @@ local SENSITIVE_KEYS = {
   ["api-key"] = true,
   ["apikey"] = true,
   ["api_key"] = true,
-  ["x-api-key"] = true
+  ["x-api-key"] = true,
+  ["secretuuid"] = true
 }
 
 local function serialize_debug_value(value, seen)

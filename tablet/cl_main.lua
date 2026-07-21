@@ -259,6 +259,11 @@ local function openCadTablet()
 	SetFocused(true)
 end
 
+RegisterNetEvent("SonoranCAD::Tablet::OpenCad")
+AddEventHandler("SonoranCAD::Tablet::OpenCad", function()
+	openCadTablet()
+end)
+
 local function setCadTabletSize(args)
 	if not args[1] or not args[2] then
 		PrintChatMessage("Usage: /tablet size <width> <height>")
@@ -699,7 +704,16 @@ AddEventHandler("SonoranCAD::Tablet::LinkFound", function()
 end)
 
 RegisterNUICallback('SetLinkInformation', function(data,cb)
-	TriggerServerEvent("SonoranCAD::Tablet::AssociateSsoData", data.session, data.username)
+	if type(data) ~= "table" then
+		cb(false)
+		return
+	end
+	if type(data.accountUuid) == "string" and type(data.secretUuid) == "string" then
+		TriggerServerEvent("SonoranCAD::Tablet::SetCommunityLink", data.accountUuid, data.secretUuid)
+	else
+		-- Preserve the legacy iframe payload used by older/custom CAD embeds.
+		TriggerServerEvent("SonoranCAD::Tablet::AssociateSsoData", data.session, data.username)
+	end
 	requestTabletLinkStatus()
 	cb(true)
 end)

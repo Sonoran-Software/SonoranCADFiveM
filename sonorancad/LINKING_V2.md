@@ -50,16 +50,17 @@ local communityUserId = exports.sonorancad:getPlayerCommunityUserId(source)
 The customer must still provide their CAD API key in the normal SonoranCAD config. Third-party resources should not try to fetch the API key from this resource.
 The values returned by `getCommunityId()` and `getServerId()` come from `communityID` and `serverId` in the Sonoran CAD FiveM core config.
 
-## Tablet / SSO Hook
+## Tablet / CAD Iframe Account Link
 
-The tablet and other iframe-based UIs can forward an SSO/session identifier into the resource:
+The tablet validates the CAD iframe's `scad:account-link` message and forwards the account and secret UUIDs to the server:
 
 ```lua
-TriggerServerEvent("SonoranCAD::Tablet::AssociateSsoData", sessionId, username)
+TriggerServerEvent("SonoranCAD::Tablet::SetCommunityLink", accountUuid, secretUuid)
 ```
 
-The resource then attempts to associate that SSO data with the player's FiveM identifier through the v2 CAD link flow.
-The iframe bridge validates the incoming `session` / `username` payload before forwarding it to the server.
+The server derives the player's `communityUserId` from the configured FiveM identifier and calls the v2 `setCommunityLinkV2` endpoint. The account UUID and secret UUID are validated server-side; the secret is not logged or persisted.
+
+The legacy `SonoranCAD::Tablet::AssociateSsoData` event remains available for compatibility with older external tablet integrations, but new integrations should use the account-link event above.
 
 Tablet link status can be checked with:
 

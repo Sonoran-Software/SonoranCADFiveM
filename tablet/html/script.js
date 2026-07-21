@@ -24,6 +24,27 @@ const nui = (eventName, payload) => {
 	return $.post(`https://${getResourceName()}/${eventName}`, JSON.stringify(payload || {})).fail(() => {});
 };
 
+function handleCadAccountLinkMessage(event) {
+	const cadFrame = document.getElementById("cadFrame");
+	if (!cadFrame || event.source !== cadFrame.contentWindow) return;
+
+	let cadOrigin;
+	try {
+		cadOrigin = new URL(cadFrame.src).origin;
+	} catch (_) {
+		return;
+	}
+
+	if (event.origin !== cadOrigin || !event.data || event.data.type !== "scad:account-link") return;
+
+	const { accountUuid, secretUuid } = event.data;
+	if (typeof accountUuid !== "string" || typeof secretUuid !== "string") return;
+
+	// Keep the account secret in memory only. The server derives the player's
+	// communityUserId and performs the authenticated CAD request.
+	nui("SetLinkInformation", { accountUuid, secretUuid });
+}
+
 const KeyMaps = {
 	previous: "",
 	attach: "",
@@ -220,6 +241,8 @@ function showHelp() {
 
 $(function () {
 	window.addEventListener('message', function (event) {
+		if (!event.data || typeof event.data !== "object") return;
+		handleCadAccountLinkMessage(event);
 		if (event.data.type == "display") {
 			moduleVisible(event.data.module, event.data.enabled)
 			if (event.data.apiCheck) {
