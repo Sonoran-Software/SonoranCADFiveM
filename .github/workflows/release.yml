@@ -12,8 +12,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Exact semantic version to release on the selected release branch (for example 4.0.1)
-        required: true
+        description: Optional exact semantic version; leave blank to increment the patch version
+        required: false
         type: string
 
 jobs:
@@ -39,7 +39,7 @@ jobs:
             exit 1
           fi
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
           else
             IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
