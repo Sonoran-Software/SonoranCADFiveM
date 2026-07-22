@@ -309,6 +309,46 @@ local function refresh_link_status_by_identifier(identifier, identifier_type, co
     return parsed
 end
 
+local function resolve_cached_or_refreshed_community_user_id(identifier, identifier_type, options)
+    if not is_non_empty_string(identifier) then
+        return nil
+    end
+    if looks_like_uuid(identifier) then
+        return identifier
+    end
+
+    options = options or {}
+    local cached = CadLinkCache[identifier]
+    if options.forceRefresh ~= true and cached ~= nil and cached.linked and is_non_empty_string(cached.communityUserId) then
+        return cached.communityUserId
+    end
+
+    if options.forceRefresh ~= true and should_use_cached_negative_link(cached) then
+        return nil
+    end
+
+    -- Negative cache entries only suppress refreshes inside the poll window.
+    -- Once that window expires, default lookups should retry so late account
+    -- linking is eventually observed even without an explicit refresh option.
+    local shouldRefresh = options.forceRefresh == true
+        or options.refreshIfMissing == true
+        or cached == nil
+        or cached.linked ~= true
+    if not shouldRefresh then
+        return nil
+    end
+
+    local refreshed = refresh_link_status_by_identifier(identifier, identifier_type, nil, {
+        ttlMs = options.ttlMs,
+        forceRefresh = options.forceRefresh == true or options.refreshIfMissing == true
+    })
+    if refreshed.linked and is_non_empty_string(refreshed.communityUserId) then
+        return refreshed.communityUserId
+    end
+
+    return nil
+end
+
 local function create_link_session_by_identifier(identifier, identifier_type, community_user_id)
     if not is_non_empty_string(identifier) then
         return nil, "Missing player identifier."
@@ -496,44 +536,24 @@ function GetCadServerId()
     return GetServerId()
 end
 
-function GetCommunityUserIdFromIdentifier(identifier, identifier_type)
-    if not is_non_empty_string(identifier) then
-        return nil
-    end
-    if looks_like_uuid(identifier) then
-        return identifier
-    end
-
-    local cached = CadLinkCache[identifier]
-    if cached ~= nil and cached.linked and is_non_empty_string(cached.communityUserId) then
-        return cached.communityUserId
-    end
-    if should_use_cached_negative_link(cached) then
-        return nil
-    end
-
-    local refreshed = refresh_link_status_by_identifier(identifier, identifier_type)
-    if refreshed.linked and is_non_empty_string(refreshed.communityUserId) then
-        return refreshed.communityUserId
-    end
-
-    return nil
+function GetCommunityUserIdFromIdentifier(identifier, identifier_type, options)
+    return resolve_cached_or_refreshed_community_user_id(identifier, identifier_type, options)
 end
 
-function GetPlayerCommunityUserId(player)
+function GetPlayerCommunityUserId(player, options)
     local identifier, identifier_type = get_player_link_identifier(player)
     if not identifier then
         return nil
     end
-    return GetCommunityUserIdFromIdentifier(identifier, identifier_type)
+    return GetCommunityUserIdFromIdentifier(identifier, identifier_type, options)
 end
 
-function IsIdentifierLinkedToCad(identifier, identifier_type)
-    return GetCommunityUserIdFromIdentifier(identifier, identifier_type) ~= nil
+function IsIdentifierLinkedToCad(identifier, identifier_type, options)
+    return GetCommunityUserIdFromIdentifier(identifier, identifier_type, options) ~= nil
 end
 
-function IsPlayerLinkedToCad(player)
-    return GetPlayerCommunityUserId(player) ~= nil
+function IsPlayerLinkedToCad(player, options)
+    return GetPlayerCommunityUserId(player, options) ~= nil
 end
 
 exports("getCommunityId", GetCommunityId)
@@ -661,7 +681,9 @@ local function set_community_link_for_player(player, account_uuid, secret_uuid)
 end
 
 local function check_tablet_link_status(player)
-    send_tablet_link_status(player, IsPlayerLinkedToCad(player))
+    send_tablet_link_status(player, IsPlayerLinkedToCad(player, {
+        refreshIfMissing = true
+    }))
 end
 
 local function associate_tablet_sso_data(player, session, username)
@@ -839,4 +861,33 @@ end)
 AddEventHandler("playerDropped", function()
     log_link_debug(("clear link state for player %s"):format(tostring(source)))
     CadLinkSessions[source] = nil
+end)
+
+local function prime_player_link_cache(player)
+    local identifier, identifier_type = get_player_link_identifier(player)
+    if not is_non_empty_string(identifier) then
+        return
+    end
+
+    local communityUserId = resolve_cached_or_refreshed_community_user_id(identifier, identifier_type, {
+        refreshIfMissing = true
+    })
+    log_link_debug(("initial link cache prime for player %s linked=%s"):format(
+        tostring(player),
+        tostring(communityUserId ~= nil)
+    ))
+end
+
+AddEventHandler("playerJoining", function()
+    prime_player_link_cache(source)
+end)
+
+AddEventHandler("onResourceStart", function(resourceName)
+    if resourceName ~= GetCurrentResourceName() then
+        return
+    end
+
+    for _, player in ipairs(GetPlayers()) do
+        prime_player_link_cache(tonumber(player) or player)
+    end
 end)
