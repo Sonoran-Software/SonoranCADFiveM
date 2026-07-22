@@ -1,6 +1,6 @@
 {
   "resource": "4.0.87",
-  "testedFxServerVersion": "5932",
+  "testedFxServerVersion": "92",
   "submoduleConfigs": {
     "bodycam": {
       "version": "1.3",
