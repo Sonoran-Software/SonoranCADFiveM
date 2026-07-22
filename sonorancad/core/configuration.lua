@@ -552,7 +552,7 @@ applyFrameworkConvar('linkPopupTitleText', Config.linkPopupTitleText)
 applyFrameworkConvar('linkButtonText', Config.linkButtonText)
 applyFrameworkConvar('notificationSystem', Config.notificationSystem)
 
-if Config.updateBranch == nil then Config.updateBranch = 'master' end
+if Config.updateBranch == nil then Config.updateBranch = 'enhanced' end
 
 RegisterNetEvent('SonoranCAD::core:sendClientConfig')
 AddEventHandler('SonoranCAD::core:sendClientConfig', function()

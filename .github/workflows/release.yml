@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - enhanced
       - '**'  # This will trigger on all branches
   repository_dispatch:
     types:
@@ -11,15 +12,15 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Exact semantic version to release on master (for example 4.0.1)
-        required: true
+        description: Optional exact semantic version; leave blank to increment the patch version
+        required: false
         type: string
 
 jobs:
   release:
     if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/master' && github.actor != 'github-actions[bot]') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') ||
+      (github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/enhanced') && github.actor != 'github-actions[bot]') ||
+      (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/enhanced')) ||
       (github.event_name == 'repository_dispatch' && github.event.action == 'sonoran-lua-synced')
     runs-on: ubuntu-latest
     
@@ -38,7 +39,7 @@ jobs:
             exit 1
           fi
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
           else
             IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
@@ -72,6 +73,8 @@ jobs:
         shell: bash
 
       - name: Commit version bump
+        env:
+          RELEASE_BRANCH: ${{ github.ref_name }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -80,7 +83,7 @@ jobs:
             echo "Version already set to ${{ steps.version.outputs.version }}; no commit required."
           else
             git commit -m "release: v${{ steps.version.outputs.version }}"
-            git push origin HEAD:master
+            git push origin "HEAD:$RELEASE_BRANCH"
           fi
         shell: bash
 
@@ -114,8 +117,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION=${{ steps.version.outputs.version }}
-          RELEASE_NAME="Release $VERSION"
+          RELEASE_BRANCH="${{ github.ref_name }}"
           RELEASE_TAG="v$VERSION"
+          RELEASE_NAME="Release $VERSION"
+          MAKE_LATEST="true"
+          if [ "$RELEASE_BRANCH" = "enhanced" ]; then
+            RELEASE_TAG="enhanced-v$VERSION"
+            RELEASE_NAME="Enhanced Release $VERSION"
+            MAKE_LATEST="false"
+          fi
 
           if curl --fail -sSL "https://api.github.com/repos/${{ github.repository }}/releases/tags/$RELEASE_TAG"; then
             echo "Deleting existing release $RELEASE_NAME"
@@ -138,7 +148,7 @@ jobs:
           echo "Creating a new release $RELEASE_NAME"
             RESPONSE=$(curl -X POST "https://api.github.com/repos/${{ github.repository }}/releases" \
               -H "Authorization: token $GITHUB_TOKEN" \
-              -d "{\"tag_name\":\"$RELEASE_TAG\",\"name\":\"$RELEASE_NAME\",\"target_commitish\":\"master\",\"draft\":false,\"prerelease\":false,\"generate_release_notes\":true,\"make_latest\":\"true\"}")
+              -d "{\"tag_name\":\"$RELEASE_TAG\",\"name\":\"$RELEASE_NAME\",\"target_commitish\":\"$RELEASE_BRANCH\",\"draft\":false,\"prerelease\":false,\"generate_release_notes\":true,\"make_latest\":\"$MAKE_LATEST\"}")
           
           echo $RESPONSE
 
@@ -153,7 +163,7 @@ jobs:
         shell: bash
 
   upload-artifact:
-    if: github.ref != 'refs/heads/master'  # Run only on non-master branches
+    if: github.ref != 'refs/heads/master' && github.ref != 'refs/heads/enhanced'  # Release branches use the release job
     runs-on: ubuntu-latest
 
     steps:

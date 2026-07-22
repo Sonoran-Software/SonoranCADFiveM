@@ -8,9 +8,10 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
-  group: sync-sonoran-lua-master
+  group: sync-sonoran-lua-enhanced
   cancel-in-progress: false
 
 jobs:
@@ -18,10 +19,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout SonoranCADFiveM master
+      - name: Checkout SonoranCADFiveM enhanced
         uses: actions/checkout@v4
         with:
-          ref: master
+          ref: enhanced
           fetch-depth: 0
 
       - name: Checkout Sonoran.lua
@@ -50,17 +51,12 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add sonorancad/lua/sonoran
           git commit -m "chore: sync Sonoran.lua"
-          git push origin HEAD:master
+          git push origin HEAD:enhanced
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
-      - name: Dispatch release workflow
+      - name: Dispatch enhanced release workflow
         if: steps.sync_commit.outputs.changed == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl --fail --silent --show-error \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            https://api.github.com/repos/${{ github.repository }}/dispatches \
-            -d '{"event_type":"sonoran-lua-synced"}'
+          gh workflow run release.yml --ref enhanced

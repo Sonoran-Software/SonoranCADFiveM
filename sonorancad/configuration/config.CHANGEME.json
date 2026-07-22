@@ -12,7 +12,7 @@
     "apiSendEnabled": true,
     "debugMode": false,
     "notificationSystem": "auto",
-    "updateBranch": "master",
+    "updateBranch": "enhanced",
     "statusLabels": ["UNAVAILABLE", "BUSY", "AVAILABLE", "ENROUTE", "ON_SCENE"],
     "allowAutoUpdate": true,
     "autoUpdateUrl": "https://raw.githubusercontent.com/Sonoran-Software/SonoranCADFiveM/{branch}/sonorancad/version.json",
