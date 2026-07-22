@@ -17,7 +17,8 @@ local function LoadVersionFile()
 end
 
 function CheckForPluginUpdate(name)
-    local check_url = 'https://raw.githubusercontent.com/Sonoran-Software/SonoranCADFiveM/refs/heads/master/sonorancad/version.json'
+    local updateBranch = Config.updateBranch or 'enhanced'
+    local check_url = ('https://raw.githubusercontent.com/Sonoran-Software/SonoranCADFiveM/refs/heads/%s/sonorancad/version.json'):format(updateBranch)
     local plugin = Config.plugins[name]
     if plugin == nil then
         errorLog("UNHANDLED_SERVER_ERROR", ("Submodule %s not found."):format(name))

@@ -45,7 +45,8 @@ end)
 
 local function doUpdate(latest)
     -- best way to do this...
-    local releaseUrl = ("https://github.com/Sonoran-Software/SonoranCADFiveM/releases/download/v%s/sonorancad-%s.zip"):format(latest, latest)
+    local releaseTag = (Config.updateBranch == "enhanced") and ("enhanced-v%s"):format(latest) or ("v%s"):format(latest)
+    local releaseUrl = ("https://github.com/Sonoran-Software/SonoranCADFiveM/releases/download/%s/sonorancad-%s.zip"):format(releaseTag, latest)
     PerformHttpRequest(releaseUrl, function(code, data, headers)
         if code == 200 then
             local savePath = GetResourcePath(GetCurrentResourceName()).."/update.zip"
