@@ -4,6 +4,12 @@ usingTablet = false
 myident = nil
 isMiniVisible = false
 local caddisplayEnabled = true
+local tabletCommand = tostring(GetConvar("sonorantablet_command", "tablet"))
+tabletCommand = tabletCommand:match("^%s*/?([^%s/]+)") or "tablet"
+
+exports("GetTabletCommand", function()
+	return tabletCommand
+end)
 
 local function requestCadDisplayConfig()
 	TriggerServerEvent("SonoranCAD::tabletDisplay::RequestConfig")
@@ -219,7 +225,7 @@ end
 
 local function setMiniCadSize(args)
 	if not args[1] or not args[2] then
-		PrintChatMessage("Usage: /tablet mini size <width> <height>")
+		PrintChatMessage(("Usage: /%s mini size <width> <height>"):format(tabletCommand))
 		return
 	end
 
@@ -239,7 +245,7 @@ end
 
 local function setMiniCadRows(args)
 	if #args ~= 1 then
-		PrintChatMessage("Usage: /tablet mini rows <count>")
+		PrintChatMessage(("Usage: /%s mini rows <count>"):format(tabletCommand))
 		return
 	end
 
@@ -266,7 +272,7 @@ end)
 
 local function setCadTabletSize(args)
 	if not args[1] or not args[2] then
-		PrintChatMessage("Usage: /tablet size <width> <height>")
+		PrintChatMessage(("Usage: /%s size <width> <height>"):format(tabletCommand))
 		return
 	end
 
@@ -289,8 +295,10 @@ local function requestTabletLinkStatus()
 end
 
 local function showTabletCommandHelp()
-	PrintChatMessage("Tablet commands: /tablet open | /tablet refresh | /tablet size <width> <height> | /tablet checklink")
-	PrintChatMessage("Mini CAD: /tablet mini open | help | prev | attach | detail | next | refresh | size <width> <height> | rows <count>")
+	PrintChatMessage(("Tablet commands: /%s open | /%s refresh | /%s size <width> <height> | /%s checklink")
+		:format(tabletCommand, tabletCommand, tabletCommand, tabletCommand))
+	PrintChatMessage(("Mini CAD: /%s mini open | help | prev | attach | detail | next | refresh | size <width> <height> | rows <count>")
+		:format(tabletCommand))
 end
 
 local function handleTabletMiniCommand(args)
@@ -345,7 +353,7 @@ local function handleTabletCommand(args)
 	end
 end
 
-RegisterCommand("tablet", function(source, args, rawCommand)
+RegisterCommand(tabletCommand, function(source, args, rawCommand)
 	handleTabletCommand(args)
 end, false)
 
@@ -379,7 +387,7 @@ RegisterCommand("SonoranTablet::Open", function()
 end, false)
 RegisterKeyMapping("SonoranTablet::Open", "CAD Tablet", "keyboard", "")
 
-TriggerEvent("chat:addSuggestion", "/tablet", "Manage the Sonoran tablet and Mini CAD.", {
+TriggerEvent("chat:addSuggestion", "/" .. tabletCommand, "Manage the Sonoran tablet and Mini CAD.", {
 	{ name = "action", help = "open, refresh, size, checklink, mini, or help" },
 	{ name = "args", help = "subcommands: mini open|help|prev|attach|detail|next|refresh|size|rows" }
 })

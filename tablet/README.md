@@ -1,6 +1,8 @@
 # tablet
 View your CAD in-game with our tablet resource!
 
+The tablet command defaults to `/tablet`. To change it, add `setr sonorantablet_command "yourcommand"` to your server configuration.
+
 ## Installation
 
 [Click to view the installation guide.](https://info.sonorancad.com/integration-submodules/integration-submodules/available-submodules/tablet)
