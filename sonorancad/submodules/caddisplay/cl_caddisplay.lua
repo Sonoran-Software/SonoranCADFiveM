@@ -98,6 +98,20 @@ CreateThread(function()
             local screenshotInterval = 5000
             local acceptKeybind = pluginConfig.requestAcceptKey or "Y"
             local denyKeybind = pluginConfig.requestDenyKey or "L"
+            local fallbackTabletCommand = tostring(GetConvar("sonorantablet_command", "tablet"))
+            fallbackTabletCommand = fallbackTabletCommand:match("^%s*/?([^%s/]+)") or "tablet"
+
+            local function getTabletViewCommand()
+                if GetResourceState("tablet") == "started" then
+                    local ok, command = pcall(function()
+                        return exports["tablet"]:GetTabletCommand()
+                    end)
+                    if ok and type(command) == "string" and command ~= "" then
+                        return "/" .. command:gsub("^/+", "") .. " open"
+                    end
+                end
+                return "/" .. fallbackTabletCommand .. " open"
+            end
 
             function getVehNetIdOrNil(veh)
                 if veh == nil or veh == 0 then
@@ -1295,6 +1309,7 @@ CreateThread(function()
                             local ownerId = vehNet and displayOwners[tostring(vehNet)] or nil
                             local prop = car.prop
                             if not drawInteractPrompt and prop ~= nil and DoesEntityExist(prop) and ownerId == nil and hasAnyOccupant(veh) then
+                                local tabletViewCommand = getTabletViewCommand()
                                 CreateThread(function()
                                     drawInteractPrompt = true
                                     while drawInteractPrompt do
@@ -1303,7 +1318,8 @@ CreateThread(function()
                                         local promptKey = tostring(vehNet or prop)
                                         if distPrompt <= interactRange + 0.5 and not claimedOnce[promptKey] then
                                             drawWorldPrompt(GetEntityCoords(prop) + vector3(0.0, 0.0, 0.3),
-                                                ("Press %s to interact"):format(interactKeybind))
+                                                ("Press %s to interact~n~%s to view"):format(interactKeybind,
+                                                    tabletViewCommand))
                                         else
                                             drawInteractPrompt = false
                                         end
