@@ -94,10 +94,9 @@
                 priority = Priority of call, default is 2
                 address = location of call (required)
                 postal = call postal
-                isEmergency = (true/false) whether this is a 911 call, default true
                 notes = array of notes to add to the call when created
                 metaData = key/value pair of metadata to attach to the call
-                units = array of linked CAD community user IDs to auto-attach
+                communityUserIds = array of linked CAD community user IDs to auto-attach
         ]]
             AddEventHandler("SonoranCAD::callcommands:CreateCall", function(data)
                 local payload = {
@@ -111,10 +110,9 @@
                     address = "",
                     title = "",
                     description = "",
-                    isEmergency = true,
                     notes = {},
                     metaData = {},
-                    units = {}
+                    communityUserIds = {}
                 }
                 for k, v in pairs(data) do
                     payload[k] = v

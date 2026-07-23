@@ -394,12 +394,10 @@ if pluginConfig.enabled then
                                 address = (call.location ~= nil and call.location or "Unknown"),
                                 title = title,
                                 description = (call.description ~= nil and call.description or ""),
-                                isEmergency = call.isEmergency,
                                 notes = {
                                     {time = '00:00:00', label = 'Dispatch', type = 'text', content = 'Officer Responding'}
                                 },
-                                metaData = metaData,
-                                units = { communityUserId }
+                                metaData = metaData
             }
             local response = CadApiCreateDispatchCall(payload)
             if not response.success then

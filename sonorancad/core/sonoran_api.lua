@@ -786,8 +786,33 @@ end
 
 function CadApiCreateDispatchCall(payload)
     payload = payload or {}
-    payload.units = CadApiResolveCommunityUserIds(payload.units or {})
-    local response = get_cad_client():createDispatchCallV2(payload)
+    local request = {}
+    local request_fields = {
+        "serverId",
+        "origin",
+        "status",
+        "priority",
+        "block",
+        "address",
+        "postal",
+        "title",
+        "code",
+        "description",
+        "notes",
+        "accounts",
+        "roblox",
+        "discord",
+        "communityUserIds",
+        "metaData",
+        "deleteAfterMinutes"
+    }
+    for _, field in ipairs(request_fields) do
+        if payload[field] ~= nil then
+            request[field] = payload[field]
+        end
+    end
+
+    local response = get_cad_client():createDispatchCallV2(request)
     if response.success then
         response.callId = get_v2_response_id(response.data)
     end

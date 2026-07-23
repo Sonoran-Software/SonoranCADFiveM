@@ -336,24 +336,22 @@ call911 = function(caller, location, description, postal, plate, cb, coords, cus
     end
 end
 
-createDispatchCall = function(origin, status, priority, block, address, postal, title, code, primary, trackPrimary, description, notes, metaData, units, cb)
-    local payload = {
-        serverId = GetConvar('sonoran_serverId', 1),
-        origin = origin or 0,
-        status = status or 0,
-        priority = priority or 1,
-        block = block or "",
-        address = address or "",
-        postal = postal or "",
-        title = title or "New Call",
-        code = code or "",
-        primary = primary or 0,
-        trackPrimary = trackPrimary == nil and false or trackPrimary,
-        description = description or "",
-        notes = notes or {},
-        metaData = metaData or {},
-        units = units or {}
-    }
+createDispatchCall = function(data, cb)
+    if type(data) ~= "table" then
+        local message = "createDispatchCall expects a v2 dispatch call request table."
+        if cb ~= nil then
+            cb(message, false)
+            return
+        end
+        error(message)
+    end
+
+    local payload = {}
+    for key, value in pairs(data) do
+        payload[key] = value
+    end
+    payload.serverId = payload.serverId or tonumber(GetConvar('sonoran_serverId', '1'))
+
     local response = CadApiCreateDispatchCall(payload)
     if cb ~= nil then
         local result = response.callId ~= nil and ("NEW DISPATCH CREATED - ID: %s"):format(response.callId)
