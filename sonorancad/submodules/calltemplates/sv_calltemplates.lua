@@ -163,11 +163,7 @@ CreateThread(function()
                 code = cmdConfig.code or template.code or "",
                 description = buildDescription(cmdConfig, template, args),
                 notes = mergeNotes(template.notes, extraNotes),
-                units = units,
-                primary = template.primary or -1,
-                trackPrimary = template.trackPrimary or false,
-                idents = template.idents or {},
-                communityUserIds = {communityUserId}
+                communityUserIds = CadApiResolveCommunityUserIds(units)
             }
 
             TriggerEvent("SonoranCAD::calltemplates:SendDispatch", payload, source, cmdConfig.command)

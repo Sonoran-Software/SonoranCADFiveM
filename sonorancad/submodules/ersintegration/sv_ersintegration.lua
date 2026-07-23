@@ -393,7 +393,6 @@ if pluginConfig.enabled then
                         ['title'] = safeString(calloutData.CalloutName),
                         ['code'] = callCode,
                         ['description'] = safeString(calloutData.Description),
-                        ['units'] = { unitData.unit },
                         ['notes'] = {}, -- required
                         ['metaData'] = {
                             ['x'] = tostring(coords.x),
