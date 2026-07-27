@@ -54,6 +54,21 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
                 or normalized:find('operation not permitted', 1, true)
         end
 
+        local function getPdfFilename(url)
+            local urlPath = tostring(url or ''):match('^[^%?#]*') or ''
+            local filename = urlPath:match('([^/\\]+)$') or ''
+            filename = filename:gsub('[%c<>:"|%?%*]', '_'):gsub('[\\/]', '_')
+            filename = filename:gsub('[%.%s]+$', '')
+
+            if filename == '' or filename == '.' or filename == '..' then
+                filename = ('record_%s'):format(os.time())
+            end
+            if not filename:lower():match('%.pdf$') then
+                filename = filename .. '.pdf'
+            end
+            return filename
+        end
+
         local identId = tostring(printData.identId or 'unknown')
         debugLog(('Record printer preparing output directory for CAD identity %s.'):format(identId))
         local pdfDirectory, directoryError = callAsyncExport(function()
@@ -77,7 +92,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         end
         debugLog(('Record printer output directory ready: identity=%s path=%s'):format(identId, pdfDirectory))
 
-        local filename = printData.url:match("^.+/(.+)$") or (('record_%s.pdf'):format(os.time()))
+        local filename = getPdfFilename(printData.url)
         local filePath = pdfDirectory .. '/' .. filename
         debugLog(('Record printer downloading PDF: identity=%s destination=%s'):format(identId, filePath))
         local savedPath, saveError = callAsyncExport(function()
@@ -98,9 +113,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         end
         debugLog(('Record printer saved PDF: identity=%s path=%s'):format(identId, savedPath))
 
-        local resourceName = GetCurrentResourceName()
-        local pdfLink = ('nui://%s/submodules/recordPrinter/pdfs/%s/%s'):format(resourceName, identId, filename)
-        TriggerClientEvent('SonoranCAD::recordPrinter:PrintQueue', unitSource, pdfLink)
+        TriggerClientEvent('SonoranCAD::recordPrinter:PrintQueue', unitSource, printData.url)
 
     end)
     local Docs = {}
