@@ -140,6 +140,7 @@ local ErrorCodes = {
     ['RECORDPRINTER_DIRECTORY_FAILED'] = { code = "ERR-RP-102", message = "Record printer could not create or resolve its output directory." },
     ['RECORDPRINTER_SAVE_FAILED'] = { code = "ERR-RP-103", message = "Record printer could not save the generated PDF." },
     ['RECORDPRINTER_SHARE_INVALID'] = { code = "ERR-RP-104", message = "Record printer rejected an invalid share request." },
+    ['RECORDPRINTER_FILESYSTEM_PERMISSION'] = { code = "ERR-RP-105", message = "The server process does not have permission to write record printer PDF files." },
     ['SONRAD_CALLCOMMANDS_MISSING'] = { code = "ERR-SR-101", message = "The Sonrad module requires the callcommands submodule for this action." },
     ['SONRAD_CONFIG_MISSING'] = { code = "ERR-SR-102", message = "Critical Sonrad configuration is missing." },
     ['CADDISPLAY_FRAMEWORK_UNAVAILABLE'] = { code = "ERR-CD-102", message = "CAD display could not access the configured framework export." },
