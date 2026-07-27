@@ -644,6 +644,11 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 - `Meaning`: Record printer rejected a share request because the URL or target list was invalid.
 - `Potential Fix`: Validate the shared URL and ensure at least one valid target player or identifier is supplied.
 
+### ERR-RP-105
+- `Key`: `RECORDPRINTER_FILESYSTEM_PERMISSION`
+- `Meaning`: The server process does not have permission to create or write record printer PDF files.
+- `Potential Fix`: Grant the FXServer process write access to `sonorancad/submodules/recordPrinter/pdfs`, then restart the resource.
+
 ## Sonrad Errors
 
 ### ERR-SR-101
