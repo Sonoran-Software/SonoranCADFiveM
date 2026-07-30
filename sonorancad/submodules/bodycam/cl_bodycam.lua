@@ -41,6 +41,7 @@ local StartPeerStream
 local FlushPendingRecordingStart
 local SchedulePendingRecordingStartRetry
 local RequestBodycamInit
+local PublishBodycamRuntime
 local BODYCAM_UPLOAD_CHUNK_SIZE = 240000
 -- Use FiveM's default latent-event throttle for large client->server bodycam uploads.
 local BODYCAM_UPLOAD_LATENT_BPS = 0
@@ -212,6 +213,12 @@ CreateThread(function()
             peerStreamCanvasId = peerStreamConfig.canvasId
             peerStreamFps = peerStreamConfig.fps
             peerStreamForceRelay = peerStreamConfig.forceRelay == true
+            PublishBodycamRuntime = function()
+                TriggerServerEvent('SonoranCAD::bodycam::PublishRuntime', {
+                    active = bodyCamDisplayOn == true,
+                    peerId = BodycamPeerId
+                })
+            end
             if peerStreamEnabled then
                 CreateThread(function()
                     while true do
@@ -283,6 +290,7 @@ CreateThread(function()
                         location = pluginConfig.overlayLocation
                     })
                 end
+                PublishBodycamRuntime("display_state")
             end
 
             local function getRecordingMetadata()
@@ -579,6 +587,9 @@ CreateThread(function()
                     lastPeerId = data.id
                     BodycamPeerId = data.id
                     debugLog(('Bodycam peer stream ID: %s'):format(data.id))
+                    if PublishBodycamRuntime then
+                        PublishBodycamRuntime()
+                    end
                 end
                 cb({ ok = true })
             end)
@@ -923,6 +934,7 @@ CreateThread(function()
 
                 StartPeerStream()
                 applyDisplayState()
+                PublishBodycamRuntime("initialized")
             end)
 
             RegisterNetEvent('SonoranCAD::bodycam::Toggle', function(manualActivation, toggle, forceOff)

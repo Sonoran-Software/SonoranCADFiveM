@@ -440,7 +440,7 @@
 				}).catch(function () {});
 			}
 
-			let watchingState = false;
+			let watchingState = null;
 			function notifyWatchingState(watching) {
 				const next = !!watching;
 				if (watchingState === next) {
@@ -796,6 +796,8 @@
 				});
 				peerInstance.on("close", function () {
 					console.warn("Bodycam stream: WRN-CORE-900 PeerJS closed. More: https://sonorancad.com/error/WRN-CORE-900");
+					peerCalls.clear();
+					pendingCalls.clear();
 					updateWatchingState();
 				});
 			}
@@ -957,8 +959,8 @@
 						}
 					});
 					pendingCalls.clear();
-					updateWatchingState();
 				}
+				updateWatchingState();
 
 				await ensurePeer(peerConfig, peerStream.remotePeerId);
 			}

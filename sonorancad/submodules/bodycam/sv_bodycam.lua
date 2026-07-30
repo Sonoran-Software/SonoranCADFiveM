@@ -1,5 +1,38 @@
+local BodycamRuntime = {
+    available = false,
+    enabled = false,
+    mode = "UNAVAILABLE",
+    lastUpdatedAt = 0,
+    feeds = {}
+}
+
+local function copyRuntimeValue(value)
+    if type(value) ~= "table" then return value end
+    local result = {}
+    for key, child in pairs(value) do result[key] = copyRuntimeValue(child) end
+    return result
+end
+
+local function runtimeSnapshot()
+    return copyRuntimeValue(BodycamRuntime)
+end
+
+exports("GetBodycamRuntime", runtimeSnapshot)
+
+local function emitRuntime(action, feed)
+    BodycamRuntime.lastUpdatedAt = os.time()
+    TriggerEvent("SonoranCAD::bodycam::RuntimeChanged", action,
+        feed and copyRuntimeValue(feed) or nil, runtimeSnapshot())
+end
+
 CreateThread(function()
     Config.LoadPlugin("bodycam", function(pluginConfig)
+        BodycamRuntime.available = true
+        BodycamRuntime.enabled = pluginConfig.enabled == true
+        BodycamRuntime.mode = pluginConfig.enabled == true and
+            ((pluginConfig.peerStream or {}).enabled == true and
+                "PEER_STREAM_STATE" or "LOCAL_CAPTURE_STATE") or "DISABLED"
+        BodycamRuntime.lastUpdatedAt = os.time()
         if pluginConfig.enabled then
             local turnCache = {
                 iceServers = nil,
@@ -95,9 +128,9 @@ CreateThread(function()
                 local token = params and params.token or nil
                 local src = token and uploadSourceByToken[token] or nil
                 if src == nil then
-                    warnLog("UNHANDLED_WARNING", ('Bodycam upload rejected: invalid token path=%s token=%s'):format(
+                    warnLog("UNHANDLED_WARNING", ('Bodycam upload rejected: invalid token path=%s tokenPresent=%s'):format(
                         tostring(routePath or '/bodycam-upload'),
-                        tostring(token or 'nil')
+                        tostring(token ~= nil and token ~= '')
                     ))
                 end
                 return src
@@ -600,7 +633,72 @@ CreateThread(function()
                 TriggerClientEvent('SonoranCAD::bodycam::Toggle', src, manualActivation, toggle)
             end)
 
+            RegisterNetEvent('SonoranCAD::bodycam::PublishRuntime', function(payload)
+                local src = tonumber(source)
+                if not src or type(payload) ~= "table" then return end
+
+                local unit = GetUnitByPlayerId(src)
+                local active = payload.active == true
+                if pluginConfig.requireUnitDuty and unit == nil then active = false end
+                local peerId = type(payload.peerId) == "string" and
+                    payload.peerId:sub(1, 128) or nil
+                if peerId and (peerId == "" or peerId:find("[^%w_%-%.]")) then
+                    peerId = nil
+                end
+
+                local key = tostring(src)
+                local previous = BodycamRuntime.feeds[key]
+                local now = os.time()
+                local unitId = unit and tostring(unit.id) or nil
+                local feed = {
+                    unitId = unitId,
+                    playerSource = src,
+                    active = active,
+                    activatedAt = active and
+                        (previous and previous.active and previous.activatedAt or now) or nil,
+                    updatedAt = now,
+                    sequence = (previous and tonumber(previous.sequence) or 0) + 1,
+                    mode = BodycamRuntime.mode,
+                    peerId = peerId
+                }
+                BodycamRuntime.feeds[key] = feed
+
+                local action
+                if not previous then
+                    action = active and "BODYCAM_ACTIVATED" or "BODYCAM_INACTIVE"
+                elseif previous.active ~= active then
+                    action = active and "BODYCAM_ACTIVATED" or "BODYCAM_DEACTIVATED"
+                elseif previous.unitId ~= feed.unitId then
+                    action = "BODYCAM_UNIT_UPDATED"
+                elseif previous.peerId ~= feed.peerId then
+                    action = "BODYCAM_STREAM_UPDATED"
+                end
+                if action then emitRuntime(action, feed) end
+            end)
+
+            CreateThread(function()
+                while true do
+                    Wait(2000)
+                    for key, feed in pairs(BodycamRuntime.feeds) do
+                        if GetPlayerName(feed.playerSource) == nil then
+                            BodycamRuntime.feeds[key] = nil
+                            emitRuntime("BODYCAM_REMOVED", feed)
+                        elseif pluginConfig.requireUnitDuty and
+                            GetUnitByPlayerId(feed.playerSource) == nil then
+                            BodycamRuntime.feeds[key] = nil
+                            emitRuntime("BODYCAM_REMOVED", feed)
+                        end
+                    end
+                end
+            end)
+
             AddEventHandler('playerDropped', function()
+                local key = tostring(source)
+                local feed = BodycamRuntime.feeds[key]
+                if feed then
+                    BodycamRuntime.feeds[key] = nil
+                    emitRuntime("BODYCAM_REMOVED", feed)
+                end
                 for uploadId, session in pairs(httpUploadSessions) do
                     if session and session.src == source then
                         cleanupHttpUploadSession(uploadId)
