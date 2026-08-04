@@ -2,8 +2,14 @@ bodyCamOn = false
 local bodyCamDisplayOn = false
 local manualDisplayOn = false
 local autoDisplayOn = false
+local autoDisplayRequestPending = false
+local autoDisplayRequestGeneration = 0
+local weaponAutoTriggerLatched = false
+local lightsAutoTriggerLatched = false
+local pendingAutoRecordingTrigger = nil
 local watchingDisplayOn = false
 local forceDisplayOff = false
+local bodycamDutyRevoked = false
 local showOverlay = true
 local doAnimation = true
 local soundLevel = 0.2
@@ -263,7 +269,7 @@ CreateThread(function()
             end
 
             local function shouldDisplayBodycam()
-                if forceDisplayOff then
+                if forceDisplayOff or bodycamDutyRevoked then
                     return false
                 end
                 return manualDisplayOn or autoDisplayOn or watchingDisplayOn
@@ -291,6 +297,29 @@ CreateThread(function()
                     })
                 end
                 PublishBodycamRuntime("display_state")
+            end
+
+            local function cancelAutomaticDisplayRequest()
+                autoDisplayRequestPending = false
+                pendingAutoRecordingTrigger = nil
+            end
+
+            local function requestAutomaticDisplay(recordingTrigger)
+                if forceDisplayOff or autoDisplayOn or autoDisplayRequestPending then
+                    return false
+                end
+
+                autoDisplayRequestGeneration = autoDisplayRequestGeneration + 1
+                local requestGeneration = autoDisplayRequestGeneration
+                autoDisplayRequestPending = true
+                pendingAutoRecordingTrigger = recordingTrigger
+                TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', false, true)
+                SetTimeout(2000, function()
+                    if autoDisplayRequestPending and autoDisplayRequestGeneration == requestGeneration then
+                        cancelAutomaticDisplayRequest()
+                    end
+                end)
+                return true
             end
 
             local function getRecordingMetadata()
@@ -814,16 +843,22 @@ CreateThread(function()
                     Wait(200)
                     local ped = PlayerPedId()
                     local weapon = GetSelectedPedWeapon(ped)
-                    if not autoDisplayOn and pluginConfig.weapons then
+                    local configuredWeapon = false
+                    if type(pluginConfig.weapons) == 'table' then
                         for _, weaponName in ipairs(pluginConfig.weapons) do
-                            if weapon == GetHashKey(weaponName) then
-                                if not forceDisplayOff then
-                                    TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', false, true)
-                                end
-                                triggerAutoRecording('weapon_draw')
+                            local configuredWeaponHash = type(weaponName) == 'number' and weaponName or
+                                GetHashKey(tostring(weaponName))
+                            if weapon == configuredWeaponHash then
+                                configuredWeapon = true
                                 break
                             end
                         end
+                    end
+                    if not configuredWeapon then
+                        weaponAutoTriggerLatched = false
+                    elseif not weaponAutoTriggerLatched then
+                        weaponAutoTriggerLatched = true
+                        requestAutomaticDisplay('weapon_draw')
                     end
                 end
             end)
@@ -836,12 +871,15 @@ CreateThread(function()
                     -- Only check if player is in a vehicle and is the driver
                     if veh ~= 0 and GetPedInVehicleSeat(veh, -1) == ped and GetVehicleClass(veh) == 18 then
                         if IsVehicleSirenOn(veh) then
-                            if not autoDisplayOn then
-                                if not forceDisplayOff then
-                                    TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', false, true)
-                                end
+                            if not lightsAutoTriggerLatched then
+                                lightsAutoTriggerLatched = true
+                                requestAutomaticDisplay()
                             end
+                        else
+                            lightsAutoTriggerLatched = false
                         end
+                    else
+                        lightsAutoTriggerLatched = false
                     end
                 end
             end)
@@ -938,30 +976,48 @@ CreateThread(function()
             end)
 
             RegisterNetEvent('SonoranCAD::bodycam::Toggle', function(manualActivation, toggle, forceOff)
+                local isManualActivation = manualActivation == true
+                local shouldToggle = toggle == true
+                local isForceOff = forceOff == true
+                local automaticRecordingTrigger = nil
+
+                if isManualActivation then
+                    cancelAutomaticDisplayRequest()
+                elseif shouldToggle then
+                    automaticRecordingTrigger = pendingAutoRecordingTrigger
+                    cancelAutomaticDisplayRequest()
+                else
+                    cancelAutomaticDisplayRequest()
+                end
+
                 debugLog(('Bodycam toggle received: manual=%s toggle=%s forceOff=%s initialized=%s'):format(
                     tostring(manualActivation), tostring(toggle), tostring(forceOff), tostring(bodycamInitialized)))
-                if forceDisplayOff and not manualActivation then
+                if forceDisplayOff and not isManualActivation then
                     return
                 end
                 if not IsWearingBodycam() then
-                    if manualActivation then
+                    if isManualActivation then
                         showClientError('BODYCAM_NOT_WORN')
                         return
                     end
                 end
 
-                if manualActivation and not toggle and watchingDisplayOn and not forceOff then
+                if shouldToggle then
+                    bodycamDutyRevoked = false
+                end
+
+                if isManualActivation and not shouldToggle and watchingDisplayOn and not isForceOff then
                     showClientError('BODYCAM_WATCH_ACTIVE')
                     return
                 end
 
-                if forceOff then
+                if isForceOff then
                     forceDisplayOff = true
-                elseif manualActivation and toggle then
+                elseif isManualActivation and shouldToggle then
                     forceDisplayOff = false
                 end
 
-                if manualActivation and doAnimation then
+                if isManualActivation and doAnimation then
                     local ped = PlayerPedId()
                     RequestAnimDict("clothingtie")
                     while not HasAnimDictLoaded("clothingtie") do
@@ -973,15 +1029,15 @@ CreateThread(function()
 
                 local wasDisplayOn = bodyCamDisplayOn
 
-                if manualActivation then
-                    if toggle then
+                if isManualActivation then
+                    if shouldToggle then
                         manualDisplayOn = true
                     else
                         manualDisplayOn = false
                         autoDisplayOn = false
                     end
                 else
-                    if toggle then
+                    if shouldToggle then
                         autoDisplayOn = true
                     else
                         autoDisplayOn = false
@@ -989,9 +1045,9 @@ CreateThread(function()
                 end
 
                 applyDisplayState()
-                if toggle and not forceDisplayOff then
+                if shouldToggle and not forceDisplayOff then
                     StartPeerStream()
-                elseif forceOff then
+                elseif isForceOff then
                     StopPeerStream()
                 end
 
@@ -1008,6 +1064,20 @@ CreateThread(function()
                         end
                     end
                 end
+
+                if automaticRecordingTrigger then
+                    triggerAutoRecording(automaticRecordingTrigger)
+                end
+            end)
+
+            RegisterNetEvent('SonoranCAD::bodycam::DutyRevoked', function()
+                cancelAutomaticDisplayRequest()
+                bodycamDutyRevoked = true
+                manualDisplayOn = false
+                autoDisplayOn = false
+                watchingDisplayOn = false
+                StopPeerStream()
+                applyDisplayState()
             end)
 
             RegisterNetEvent('SonoranCAD::bodycam::RecordingStartRejected', function(code, details)

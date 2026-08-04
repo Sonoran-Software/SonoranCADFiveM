@@ -590,6 +590,14 @@ CreateThread(function()
                 TriggerClientEvent('SonoranCAD::bodycam::GiveSound', -1, source, GetEntityCoords(GetPlayerPed(source)))
             end)
 
+            local function resetAutomaticDisplay(target)
+                TriggerClientEvent('SonoranCAD::bodycam::Toggle', target, false, false)
+            end
+
+            local function revokeBodycamDisplay(target)
+                TriggerClientEvent('SonoranCAD::bodycam::DutyRevoked', target)
+            end
+
             AddEventHandler('SonoranCAD::pushevents:UnitPanic', function(unit, identId, isPanic)
                 if not isPanic or not unit then
                     return
@@ -602,17 +610,19 @@ CreateThread(function()
 
             RegisterNetEvent('SonoranCAD::bodycam::RequestToggle', function(manualActivation, toggle)
                 local src = source
+                local isManualActivation = manualActivation == true
+                local wantsEnable = toggle == true
                 local unit = GetUnitByPlayerId(src)
                 debugLog(('Bodycam toggle requested: src=%s manual=%s toggle=%s unitFound=%s'):format(
-                    tostring(src), tostring(manualActivation), tostring(toggle), tostring(unit ~= nil)))
+                    tostring(src), tostring(isManualActivation), tostring(wantsEnable), tostring(unit ~= nil)))
 
-                if not toggle then
-                    TriggerClientEvent('SonoranCAD::bodycam::Toggle', src, manualActivation, false)
+                if not wantsEnable then
+                    TriggerClientEvent('SonoranCAD::bodycam::Toggle', src, isManualActivation, false)
                     return
                 end
 
                 if pluginConfig.requireUnitDuty and unit == nil then
-                    if manualActivation then
+                    if isManualActivation then
                         local cadState = isPlayerInCAD(src)
                         local rejectionCode = cadState.linked and 'BODYCAM_NOT_ON_DUTY' or 'PLAYER_NOT_IN_CAD'
                         local rejectionDetails = ('Bodycam enable rejected: src=%s linked=%s online=%s unitFound=false requireUnitDuty=true'):format(
@@ -627,10 +637,11 @@ CreateThread(function()
                         TriggerClientEvent('SonoranCAD::bodycam::RecordingStartRejected', src, rejectionCode,
                             rejectionDetails)
                     end
+                    resetAutomaticDisplay(src)
                     return
                 end
 
-                TriggerClientEvent('SonoranCAD::bodycam::Toggle', src, manualActivation, toggle)
+                TriggerClientEvent('SonoranCAD::bodycam::Toggle', src, isManualActivation, true)
             end)
 
             RegisterNetEvent('SonoranCAD::bodycam::PublishRuntime', function(payload)
@@ -639,7 +650,10 @@ CreateThread(function()
 
                 local unit = GetUnitByPlayerId(src)
                 local active = payload.active == true
-                if pluginConfig.requireUnitDuty and unit == nil then active = false end
+                if pluginConfig.requireUnitDuty and unit == nil and active then
+                    active = false
+                    revokeBodycamDisplay(src)
+                end
                 local peerId = type(payload.peerId) == "string" and
                     payload.peerId:sub(1, 128) or nil
                 if peerId and (peerId == "" or peerId:find("[^%w_%-%.]")) then
@@ -685,6 +699,11 @@ CreateThread(function()
                             emitRuntime("BODYCAM_REMOVED", feed)
                         elseif pluginConfig.requireUnitDuty and
                             GetUnitByPlayerId(feed.playerSource) == nil then
+                            if feed.active == true then
+                                revokeBodycamDisplay(feed.playerSource)
+                            else
+                                resetAutomaticDisplay(feed.playerSource)
+                            end
                             BodycamRuntime.feeds[key] = nil
                             emitRuntime("BODYCAM_REMOVED", feed)
                         end
