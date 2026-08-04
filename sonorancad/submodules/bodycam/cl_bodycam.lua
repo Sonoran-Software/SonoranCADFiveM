@@ -376,7 +376,14 @@ CreateThread(function()
                         end
                         return
                     end
-                    if sourceType == 'manual' and (not bodyCamOn or not bodyCamDisplayOn or not peerStreamReady) then
+                    local manualStartPending = sourceType == 'manual' and
+                        (not bodyCamOn or not bodyCamDisplayOn or not peerStreamReady)
+                    local autoStartPending = sourceType == 'auto' and bodyCamOn and bodyCamDisplayOn and
+                        not peerStreamReady
+                    if manualStartPending or autoStartPending then
+                        if pendingRecordingStart then
+                            return
+                        end
                         pendingRecordingStart = {
                             action = action,
                             sourceType = sourceType,
@@ -384,12 +391,14 @@ CreateThread(function()
                             reason = reason,
                             requestedAt = nowMs()
                         }
-                        if not bodyCamDisplayOn then
-                            TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', true, true)
-                        else
-                            StartPeerStream()
+                        if manualStartPending then
+                            if not bodyCamDisplayOn then
+                                TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', true, true)
+                            else
+                                StartPeerStream()
+                            end
                         end
-                        SchedulePendingRecordingStartRetry('manual_start_pending', 12)
+                        SchedulePendingRecordingStartRetry(sourceType .. '_start_pending', 12)
                         return
                     end
                     if not bodyCamOn then
