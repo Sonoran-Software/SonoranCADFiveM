@@ -305,7 +305,11 @@ CreateThread(function()
             end
 
             local function requestAutomaticDisplay(recordingTrigger)
-                if forceDisplayOff or autoDisplayOn or autoDisplayRequestPending then
+                if autoDisplayRequestPending then
+                    pendingAutoRecordingTrigger = pendingAutoRecordingTrigger or recordingTrigger
+                    return recordingTrigger ~= nil
+                end
+                if forceDisplayOff or autoDisplayOn then
                     return false
                 end
 
