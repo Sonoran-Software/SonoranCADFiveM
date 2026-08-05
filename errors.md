@@ -573,6 +573,11 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 - `Meaning`: The Night ERS resource required by the integration is not started.
 - `Potential Fix`: Start the ERS resource before enabling the ERS integration submodule.
 
+### ERR-ERS-106
+- `Key`: `ERS_VERSION_TOO_OLD`
+- `Meaning`: The installed `night_ers` resource is below the minimum supported version `1.8.16`, or its version metadata could not be verified; the ERS integration may not work.
+- `Potential Fix`: Confirm `night_ers` reports version `1.8.16` or newer in its resource metadata, update the resource if needed, and restart it before troubleshooting the integration.
+
 ## Framework Errors
 
 ### ERR-FW-101

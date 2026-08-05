@@ -131,6 +131,7 @@ local ErrorCodes = {
     ['ERS_COORDS_MISSING'] = { code = "ERR-ERS-103", message = "An ERS event was missing valid coordinates." },
     ['ERS_CALL_ID_INVALID'] = { code = "ERR-ERS-104", message = "ERS attempted to use an invalid saved call ID." },
     ['ERS_RESOURCE_NOT_STARTED'] = { code = "ERR-ERS-105", message = "The required Night ERS resource is not started." },
+    ['ERS_VERSION_TOO_OLD'] = { code = "ERR-ERS-106", message = "The night_ers version is below the minimum supported version or could not be verified; the ERS integration may not work." },
     ['FRAMEWORK_RESOURCE_MISSING'] = { code = "ERR-FW-101", message = "A required framework resource is not started." },
     ['FRAMEWORK_IDENTITY_MISSING'] = { code = "ERR-FW-102", message = "Framework identity data could not be retrieved for the player." },
     ['LOCATIONS_CONFIG_MISSING'] = { code = "ERR-LOC-101", message = "The locations/livemap configuration file is missing." },

@@ -9,7 +9,59 @@ local pluginConfig = Config.GetPluginConfig("ersintegration") or {}
 local postalConfig = Config.GetPluginConfig("postals") or {}
 
 if pluginConfig.enabled then
+    local ERS_MINIMUM_VERSION = "1.8.16"
+
+    local function checkErsVersion()
+        local metadataOk, currentVersion = pcall(GetResourceMetadata, "night_ers", "version", 0)
+        local normalizedVersion
+
+        if metadataOk and type(currentVersion) == "string" then
+            local major, minor, patch = currentVersion:match("^%s*(%d+)%.(%d+)%.(%d+)%s*$")
+            if major ~= nil then
+                normalizedVersion = ("%s.%s.%s"):format(major, minor, patch)
+            end
+        end
+
+        if normalizedVersion == nil then
+            local detectedVersion
+            if not metadataOk then
+                detectedVersion = "metadata lookup failed: " .. tostring(currentVersion)
+            elseif currentVersion == nil then
+                detectedVersion = "unavailable"
+            elseif type(currentVersion) ~= "string" then
+                detectedVersion = "malformed (" .. type(currentVersion) .. ")"
+            elseif currentVersion == "" then
+                detectedVersion = "empty"
+            else
+                detectedVersion = currentVersion
+            end
+
+            errorLog("ERS_VERSION_TOO_OLD", ("The night_ers version could not be verified (detected version: %s; required version: %s). The ERS integration may not work."):format(
+                detectedVersion,
+                ERS_MINIMUM_VERSION
+            ))
+            return
+        end
+
+        local comparisonOk, comparison = pcall(compareVersions, ERS_MINIMUM_VERSION, normalizedVersion)
+        if not comparisonOk or type(comparison) ~= "table" or type(comparison.result) ~= "boolean" then
+            errorLog("ERS_VERSION_TOO_OLD", ("The night_ers version could not be verified (detected version: %s; required version: %s). The ERS integration may not work."):format(
+                normalizedVersion,
+                ERS_MINIMUM_VERSION
+            ))
+            return
+        end
+
+        if comparison.result then
+            errorLog("ERS_VERSION_TOO_OLD", ("Detected night_ers version %s, but required version is %s or newer. The old version may cause the ERS integration not to work."):format(
+                normalizedVersion,
+                ERS_MINIMUM_VERSION
+            ))
+        end
+    end
+
     function startErs()
+        checkErsVersion()
         debugLog("Starting ERS Integration...")
         RegisterNetEvent('ErsIntegration::OnIsOfferedCallout')
         RegisterNetEvent('ErsIntegration::OnAcceptedCalloutOffer')
