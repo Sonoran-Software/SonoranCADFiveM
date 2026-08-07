@@ -1,7 +1,15 @@
 $(function () {
 	window.addEventListener('message', function (event) {
 		if (event.data.type == "light_event") {
-            $.post("http://localhost:" + event.data.port + "/lighting", JSON.stringify({ state: event.data.event }))
+			fetch("http://127.0.0.1:" + event.data.port + "/lighting", {
+				method: "POST",
+				headers: { "Content-Type": "application/json; charset=UTF-8" },
+				body: JSON.stringify({ state: event.data.event })
+			}).then(function (response) {
+				if (!response.ok) console.warn("Sonoran Studio lighting rejected event " + event.data.event + " with status " + response.status)
+			}).catch(function (error) {
+				console.warn("Sonoran Studio lighting is unavailable: " + error.message)
+			})
 		}
     });
 });
