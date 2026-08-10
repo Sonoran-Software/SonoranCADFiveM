@@ -100,7 +100,23 @@ if pluginConfig.enabled then
             return tostring(value)
         end
 
-        local function rememberCadDispatchCall(callId, calloutData, playerSource, existingEntry)
+        local function getStablePlayerIdentity(playerSource, unit)
+            local communityUserId = GetPlayerCommunityUserId(playerSource)
+            if type(communityUserId) == "string" and communityUserId ~= "" then
+                return communityUserId
+            end
+
+            local identities = GetUnitIdentityValues(unit)
+            for _, identity in ipairs(identities) do
+                if tonumber(GetSourceByCadIdentity({identity})) == tonumber(playerSource) then
+                    return tostring(identity)
+                end
+            end
+
+            return nil
+        end
+
+        local function rememberCadDispatchCall(callId, calloutData, playerIdentity, existingEntry)
             local normalizedCallId = tonumber(callId)
             local calloutId = safeString(calloutData and calloutData.calloutId)
             if normalizedCallId == nil or calloutId == "" then
@@ -112,12 +128,12 @@ if pluginConfig.enabled then
                 timestamp = os.time()
             }
             entry.calloutId = calloutId
-            entry.acceptedSources = entry.acceptedSources or {}
-            entry.requestedSources = entry.requestedSources or {}
+            entry.acceptedIdentities = entry.acceptedIdentities or {}
+            entry.requestedIdentities = entry.requestedIdentities or {}
 
-            local normalizedSource = tonumber(playerSource)
-            if normalizedSource ~= nil and normalizedSource > 0 then
-                entry.acceptedSources[tostring(normalizedSource)] = true
+            if type(playerIdentity) == "string" and playerIdentity ~= "" then
+                entry.acceptedIdentities[playerIdentity] = true
+                entry.requestedIdentities[playerIdentity] = nil
             end
 
             cadDispatchCallouts[tostring(normalizedCallId)] = entry
@@ -414,6 +430,7 @@ if pluginConfig.enabled then
         ]]
         if pluginConfig.createEmergencyCall then
             AddEventHandler('ErsIntegration::OnAcceptedCalloutOffer', function(calloutData)
+                local playerSource = source
                 if type(calloutData) ~= "table" then
                     errorLog("UNHANDLED_SERVER_ERROR", "ERS accepted callout payload was malformed.")
                     return
@@ -442,9 +459,10 @@ if pluginConfig.enabled then
                         errorLog("UNHANDLED_SERVER_ERROR", "ERS accepted callout had an invalid saved call ID for key: " .. uniqueKey)
                         return
                     end
-                    rememberCadDispatchCall(callId, calloutData, source, existingCall)
+                    local playerIdentity = getStablePlayerIdentity(playerSource, GetUnitByPlayerId(playerSource))
+                    rememberCadDispatchCall(callId, calloutData, playerIdentity, existingCall)
                     if pluginConfig.autoAddCall then
-                        local unitData = getPlayerCadStatus(source, "ERS Integration", { unit = true, link = true })
+                        local unitData = getPlayerCadStatus(playerSource, "ERS Integration", { unit = true, link = true })
                         if not unitData.success then
                             return
                         end
@@ -463,7 +481,7 @@ if pluginConfig.enabled then
                 else
                     debugLog("Processing callout " .. safeString(calloutData.calloutId, "unknown") .. " for emergency call.")
                     local callCode = type(pluginConfig.callCodes) == "table" and (pluginConfig.callCodes[calloutData.CalloutName] or "") or ""
-                    local unitData = getPlayerCadStatus(source, "ERS Integration", { unit = true, link = true })
+                    local unitData = getPlayerCadStatus(playerSource, "ERS Integration", { unit = true, link = true })
                     if not unitData.success then
                         return
                     end
@@ -496,7 +514,7 @@ if pluginConfig.enabled then
                     end
                     local callId = response.callId
                     if callId then
-                            processedCalloutAccepted[uniqueKey] = rememberCadDispatchCall(callId, calloutData, source)
+                            processedCalloutAccepted[uniqueKey] = rememberCadDispatchCall(callId, calloutData, unitData.link)
                             if processedCalloutOffered[uniqueKey] ~= nil then
                                 local payload = { serverId = tonumber(Config.serverId), callId = tonumber(processedCalloutOffered[uniqueKey].id)}
                                 local removeResponse = CadApiDeleteEmergencyCall(payload.callId, payload.serverId)
@@ -535,15 +553,20 @@ if pluginConfig.enabled then
                     return
                 end
 
-                local sourceKey = tostring(playerSource)
-                if calloutEntry.acceptedSources[sourceKey] or calloutEntry.requestedSources[sourceKey] then
+                local playerIdentity = getStablePlayerIdentity(playerSource, unit)
+                if playerIdentity == nil then
+                    debugLog(("ERS callout %s was attached to a player without a stable CAD identity."):format(calloutEntry.calloutId))
                     return
                 end
-                calloutEntry.requestedSources[sourceKey] = true
+
+                if calloutEntry.acceptedIdentities[playerIdentity] or calloutEntry.requestedIdentities[playerIdentity] then
+                    return
+                end
+                calloutEntry.requestedIdentities[playerIdentity] = true
 
                 CreateThread(function()
                     if GetResourceState('night_ers') ~= 'started' then
-                        calloutEntry.requestedSources[sourceKey] = nil
+                        calloutEntry.requestedIdentities[playerIdentity] = nil
                         errorLog("ERS_RESOURCE_NOT_STARTED", "Could not assign the CAD unit to ERS because night_ers is not started.")
                         return
                     end
@@ -552,7 +575,7 @@ if pluginConfig.enabled then
                         return exports['night_ers']:SendCalloutOfferToPlayer(playerSource, calloutEntry.calloutId)
                     end)
                     if not requestOk then
-                        calloutEntry.requestedSources[sourceKey] = nil
+                        calloutEntry.requestedIdentities[playerIdentity] = nil
                         errorLog("UNHANDLED_SERVER_ERROR", ("Failed to assign player %s to ERS callout %s: %s"):format(
                             playerSource,
                             calloutEntry.calloutId,
@@ -562,7 +585,7 @@ if pluginConfig.enabled then
                     end
 
                     if offerResult == false then
-                        calloutEntry.requestedSources[sourceKey] = nil
+                        calloutEntry.requestedIdentities[playerIdentity] = nil
                         debugLog(("night_ers did not assign player %s to callout %s: %s"):format(
                             playerSource,
                             calloutEntry.calloutId,
