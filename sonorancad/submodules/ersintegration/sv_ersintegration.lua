@@ -72,6 +72,7 @@ if pluginConfig.enabled then
         local processedPedData = {}
         local processedVehData = {}
         local ersCallouts = {}
+        local cadDispatchCallouts = {}
 
         --[[
         @function escapeSpaces
@@ -97,6 +98,39 @@ if pluginConfig.enabled then
             end
 
             return tostring(value)
+        end
+
+        local function rememberCadDispatchCall(callId, calloutData, playerSource, existingEntry)
+            local normalizedCallId = tonumber(callId)
+            local calloutId = safeString(calloutData and calloutData.calloutId)
+            if normalizedCallId == nil or calloutId == "" then
+                return existingEntry
+            end
+
+            local entry = existingEntry or {
+                id = tostring(normalizedCallId),
+                timestamp = os.time()
+            }
+            entry.calloutId = calloutId
+            entry.acceptedSources = entry.acceptedSources or {}
+            entry.requestedSources = entry.requestedSources or {}
+
+            local normalizedSource = tonumber(playerSource)
+            if normalizedSource ~= nil and normalizedSource > 0 then
+                entry.acceptedSources[tostring(normalizedSource)] = true
+            end
+
+            cadDispatchCallouts[tostring(normalizedCallId)] = entry
+            return entry
+        end
+
+        local function getCadDispatchCallId(call)
+            if type(call) ~= "table" then
+                return nil
+            end
+
+            local dispatch = type(call.dispatch) == "table" and call.dispatch or call
+            return tonumber(dispatch.callId or dispatch.id)
         end
 
         local function getCoordinates(coords)
@@ -402,13 +436,14 @@ if pluginConfig.enabled then
                 end
                 if processedCalloutAccepted[uniqueKey] then
                     debugLog("Callout " .. safeString(calloutData.calloutId, "unknown") .. " already processed. Skipping emergency call... adding new units")
+                    local existingCall = processedCalloutAccepted[uniqueKey]
+                    local callId = tonumber(existingCall.id or existingCall)
+                    if callId == nil then
+                        errorLog("UNHANDLED_SERVER_ERROR", "ERS accepted callout had an invalid saved call ID for key: " .. uniqueKey)
+                        return
+                    end
+                    rememberCadDispatchCall(callId, calloutData, source, existingCall)
                     if pluginConfig.autoAddCall then
-                        local existingCall = processedCalloutAccepted[uniqueKey]
-                        local callId = tonumber(existingCall.id or existingCall)
-                        if callId == nil then
-                            errorLog("UNHANDLED_SERVER_ERROR", "ERS accepted callout had an invalid saved call ID for key: " .. uniqueKey)
-                            return
-                        end
                         local unitData = getPlayerCadStatus(source, "ERS Integration", { unit = true, link = true })
                         if not unitData.success then
                             return
@@ -461,8 +496,7 @@ if pluginConfig.enabled then
                     end
                     local callId = response.callId
                     if callId then
-                            -- Save the callId in the processedCalloutOffered table using the unique key
-                            processedCalloutAccepted[uniqueKey] = {id = tostring(callId), timestamp = os.time()}
+                            processedCalloutAccepted[uniqueKey] = rememberCadDispatchCall(callId, calloutData, source)
                             if processedCalloutOffered[uniqueKey] ~= nil then
                                 local payload = { serverId = tonumber(Config.serverId), callId = tonumber(processedCalloutOffered[uniqueKey].id)}
                                 local removeResponse = CadApiDeleteEmergencyCall(payload.callId, payload.serverId)
@@ -476,6 +510,79 @@ if pluginConfig.enabled then
                     else
                         debugLog("Failed to extract callId from response: " .. json.encode(response.data or {}))
                     end
+                end
+            end)
+
+            AddEventHandler('SonoranCAD::pushevents:UnitAttach', function(call, unit)
+                local callId = getCadDispatchCallId(call)
+                if callId == nil or type(unit) ~= "table" then
+                    return
+                end
+
+                local calloutEntry = cadDispatchCallouts[tostring(callId)]
+                if calloutEntry == nil then
+                    return
+                end
+
+                if pluginConfig.clearRecordsAfter ~= 0 and os.time() - calloutEntry.timestamp >= (pluginConfig.clearRecordsAfter * 60) then
+                    cadDispatchCallouts[tostring(callId)] = nil
+                    return
+                end
+
+                local playerSource = tonumber(GetSourceByCadIdentity(GetUnitIdentityValues(unit)))
+                if playerSource == nil or playerSource <= 0 then
+                    debugLog(("ERS callout %s was attached to a CAD unit that is not currently in game."):format(calloutEntry.calloutId))
+                    return
+                end
+
+                local sourceKey = tostring(playerSource)
+                if calloutEntry.acceptedSources[sourceKey] or calloutEntry.requestedSources[sourceKey] then
+                    return
+                end
+                calloutEntry.requestedSources[sourceKey] = true
+
+                CreateThread(function()
+                    if GetResourceState('night_ers') ~= 'started' then
+                        calloutEntry.requestedSources[sourceKey] = nil
+                        errorLog("ERS_RESOURCE_NOT_STARTED", "Could not assign the CAD unit to ERS because night_ers is not started.")
+                        return
+                    end
+
+                    local requestOk, offerResult, reason = pcall(function()
+                        return exports['night_ers']:SendCalloutOfferToPlayer(playerSource, calloutEntry.calloutId)
+                    end)
+                    if not requestOk then
+                        calloutEntry.requestedSources[sourceKey] = nil
+                        errorLog("UNHANDLED_SERVER_ERROR", ("Failed to assign player %s to ERS callout %s: %s"):format(
+                            playerSource,
+                            calloutEntry.calloutId,
+                            tostring(offerResult)
+                        ))
+                        return
+                    end
+
+                    if offerResult == false then
+                        calloutEntry.requestedSources[sourceKey] = nil
+                        debugLog(("night_ers did not assign player %s to callout %s: %s"):format(
+                            playerSource,
+                            calloutEntry.calloutId,
+                            tostring(reason or "no reason returned")
+                        ))
+                        return
+                    end
+
+                    debugLog(("Requested ERS callout %s for CAD-attached player %s."):format(calloutEntry.calloutId, playerSource))
+                end)
+            end)
+
+            AddEventHandler('SonoranCAD::pushevents:DispatchEvent', function(call)
+                if type(call) ~= "table" or call.dispatch_type ~= "CALL_CLOSE" then
+                    return
+                end
+
+                local callId = getCadDispatchCallId(call)
+                if callId ~= nil then
+                    cadDispatchCallouts[tostring(callId)] = nil
                 end
             end)
         end
