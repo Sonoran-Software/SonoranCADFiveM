@@ -7,8 +7,8 @@ $(function () {
 				body: JSON.stringify({ state: event.data.event })
 			}).then(function (response) {
 				if (!response.ok) console.warn("Sonoran Studio lighting rejected event " + event.data.event + " with status " + response.status)
-			}).catch(function (error) {
-				console.warn("Sonoran Studio lighting is unavailable: " + error.message)
+			}).catch(function () {
+				// The Sonoran Studio desktop companion is optional, so an unavailable local endpoint is expected.
 			})
 		} else if (event.data.type == "studio_game_event") {
 			fetch("http://127.0.0.1:" + event.data.port + "/fivem", {
@@ -17,8 +17,8 @@ $(function () {
 				body: JSON.stringify({ event: event.data.event, args: event.data.args || {} })
 			}).then(function (response) {
 				if (!response.ok) console.warn("Sonoran Studio rejected game event " + event.data.event + " with status " + response.status)
-			}).catch(function (error) {
-				console.warn("Sonoran Studio is unavailable: " + error.message)
+			}).catch(function () {
+				// The Sonoran Studio desktop companion is optional, so an unavailable local endpoint is expected.
 			})
 		}
     });
