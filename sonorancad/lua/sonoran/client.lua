@@ -1109,9 +1109,22 @@ local function create_client(config, adapter)
     self:_assert_positive_integer(call_id, "callId")
     return self:_request("DELETE", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/calls/911/" .. tostring(call_id))
   end
+  instance.getDispatchTemplatesV2 = function(self, template_id)
+    if template_id ~= nil then
+      self:_assert_positive_integer(template_id, "templateId")
+      return self:_request("GET", "v2/emergency/dispatch-templates/" .. tostring(template_id))
+    end
+    return self:_request("GET", "v2/emergency/dispatch-templates")
+  end
   instance.createDispatchCallV2 = function(self, data)
     local resolved_server_id = self:_resolve_server_id(data and data.serverId)
     return self:_request("POST", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/dispatch-calls", {
+      body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
+    })
+  end
+  instance.createCustomDispatchCallV2 = function(self, data)
+    local resolved_server_id = self:_resolve_server_id(data and data.serverId)
+    return self:_request("POST", "v2/emergency/servers/" .. tostring(resolved_server_id) .. "/custom-dispatch-calls", {
       body = normalize_v2_target_aliases(strip_keys(data, { "serverId" }))
     })
   end
