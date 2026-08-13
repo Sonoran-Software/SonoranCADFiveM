@@ -1241,9 +1241,42 @@ local function create_client(config, adapter)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     return self:_request("GET", "v2/servers/" .. tostring(resolved_community_id) .. "/channels")
   end
-  instance.setZonesV2 = function(self, data)
+  instance.getZonesV2 = function(self, community_id)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
-    return self:_request("PUT", "v2/servers/" .. resolved_community_id .. "/zones", {
+    local room_id = self:_resolve_radio_room_id()
+    return self:_request("GET", "v2/servers/" .. tostring(resolved_community_id) .. "/rooms/" .. tostring(room_id) .. "/zones")
+  end
+  instance.createZoneV2 = function(self, zone_type, zone, community_id)
+    if zone_type ~= "geo" and zone_type ~= "degrade" then
+      error("zoneType must be either geo or degrade.")
+    end
+    local resolved_community_id = self:_resolve_radio_community_id(community_id)
+    local room_id = self:_resolve_radio_room_id()
+    return self:_request("POST", "v2/servers/" .. tostring(resolved_community_id) .. "/rooms/" .. tostring(room_id) .. "/zones/" .. zone_type, {
+      body = { zone = zone }
+    })
+  end
+  instance.updateZoneV2 = function(self, zone_type, zone_name, zone, community_id)
+    if zone_type ~= "geo" and zone_type ~= "degrade" then
+      error("zoneType must be either geo or degrade.")
+    end
+    local resolved_community_id = self:_resolve_radio_community_id(community_id)
+    local room_id = self:_resolve_radio_room_id()
+    return self:_request("PATCH", "v2/servers/" .. tostring(resolved_community_id) .. "/rooms/" .. tostring(room_id) .. "/zones/" .. zone_type .. "/" .. self:_encode_path_segment(zone_name), {
+      body = { zone = zone }
+    })
+  end
+  instance.deleteZoneV2 = function(self, zone_type, zone_name, community_id)
+    if zone_type ~= "geo" and zone_type ~= "degrade" then
+      error("zoneType must be either geo or degrade.")
+    end
+    local resolved_community_id = self:_resolve_radio_community_id(community_id)
+    local room_id = self:_resolve_radio_room_id()
+    return self:_request("DELETE", "v2/servers/" .. tostring(resolved_community_id) .. "/rooms/" .. tostring(room_id) .. "/zones/" .. zone_type .. "/" .. self:_encode_path_segment(zone_name))
+  end
+  instance.setZonesV2 = function(self, data, community_id)
+    local resolved_community_id = self:_resolve_radio_community_id(community_id)
+    return self:_request("PUT", "v2/servers/" .. tostring(resolved_community_id) .. "/zones", {
       body = strip_keys(data, { "serverId", "apiKey", "id", "key" })
     })
   end
