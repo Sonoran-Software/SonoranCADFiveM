@@ -15,6 +15,45 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
         local lastCoords = { x = 0, y = 0, z = 0, w = 0 }
         local lastLightsOn = nil
         local postalLookupUnavailable = false
+        local customStreetNames = {}
+
+        local function normalizeStreetHash(streetHash)
+            local numericHash = tonumber(streetHash)
+            if numericHash == nil and type(streetHash) == "string" then
+                local hexadecimalHash = streetHash:match("^%s*0[xX]([%da-fA-F]+)%s*$")
+                if hexadecimalHash ~= nil then
+                    numericHash = tonumber(hexadecimalHash, 16)
+                end
+            end
+            if numericHash == nil then
+                return nil
+            end
+
+            -- Street natives and HUD configs may expose the same 32-bit hash as
+            -- either a signed or unsigned integer. Normalize both representations.
+            return math.floor(numericHash % 4294967296)
+        end
+
+        local customStreetNameConfig = pluginConfig.customStreetNames
+        if type(customStreetNameConfig) == "table" and customStreetNameConfig.enabled == true then
+            local configuredNames = customStreetNameConfig.names
+            if type(configuredNames) == "table" then
+                for streetHash, streetName in pairs(configuredNames) do
+                    local normalizedHash = normalizeStreetHash(streetHash)
+                    if normalizedHash ~= nil and type(streetName) == "string" and streetName ~= "" then
+                        customStreetNames[normalizedHash] = streetName
+                    end
+                end
+            end
+        end
+
+        local function resolveStreetName(streetHash)
+            local normalizedHash = normalizeStreetHash(streetHash)
+            if normalizedHash ~= nil and customStreetNames[normalizedHash] ~= nil then
+                return customStreetNames[normalizedHash]
+            end
+            return GetStreetNameFromHashKey(streetHash) or ""
+        end
 
         local function resolveVehicleType(ped, veh)
             if not ped then
@@ -75,8 +114,8 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
             else
                 pluginConfig.prefixPostal = false
             end
-            local l1 = GetStreetNameFromHashKey(var1)
-            local l2 = GetStreetNameFromHashKey(var2)
+            local l1 = resolveStreetName(var1)
+            local l2 = resolveStreetName(var2)
             if l2 ~= '' then
                 currentLocation = l1 .. ' / ' .. l2
             else
