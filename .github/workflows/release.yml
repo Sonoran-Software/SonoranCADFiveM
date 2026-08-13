@@ -103,7 +103,18 @@ jobs:
         run: |
           VERSION=${{ steps.version.outputs.version }}
           find sonorancad/plugins -mindepth 1 -type d -exec sh -c 'case "$0" in */readme.md|*/template) ;; *) rm -r "$0" ;; esac' {} \; & wait
-          rsync -a --exclude="[sonorancad]" --exclude=".git" --exclude=".vscode" --exclude=".github" ./ ./[sonorancad]
+          rsync -a \
+            --exclude="[sonorancad]" \
+            --exclude=".git" \
+            --exclude=".vscode" \
+            --exclude=".github" \
+            --exclude=".codex" \
+            --exclude=".gitattributes" \
+            --exclude=".gitignore" \
+            --exclude=".gitmodules" \
+            --exclude="CONTRIBUTOR_LICENSE_AGREEMENT.md" \
+            --exclude="errors.md" \
+            ./ ./[sonorancad]
           zip -r "sonorancad-$VERSION.zip" [sonorancad]/
           echo "Zipped sonorancad/ and sonorancad_updatehelper/ directories"
         shell: bash
@@ -187,7 +198,18 @@ jobs:
         run: |
           VERSION=${{ steps.extract-version.outputs.version }}
           find sonorancad/plugins -mindepth 1 -type d -exec sh -c 'case "$0" in */readme.md|*/template) ;; *) rm -r "$0" ;; esac' {} \; & wait
-          rsync -a --exclude="[sonorancad]" --exclude=".git" --exclude=".vscode" --exclude=".github" ./ ./[sonorancad]
+          rsync -a \
+            --exclude="[sonorancad]" \
+            --exclude=".git" \
+            --exclude=".vscode" \
+            --exclude=".github" \
+            --exclude=".codex" \
+            --exclude=".gitattributes" \
+            --exclude=".gitignore" \
+            --exclude=".gitmodules" \
+            --exclude="CONTRIBUTOR_LICENSE_AGREEMENT.md" \
+            --exclude="errors.md" \
+            ./ ./[sonorancad]
           zip -r "sonorancad-$VERSION.zip" [sonorancad]/
           echo "Zipped sonorancad/ and sonorancad_updatehelper/ directories"
         shell: bash

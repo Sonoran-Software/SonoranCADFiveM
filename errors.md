@@ -1,6 +1,6 @@
 # SonoranCAD Error and Warning Codes
 
-This document is generated from the canonical error and warning definitions in [sonorancad/core/logging.lua](/C:/Users/jodan/Documents/GitHub/SonoranCADFiveM/sonorancad/core/logging.lua). If a code changes there, this file should be updated to match.
+This document is generated from the canonical error and warning definitions in [sonorancad/core/logging.lua](https://github.com/Sonoran-Software/SonoranCADFiveM/blob/master/sonorancad/core/logging.lua). If a code changes there, this file should be updated to match.
 
 Each entry includes:
 - `Key`: internal identifier used in code
