@@ -1361,6 +1361,10 @@ local function create_client(config, adapter)
       authenticated = false
     })
   end
+  instance.getServerSubscriptionV2 = function(self, community_id)
+    local resolved_community_id = self:_resolve_radio_community_id(community_id)
+    return self:_request("GET", "v2/servers/" .. tostring(resolved_community_id) .. "/subscription")
+  end
   instance.setServerIpV2 = function(self, data)
     local resolved_community_id = self:_resolve_radio_community_id(data and data.communityId)
     local body = strip_keys(data, { "serverId", "communityId" })
