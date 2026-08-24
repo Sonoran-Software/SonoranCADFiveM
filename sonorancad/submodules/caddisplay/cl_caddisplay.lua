@@ -415,13 +415,31 @@ CreateThread(function()
                 end
             end
 
+            function getDisplayPreviewTransform()
+                local cameraPosition = GetGameplayCamCoord()
+                local cameraRotation = GetGameplayCamRot(2)
+                local pitch = math.rad(cameraRotation.x)
+                local yaw = math.rad(cameraRotation.z)
+                local pitchScale = math.cos(pitch)
+                local previewDistance = 0.75
+
+                return {
+                    x = cameraPosition.x - math.sin(yaw) * pitchScale * previewDistance,
+                    y = cameraPosition.y + math.cos(yaw) * pitchScale * previewDistance,
+                    z = cameraPosition.z + math.sin(pitch) * previewDistance
+                }, cameraRotation.z + 180.0
+            end
+
             function spawnDisplay(veh)
                 ensureModel(displayModelHash)
-                local player = PlayerPedId()
-                local x, y, z = table.unpack(GetEntityCoords(player, true))
-                local obj = CreateObject(displayModelHash, x, y, z, true, true, false)
+                local previewPosition, previewHeading = getDisplayPreviewTransform()
+                local obj = CreateObjectNoOffset(displayModelHash, previewPosition.x, previewPosition.y, previewPosition.z,
+                    true, true, false)
+                SetEntityHeading(obj, previewHeading)
+                SetEntityCollision(obj, false, false)
+                FreezeEntityPosition(obj, true)
                 latestSpawnedDisplay = obj
-                trackDisplayForVehicle(veh or GetVehiclePedIsIn(player, false), obj)
+                trackDisplayForVehicle(veh or GetVehiclePedIsIn(PlayerPedId(), false), obj)
                 ensureDui()
                 return obj
             end
@@ -804,6 +822,7 @@ CreateThread(function()
                     local veh = GetVehiclePedIsIn(PlayerPedId(), false)
                     if veh ~= 0 and spawnedDisplays[spawnedDisplayIndex] ~= nil then
                         refreshOffsetsForCurrentSelection()
+                        FreezeEntityPosition(spawnedDisplays[spawnedDisplayIndex], false)
                         AttachEntityToEntity(spawnedDisplays[spawnedDisplayIndex], veh,
                             GetEntityBoneIndexByName(veh, "chassis"), displayPosition.x, displayPosition.y,
                             displayPosition.z, displayRotation.x, displayRotation.y, displayRotation.z,
