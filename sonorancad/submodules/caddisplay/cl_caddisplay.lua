@@ -216,12 +216,18 @@ CreateThread(function()
                 for index, value in ipairs(tab) do
                     if (targetVehNet ~= nil and value.vehNet == targetVehNet) or value.veh == veh then
                         local prop = value.prop
-                        if prop ~= nil and DoesEntityExist(prop) and
-                            (prop == veh or IsEntityAttachedToEntity(prop, veh) or GetEntityAttachedTo(prop) == veh) then
+                        local propExists = prop ~= nil and DoesEntityExist(prop)
+                        local attachedTo = propExists and GetEntityAttachedTo(prop) or 0
+                        if propExists and
+                            (prop == veh or IsEntityAttachedToEntity(prop, veh) or attachedTo == veh) then
                             return true
                         end
 
                         -- Vehicle network IDs can be reused after replacement, so discard the stale display record.
+                        debugLog(("[caddisplay] Discarding stale display tracking: vehicle=%s networkId=%s " ..
+                            "storedVehicle=%s storedNetworkId=%s prop=%s propExists=%s attachedTo=%s"):format(
+                            tostring(veh), tostring(targetVehNet), tostring(value.veh), tostring(value.vehNet),
+                            tostring(prop), tostring(propExists), tostring(attachedTo)))
                         local displayIndex = getSpawnedDisplayIndex(prop) or value.index
                         if displayIndex ~= nil then
                             removeDisplayAtIndex(displayIndex)
@@ -458,15 +464,24 @@ CreateThread(function()
             end
 
             function attachDisplayToVehicle(obj, veh, placement)
-                if not DoesEntityExist(obj) or not DoesEntityExist(veh) then
-                    return
-                end
+                local propExists = DoesEntityExist(obj)
+                local vehicleExists = DoesEntityExist(veh)
                 local bone = placement.Bone or -1
-                -- The preview must be movable before applying its saved vehicle-relative transform.
-                FreezeEntityPosition(obj, false)
-                AttachEntityToEntity(obj, veh, bone, placement.Position.x, placement.Position.y, placement.Position.z,
-                    placement.Rotation.pitch, placement.Rotation.roll, placement.Rotation.yaw, false, false,
-                    true, false, 0, true)
+                if propExists and vehicleExists then
+                    -- The preview must be movable before applying its saved vehicle-relative transform.
+                    FreezeEntityPosition(obj, false)
+                    AttachEntityToEntity(obj, veh, bone, placement.Position.x, placement.Position.y, placement.Position.z,
+                        placement.Rotation.pitch, placement.Rotation.roll, placement.Rotation.yaw, false, false,
+                        true, false, 0, true)
+                end
+
+                propExists = DoesEntityExist(obj)
+                local attachedTo = propExists and GetEntityAttachedTo(obj) or 0
+                local vehNet = vehicleExists and getVehNetId(veh) or nil
+                debugLog(("[caddisplay] Automatic display attachment result: vehicle=%s networkId=%s " ..
+                    "vehicleExists=%s prop=%s propExists=%s attachedTo=%s attachedToExpectedVehicle=%s bone=%s"):format(
+                    tostring(veh), tostring(vehNet), tostring(vehicleExists), tostring(obj), tostring(propExists),
+                    tostring(attachedTo), tostring(attachedTo == veh), tostring(bone)))
             end
 
             function marker(pos)
