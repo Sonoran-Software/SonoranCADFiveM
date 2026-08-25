@@ -418,7 +418,7 @@ if pluginConfig.enabled then
         else
             -- Call already exists
             debugLog("Found Call. Attaching!")
-            local data = {callId = call.callId, units = {communityUserId}, serverId = tonumber(Config.serverId)}
+            local data = {callId = call.callId, communityUserIds = {communityUserId}, serverId = tonumber(Config.serverId)}
             local response = CadApiAttachUnitsToDispatchCall(data)
             if not response.success then
                 CadApiLogFailure("ATTACH_UNIT", response, data)
