@@ -824,17 +824,15 @@ function CadApiAttachUnitsToDispatchCall(payload)
     local call_id = payload.callId
     local request_payload = {}
     for key, value in pairs(payload) do
-        if key ~= "callId" and key ~= "units" then
+        if key ~= "callId" then
             request_payload[key] = value
         end
     end
-    request_payload.communityUserIds = CadApiResolveCommunityUserIds(payload.units or {})
     return get_cad_client():attachUnitsToDispatchCallV2(call_id, request_payload)
 end
 
 function CadApiDetachUnitsFromDispatchCall(payload)
     payload = payload or {}
-    payload.units = CadApiResolveCommunityUserIds(payload.units or {})
     return get_cad_client():detachUnitsFromDispatchCallV2(payload)
 end
 
