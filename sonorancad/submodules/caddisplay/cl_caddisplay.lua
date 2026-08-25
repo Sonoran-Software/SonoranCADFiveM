@@ -213,9 +213,22 @@ CreateThread(function()
 
             function hasTrackedVehicle(tab, veh)
                 local targetVehNet = getVehNetId(veh)
-                for _, value in ipairs(tab) do
+                for index, value in ipairs(tab) do
                     if (targetVehNet ~= nil and value.vehNet == targetVehNet) or value.veh == veh then
-                        return true
+                        local prop = value.prop
+                        if prop ~= nil and DoesEntityExist(prop) and
+                            (prop == veh or IsEntityAttachedToEntity(prop, veh) or GetEntityAttachedTo(prop) == veh) then
+                            return true
+                        end
+
+                        -- Vehicle network IDs can be reused after replacement, so discard the stale display record.
+                        local displayIndex = getSpawnedDisplayIndex(prop) or value.index
+                        if displayIndex ~= nil then
+                            removeDisplayAtIndex(displayIndex)
+                        else
+                            table.remove(tab, index)
+                        end
+                        return false
                     end
                 end
                 return false
