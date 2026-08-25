@@ -449,10 +449,11 @@ CreateThread(function()
                     return
                 end
                 local bone = placement.Bone or -1
+                -- The preview must be movable before applying its saved vehicle-relative transform.
+                FreezeEntityPosition(obj, false)
                 AttachEntityToEntity(obj, veh, bone, placement.Position.x, placement.Position.y, placement.Position.z,
                     placement.Rotation.pitch, placement.Rotation.roll, placement.Rotation.yaw, false, false,
                     true, false, 0, true)
-                FreezeEntityPosition(obj, false)
             end
 
             function marker(pos)
