@@ -373,7 +373,7 @@ for k, v in pairs(parsedConfig) do
     local val = nil
     if k == 'apiKey' then
         if cvar == 'NONE' then
-            warnLog('APIKEY_CONVAR_UNINITIALIZED', 'Configuration: apiKey convar value NOT initialized - has sonorancad.cfg been executed?')
+            logError('APIKEY_CONVAR_UNINITIALIZED', '`server.cfg` must use `exec @sonorancad/sonorancad.cfg`, not `ensure sonorancad`. Remove every `ensure sonorancad` line, add the exec line, and fully restart FXServer. Direct ensure may break SonoranCAD updates and third-party integrations.')
         elseif cvar == 'protection_initialized' then
             SetConvar('sonoran_' .. k, tostring(v))
         end

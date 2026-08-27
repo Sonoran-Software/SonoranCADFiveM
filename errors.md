@@ -182,6 +182,11 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 - `Meaning`: A CAD record create or edit request failed because one of the fields marked unique already has the same value on another record.
 - `Potential Fix`: Find the unique field value in the record payload, choose a value that is not already used, or update the existing CAD record instead of creating a duplicate.
 
+### ERR-CORE-036
+- `Key`: `APIKEY_CONVAR_UNINITIALIZED`
+- `Meaning`: SonoranCAD was started without the required convar and permission setup from the bundled `sonorancad.cfg`. This can break SonoranCAD updates and third-party integrations.
+- `Potential Fix`: In `server.cfg`, remove every `ensure sonorancad` line, use `exec @sonorancad/sonorancad.cfg` instead, and then fully restart FXServer.
+
 ### ERR-CORE-900
 - `Key`: `UNHANDLED_SERVER_ERROR`
 - `Meaning`: An unexpected server-side error occurred and was normalized into a generic coded failure.
@@ -711,11 +716,6 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 - `Key`: `JSON_ENCODE_FAILED`
 - `Meaning`: SonoranCAD failed to encode a Lua value into JSON and continued with a fallback value.
 - `Potential Fix`: Check the table being encoded for unsupported values such as functions, userdata, or recursive structures.
-
-### WRN-CORE-005
-- `Key`: `APIKEY_CONVAR_UNINITIALIZED`
-- `Meaning`: SonoranCAD started before the bundled convar setup from `sonorancad.cfg` initialized the API key path.
-- `Potential Fix`: Use `exec sonorancad.cfg` and make sure it runs before `ensure sonorancad`.
 
 ### WRN-CORE-006
 - `Key`: `OLD_FXSERVER_VERSION`
