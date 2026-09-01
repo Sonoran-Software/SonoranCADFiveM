@@ -375,7 +375,13 @@ CreateThread(function()
                 end
 
                 if value ~= nil and fieldUsesFlags(field) then
-                    local flags = type(value) == "table" and (value.flags or value) or {}
+                    local flags = value
+                    if type(value) == "table" and value.flags ~= nil then
+                        flags = value.flags
+                    end
+                    if type(flags) ~= "table" then
+                        return nil, ("%s contains invalid options."):format(field.label or uid)
+                    end
                     local allowed = {}
                     local options = type(field.options) == "table" and field.options or {}
                     for _, option in ipairs(options) do
