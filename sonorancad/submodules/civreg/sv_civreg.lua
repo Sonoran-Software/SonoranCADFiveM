@@ -10,6 +10,7 @@ CreateThread(function()
         local SESSION_LIFETIME_MS = 10 * 60 * 1000
         local FORM_REQUEST_COOLDOWN_MS = 3000
         local MAX_FIELD_LENGTH = 8000
+        local DEFAULT_STATUS_OPTIONS = { "0", "1", "2" }
 
         AddPluginFilePath("civreg")
 
@@ -189,7 +190,7 @@ CreateThread(function()
             if type(host) ~= "string" or host == "" or tostring(port or "") == "" or tostring(port) == "0" then
                 return nil
             end
-            return ("http://%s:%s/civreg"):format(host, tostring(port))
+            return ("http://%s:%s/%s/civreg"):format(host, tostring(port), GetCurrentResourceName())
         end
 
         local function dependencyValue(values, fields, uid)
@@ -277,6 +278,28 @@ CreateThread(function()
                             end
                         end
                         value = { flags = selected }
+                    end
+                elseif fieldType == "select" or fieldType == "status" then
+                    if value ~= nil then
+                        value = tostring(value)
+                        if #value > MAX_FIELD_LENGTH then
+                            return nil, ("%s is too long."):format(field.label or uid)
+                        end
+
+                        local options = field.options or {}
+                        if fieldType == "status" and #options == 0 then
+                            options = DEFAULT_STATUS_OPTIONS
+                        end
+                        local allowed = value == ""
+                        for _, option in ipairs(options) do
+                            if tostring(option) == value then
+                                allowed = true
+                                break
+                            end
+                        end
+                        if not allowed then
+                            return nil, ("%s contains an invalid option."):format(field.label or uid)
+                        end
                     end
                 else
                     if value ~= nil then
