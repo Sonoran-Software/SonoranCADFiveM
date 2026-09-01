@@ -21,6 +21,66 @@
         selfies: {},
         submitting: false,
     };
+    const MASK_TOKENS = Object.freeze({
+        "#": "[0-9]",
+        M: "[0-9]",
+        D: "[0-9]",
+        Y: "[0-9]",
+        S: "[A-Za-z]",
+        X: "[A-Za-z0-9]",
+    });
+
+    function reverse(value) {
+        return Array.from(value).reverse().join("");
+    }
+
+    function escapeRegex(character) {
+        return character.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    function maskPattern(mask) {
+        return Array.from(String(mask || ""), (character) => MASK_TOKENS[character] || escapeRegex(character)).join("");
+    }
+
+    function matchesMask(value, mask) {
+        if (!mask || !value) return true;
+        return new RegExp(`^(?:${maskPattern(mask)})$`).test(String(value));
+    }
+
+    function applyMask(value, mask, maskReverse) {
+        let source = String(value || "");
+        let template = String(mask || "");
+        if (!template) return source;
+        if (maskReverse) {
+            source = reverse(source);
+            template = reverse(template);
+        }
+
+        let result = "";
+        let sourceIndex = 0;
+        let consumedToken = false;
+        for (const character of template) {
+            const tokenPattern = MASK_TOKENS[character];
+            if (!tokenPattern) {
+                if (source[sourceIndex] === character) sourceIndex += 1;
+                if (consumedToken || sourceIndex < source.length) result += character;
+                continue;
+            }
+
+            const token = new RegExp(`^${tokenPattern}$`);
+            while (sourceIndex < source.length && !token.test(source[sourceIndex])) sourceIndex += 1;
+            if (sourceIndex >= source.length) break;
+            result += source[sourceIndex];
+            sourceIndex += 1;
+            consumedToken = true;
+        }
+        return maskReverse ? reverse(result) : result;
+    }
+
+    function isFlagField(field, section) {
+        return String(field.type || "") === "checkboxes" ||
+            (Number(section && section.category) === 1 && field.data && Array.isArray(field.data.flags));
+    }
 
     async function nui(endpoint, body = {}) {
         const response = await fetch(`https://${resourceName}/${endpoint}`, {
@@ -101,9 +161,9 @@
         return label;
     }
 
-    function initialValue(field) {
+    function initialValue(field, effectiveType = field.type) {
         if (Object.prototype.hasOwnProperty.call(state.prefill, field.uid)) return state.prefill[field.uid];
-        if (field.type === "checkboxes") return field.data && Array.isArray(field.data.flags) ? field.data.flags : [];
+        if (effectiveType === "checkboxes") return field.data && Array.isArray(field.data.flags) ? field.data.flags : [];
         if (field.type === "random" && !field.value && field.mask) {
             const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
             const alphanumeric = `${letters}0123456789`;
@@ -117,12 +177,28 @@
         return field.value == null ? "" : String(field.value);
     }
 
+    function applyMaskConstraint(input, field) {
+        const mask = String(field.mask || "");
+        if (!mask) return;
+        input.setAttribute("pattern", maskPattern(mask));
+        input.maxLength = Array.from(mask).length;
+        input.title = `Use the format ${mask}.`;
+        if (!/[SX]/.test(mask)) input.inputMode = "numeric";
+        const enforce = () => {
+            const masked = applyMask(input.value, mask, !!field.maskReverse);
+            if (input.value !== masked) input.value = masked;
+        };
+        enforce();
+        input.addEventListener("input", enforce);
+    }
+
     function makeInput(field) {
         const type = String(field.type || "text");
         if (type === "textarea") {
             const input = document.createElement("textarea");
             input.className = "control";
             input.value = initialValue(field);
+            applyMaskConstraint(input, field);
             return input;
         }
         if (type === "select" || type === "status") {
@@ -149,13 +225,15 @@
         input.type = type === "time" ? "time" : "text";
         input.value = initialValue(field);
         input.placeholder = field.placeholder || field.mask || "";
+        applyMaskConstraint(input, field);
         return input;
     }
 
     function makeCheckboxes(field) {
         const container = document.createElement("div");
         container.className = "checkbox-list";
-        const selected = new Set(initialValue(field).map(String));
+        const initial = initialValue(field, "checkboxes");
+        const selected = new Set((Array.isArray(initial) ? initial : []).map(String));
         for (const optionValue of field.options || []) {
             const option = document.createElement("label");
             option.className = "checkbox-option";
@@ -221,9 +299,10 @@
         return button;
     }
 
-    function renderField(field) {
+    function renderField(field, section) {
         if (!field || !field.uid || field.isSupervisor) return null;
         const type = String(field.type || "text");
+        const effectiveType = isFlagField(field, section) ? "checkboxes" : type;
         const wrapper = document.createElement("div");
         wrapper.className = "field";
         wrapper.style.setProperty("--field-size", String(Math.max(1, Math.min(12, Number(field.size) || 12))));
@@ -242,7 +321,7 @@
         let control;
         if (type === "image") {
             control = renderSelfieButton(field);
-        } else if (type === "checkboxes") {
+        } else if (effectiveType === "checkboxes") {
             control = makeCheckboxes(field);
         } else {
             control = makeInput(field);
@@ -257,7 +336,7 @@
             note.textContent = "This field is filled automatically.";
             wrapper.appendChild(note);
         }
-        state.fields.set(field.uid, { type, element: control, wrapper, field });
+        state.fields.set(field.uid, { type: effectiveType, element: control, wrapper, field });
         return wrapper;
     }
 
@@ -275,7 +354,7 @@
             const grid = document.createElement("div");
             grid.className = "field-grid";
             for (const field of section.fields || []) {
-                const rendered = renderField(field);
+                const rendered = renderField(field, section);
                 if (rendered) grid.appendChild(rendered);
             }
             if (grid.childElementCount) {
@@ -298,11 +377,17 @@
 
     function validate() {
         for (const [uid, entry] of state.fields) {
-            if (!entry.field.isRequired || entry.wrapper.hidden) continue;
+            if (entry.wrapper.hidden) continue;
             const value = entry.type === "image" ? state.selfies[uid] : currentValue(uid);
-            if ((Array.isArray(value) && !value.length) || (!Array.isArray(value) && !String(value || "").trim())) {
+            const empty = (Array.isArray(value) && !value.length) ||
+                (!Array.isArray(value) && !String(value || "").trim());
+            if (entry.field.isRequired && empty) {
                 entry.wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
                 return `${entry.field.label || uid} is required.`;
+            }
+            if (!empty && !Array.isArray(value) && !matchesMask(value, entry.field.mask)) {
+                entry.wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
+                return `${entry.field.label || uid} must match the format ${entry.field.mask}.`;
             }
         }
         return null;

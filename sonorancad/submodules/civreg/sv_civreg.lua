@@ -11,6 +11,28 @@ CreateThread(function()
         local FORM_REQUEST_COOLDOWN_MS = 3000
         local MAX_FIELD_LENGTH = 8000
         local DEFAULT_STATUS_OPTIONS = { "0", "1", "2" }
+        local MASK_TOKENS = {
+            ["#"] = "%d",
+            M = "%d",
+            D = "%d",
+            Y = "%d",
+            S = "%a",
+            X = "[%a%d]"
+        }
+        local LUA_PATTERN_CHARACTERS = {
+            ["^"] = true,
+            ["$"] = true,
+            ["("] = true,
+            [")"] = true,
+            ["%"] = true,
+            ["."] = true,
+            ["["] = true,
+            ["]"] = true,
+            ["*"] = true,
+            ["+"] = true,
+            ["-"] = true,
+            ["?"] = true
+        }
 
         AddPluginFilePath("civreg")
 
@@ -99,6 +121,17 @@ CreateThread(function()
             return tostring(value)
         end
 
+        local function normalizeMaskedPrefill(field, value)
+            value = tostring(value)
+            if tostring(field.mask or "") == "MM/DD/YYYY" then
+                local year, month, day = value:match("^(%d%d%d%d)[-/](%d%d)[-/](%d%d)$")
+                if year ~= nil then
+                    return ("%s/%s/%s"):format(month, day, year)
+                end
+            end
+            return value
+        end
+
         local function collectFrameworkIdentity(source)
             if type(GetIdentity) ~= "function" then
                 return {}
@@ -148,7 +181,7 @@ CreateThread(function()
             for semanticName, uid in pairs(pluginConfig.autofillFieldIds or {}) do
                 local value = identity[semanticName]
                 if type(uid) == "string" and fields[uid] ~= nil and value ~= nil then
-                    prefill[uid] = tostring(value)
+                    prefill[uid] = normalizeMaskedPrefill(fields[uid], value)
                 end
             end
             return prefill
@@ -201,10 +234,37 @@ CreateThread(function()
             if type(field) ~= "table" then
                 return nil
             end
-            if field.type == "checkboxes" and type(field.data) == "table" then
+            if (field.type == "checkboxes" or
+                    (type(field.data) == "table" and type(field.data.flags) == "table")) and
+                type(field.data) == "table" then
                 return field.data.flags
             end
             return field.value
+        end
+
+        local function fieldUsesFlags(field)
+            return tostring(field.type or "") == "checkboxes" or
+                (type(field.data) == "table" and type(field.data.flags) == "table")
+        end
+
+        local function valueMatchesMask(value, mask)
+            mask = type(mask) == "string" and mask or ""
+            value = tostring(value or "")
+            if mask == "" or value == "" then
+                return true
+            end
+
+            local pattern = { "^" }
+            for character in mask:gmatch(".") do
+                local token = MASK_TOKENS[character]
+                if token ~= nil then
+                    pattern[#pattern + 1] = token
+                else
+                    pattern[#pattern + 1] = LUA_PATTERN_CHARACTERS[character] and ("%" .. character) or character
+                end
+            end
+            pattern[#pattern + 1] = "$"
+            return value:match(table.concat(pattern)) ~= nil
         end
 
         local function dependencyMatches(dependency, values, fields)
@@ -263,7 +323,7 @@ CreateThread(function()
                     value = nil
                 elseif field.readOnly then
                     value = session.prefill[uid]
-                elseif fieldType == "checkboxes" then
+                elseif fieldUsesFlags(field) then
                     if value ~= nil then
                         local flags = type(value) == "table" and (value.flags or value) or {}
                         local allowed = {}
@@ -307,6 +367,9 @@ CreateThread(function()
                         if #value > MAX_FIELD_LENGTH then
                             return nil, ("%s is too long."):format(field.label or uid)
                         end
+                        if not valueMatchesMask(value, field.mask) then
+                            return nil, ("%s must match the format %s."):format(field.label or uid, field.mask)
+                        end
                     end
                 end
 
@@ -334,7 +397,7 @@ CreateThread(function()
                 if field.isRequired and fieldIsVisible(field, section, replacements, session.fields) then
                     local value = replacements[uid]
                     if value == nil then
-                        value = tostring(field.type or "") == "checkboxes" and field.data or field.value
+                        value = fieldUsesFlags(field) and field.data or field.value
                     end
                     if not hasValue(value) then
                         return false, ("%s is required."):format(field.label or uid)
