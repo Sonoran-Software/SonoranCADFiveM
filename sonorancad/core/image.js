@@ -19,12 +19,24 @@
 			if (typeof dataUrl !== "string" || typeof filename !== "string") {
 				return { success: false, reason: "invalid_arguments" };
 			}
-			const match = dataUrl.match(/^data:(image\/(?:jpeg|png));base64,([A-Za-z0-9+/=]+)$/);
-			if (!match) {
+			const requestedLimit = Number(maxBytes);
+			const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+				? Math.floor(requestedLimit)
+				: 1024 * 1024;
+			const prefix = dataUrl.match(/^data:(image\/(?:jpeg|png));base64,/);
+			if (!prefix) {
 				return { success: false, reason: "invalid_image" };
 			}
-			const image = Buffer.from(match[2], "base64");
-			const limit = Number(maxBytes) > 0 ? Number(maxBytes) : 1024 * 1024;
+			const encodedLength = dataUrl.length - prefix[0].length;
+			const maxEncodedLength = Math.ceil(limit / 3) * 4;
+			if (encodedLength > maxEncodedLength) {
+				return { success: false, reason: "image_too_large" };
+			}
+			const encodedImage = dataUrl.slice(prefix[0].length);
+			if (!encodedImage || !/^[A-Za-z0-9+/=]+$/.test(encodedImage)) {
+				return { success: false, reason: "invalid_image" };
+			}
+			const image = Buffer.from(encodedImage, "base64");
 			if (!image.length || image.length > limit) {
 				return { success: false, reason: image.length ? "image_too_large" : "invalid_image" };
 			}
@@ -32,7 +44,7 @@
 			return {
 				success: true,
 				bytes: image.length,
-				extension: match[1] === "image/png" ? "png" : "jpg",
+				extension: prefix[1] === "image/png" ? "png" : "jpg",
 			};
 		} catch (err) {
 			return {
