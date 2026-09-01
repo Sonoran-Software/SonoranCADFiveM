@@ -60,7 +60,7 @@ CreateThread(function()
                 data = data.templates
             end
             if data.recordTypeId ~= nil then
-                return data
+                return tostring(data.recordTypeId) == tostring(templateId) and data or nil
             end
             for _, template in pairs(data) do
                 if type(template) == "table" and
@@ -132,6 +132,35 @@ CreateThread(function()
             return value
         end
 
+        local function generateRandomValue(field)
+            if field.value ~= nil and tostring(field.value) ~= "" then
+                return tostring(field.value)
+            end
+            local mask = type(field.mask) == "string" and field.mask or ""
+            if mask == "" then
+                return nil
+            end
+            local letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            local digits = "0123456789"
+            local alphanumeric = letters .. digits
+            local sources = {
+                ["#"] = digits,
+                M = digits,
+                D = digits,
+                Y = digits,
+                S = letters,
+                X = alphanumeric
+            }
+            return (mask:gsub(".", function(character)
+                local source = sources[character]
+                if source == nil then
+                    return character
+                end
+                local index = math.random(1, #source)
+                return source:sub(index, index)
+            end))
+        end
+
         local function collectFrameworkIdentity(source)
             if type(GetIdentity) ~= "function" then
                 return {}
@@ -182,6 +211,11 @@ CreateThread(function()
                 local value = identity[semanticName]
                 if type(uid) == "string" and fields[uid] ~= nil and value ~= nil then
                     prefill[uid] = normalizeMaskedPrefill(fields[uid], value)
+                end
+            end
+            for uid, field in pairs(fields) do
+                if tostring(field.type or "") == "random" and prefill[uid] == nil then
+                    prefill[uid] = generateRandomValue(field)
                 end
             end
             return prefill
@@ -308,6 +342,16 @@ CreateThread(function()
             end
             return value ~= nil and tostring(value):match("%S") ~= nil
         end
+        local function findSectionForField(template, targetField)
+            for _, section in ipairs(template.sections or {}) do
+                for _, field in ipairs(section.fields or {}) do
+                    if field == targetField then
+                        return section
+                    end
+                end
+            end
+            return nil
+        end
 
         local function sanitizeSubmission(session, submittedValues)
             if type(submittedValues) ~= "table" then
@@ -321,55 +365,57 @@ CreateThread(function()
                 if field.isSupervisor or fieldType == "image" or fieldType == "label" or fieldType == "id" or
                     fieldType:match("^UNIT_") then
                     value = nil
+                elseif fieldType == "random" then
+                    value = session.prefill[uid]
                 elseif field.readOnly then
                     value = session.prefill[uid]
-                elseif fieldUsesFlags(field) then
-                    if value ~= nil then
-                        local flags = type(value) == "table" and (value.flags or value) or {}
-                        local allowed = {}
-                        for _, option in ipairs(field.options or {}) do
-                            allowed[tostring(option)] = true
-                        end
-                        local selected = {}
-                        for _, option in pairs(flags) do
-                            option = tostring(option)
-                            if allowed[option] then
-                                selected[#selected + 1] = option
-                            end
-                        end
-                        value = { flags = selected }
+                    if value == nil then
+                        value = fieldUsesFlags(field) and field.data or field.value
                     end
-                elseif fieldType == "select" or fieldType == "status" then
-                    if value ~= nil then
-                        value = tostring(value)
-                        if #value > MAX_FIELD_LENGTH then
-                            return nil, ("%s is too long."):format(field.label or uid)
-                        end
+                end
 
-                        local options = field.options or {}
-                        if fieldType == "status" and #options == 0 then
-                            options = DEFAULT_STATUS_OPTIONS
-                        end
-                        local allowed = value == ""
-                        for _, option in ipairs(options) do
-                            if tostring(option) == value then
-                                allowed = true
-                                break
-                            end
-                        end
-                        if not allowed then
-                            return nil, ("%s contains an invalid option."):format(field.label or uid)
+                if value ~= nil and fieldUsesFlags(field) then
+                    local flags = type(value) == "table" and (value.flags or value) or {}
+                    local allowed = {}
+                    local options = type(field.options) == "table" and field.options or {}
+                    for _, option in ipairs(options) do
+                        allowed[tostring(option)] = true
+                    end
+                    local selected = {}
+                    for _, option in pairs(flags) do
+                        option = tostring(option)
+                        if allowed[option] then
+                            selected[#selected + 1] = option
                         end
                     end
-                else
-                    if value ~= nil then
-                        value = tostring(value)
-                        if #value > MAX_FIELD_LENGTH then
-                            return nil, ("%s is too long."):format(field.label or uid)
+                    value = { flags = selected }
+                elseif value ~= nil and (fieldType == "select" or fieldType == "status") then
+                    value = tostring(value)
+                    if #value > MAX_FIELD_LENGTH then
+                        return nil, ("%s is too long."):format(field.label or uid)
+                    end
+
+                    local options = type(field.options) == "table" and field.options or {}
+                    if fieldType == "status" and #options == 0 then
+                        options = DEFAULT_STATUS_OPTIONS
+                    end
+                    local allowed = value == ""
+                    for _, option in ipairs(options) do
+                        if tostring(option) == value then
+                            allowed = true
+                            break
                         end
-                        if not valueMatchesMask(value, field.mask) then
-                            return nil, ("%s must match the format %s."):format(field.label or uid, field.mask)
-                        end
+                    end
+                    if not allowed then
+                        return nil, ("%s contains an invalid option."):format(field.label or uid)
+                    end
+                elseif value ~= nil then
+                    value = tostring(value)
+                    if #value > MAX_FIELD_LENGTH then
+                        return nil, ("%s is too long."):format(field.label or uid)
+                    end
+                    if not valueMatchesMask(value, field.mask) then
+                        return nil, ("%s must match the format %s."):format(field.label or uid, field.mask)
                     end
                 end
 
@@ -377,24 +423,30 @@ CreateThread(function()
                     replacements[uid] = value
                 end
             end
-            return replacements
-        end
 
-        local function findSectionForField(template, targetField)
-            for _, section in ipairs(template.sections or {}) do
-                for _, field in ipairs(section.fields or {}) do
-                    if field == targetField then
-                        return section
+            local removed = true
+            while removed do
+                removed = false
+                for uid in pairs(replacements) do
+                    local field = session.fields[uid]
+                    local section = findSectionForField(session.template, field)
+                    if not fieldIsVisible(field, section, replacements, session.fields) then
+                        replacements[uid] = nil
+                        removed = true
                     end
                 end
             end
-            return nil
+            return replacements
         end
 
         local function validateRequiredFields(session, replacements)
             for uid, field in pairs(session.fields) do
                 local section = findSectionForField(session.template, field)
-                if field.isRequired and fieldIsVisible(field, section, replacements, session.fields) then
+                local fieldType = tostring(field.type or "")
+                local automaticallyManaged = field.isSupervisor or field.readOnly or fieldType == "label" or
+                    fieldType == "id" or fieldType:match("^UNIT_")
+                if not automaticallyManaged and field.isRequired and
+                    fieldIsVisible(field, section, replacements, session.fields) then
                     local value = replacements[uid]
                     if value == nil then
                         value = fieldUsesFlags(field) and field.data or field.value
@@ -434,7 +486,8 @@ CreateThread(function()
                 return
             end
             if type(template) ~= "table" or type(template.sections) ~= "table" then
-                logError("CIVREG_TEMPLATE_FAILED", "Template #7 was missing sections or returned an unexpected payload.")
+                logError("CIVREG_TEMPLATE_FAILED",
+                    ("Template #%s was missing sections or returned an unexpected payload."):format(templateId))
                 sendClientError(source, "CIVREG_TEMPLATE_FAILED")
                 return
             end
@@ -489,7 +542,10 @@ CreateThread(function()
             local baseUrl = nil
             for uid, dataUrl in pairs(selfies) do
                 local field = session.fields[uid]
-                if type(field) ~= "table" or tostring(field.type) ~= "image" or type(dataUrl) ~= "string" then
+                local section = type(field) == "table" and findSectionForField(session.template, field) or nil
+                if type(field) ~= "table" or tostring(field.type) ~= "image" or field.isSupervisor or field.readOnly or
+                    type(dataUrl) ~= "string" or
+                    not fieldIsVisible(field, section, replacements, session.fields) then
                     deleteSavedFiles(savedFiles)
                     session.submitting = false
                     sendClientError(source, "CIVREG_SUBMISSION_INVALID")
@@ -511,7 +567,9 @@ CreateThread(function()
 
                 local extension = dataUrl:find("^data:image/png;base64,") and "png" or "jpg"
                 local safeUid = uid:gsub("[^%w_]", "_")
-                local filename = ("%s-%s.%s"):format(session.token:gsub("[^%w]", ""), safeUid, extension)
+                local fileToken = newSessionToken(source):gsub("[^%w]", "")
+                local filename = ("%s-%s-%s.%s"):format(session.token:gsub("[^%w]", ""), safeUid, fileToken,
+                    extension)
                 local filePath = ("%s/filestore/civreg/%s"):format(GetResourcePath(GetCurrentResourceName()), filename)
                 local saveResult = exports[GetCurrentResourceName()]:SaveBase64Image(dataUrl, filePath,
                     tonumber(pluginConfig.maxSelfieBytes) or 1024 * 1024)

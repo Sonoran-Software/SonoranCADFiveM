@@ -11,6 +11,7 @@
     const cancelButton = document.getElementById("cancelButton");
     const closeButton = document.getElementById("closeButton");
     const resourceName = typeof GetParentResourceName === "function" ? GetParentResourceName() : "sonorancad";
+    const MAX_FIELD_LENGTH = 8000;
 
     const state = {
         session: null,
@@ -18,7 +19,9 @@
         prefill: {},
         language: {},
         fields: new Map(),
-        selfies: {},
+        selfies: Object.create(null),
+        capturingSelfie: false,
+        captureSession: null,
         submitting: false,
     };
     const MASK_TOKENS = Object.freeze({
@@ -82,6 +85,12 @@
             (Number(section && section.category) === 1 && field.data && Array.isArray(field.data.flags));
     }
 
+    function requiresPlayerValue(field) {
+        const type = String(field.type || "");
+        return !!field.isRequired && !field.readOnly && !field.isSupervisor && type !== "label" && type !== "id" &&
+            !type.startsWith("UNIT_");
+    }
+
     async function nui(endpoint, body = {}) {
         const response = await fetch(`https://${resourceName}/${endpoint}`, {
             method: "POST",
@@ -108,9 +117,16 @@
         overlay.classList.remove("is-open");
         overlay.setAttribute("aria-hidden", "true");
         state.session = null;
-        state.selfies = {};
         setSubmitting(false);
         showMessage("");
+        state.template = null;
+        state.prefill = {};
+        state.language = {};
+        state.selfies = Object.create(null);
+        state.capturingSelfie = false;
+        state.captureSession = null;
+        state.fields.clear();
+        sectionsElement.replaceChildren();
     }
 
     function currentValue(uid) {
@@ -151,7 +167,7 @@
         const label = document.createElement("label");
         label.className = "field-label";
         label.textContent = field.label || field.uid || "Field";
-        if (field.isRequired) {
+        if (requiresPlayerValue(field)) {
             const required = document.createElement("span");
             required.className = "required";
             required.textContent = "*";
@@ -198,6 +214,7 @@
             const input = document.createElement("textarea");
             input.className = "control";
             input.value = initialValue(field);
+            input.maxLength = MAX_FIELD_LENGTH;
             applyMaskConstraint(input, field);
             return input;
         }
@@ -208,9 +225,10 @@
             blank.value = "";
             blank.textContent = "Select...";
             select.appendChild(blank);
-            const options = type === "status" && !(field.options || []).length
+            const fieldOptions = Array.isArray(field.options) ? field.options : [];
+            const options = type === "status" && !fieldOptions.length
                 ? [{ value: "0", label: "Pending" }, { value: "1", label: "Approved" }, { value: "2", label: "Rejected" }]
-                : (field.options || []).map((value) => ({ value: String(value), label: String(value) }));
+                : fieldOptions.map((value) => ({ value: String(value), label: String(value) }));
             for (const optionData of options) {
                 const option = document.createElement("option");
                 option.value = optionData.value;
@@ -224,6 +242,7 @@
         input.className = "control";
         input.type = type === "time" ? "time" : "text";
         input.value = initialValue(field);
+        input.maxLength = MAX_FIELD_LENGTH;
         input.placeholder = field.placeholder || field.mask || "";
         applyMaskConstraint(input, field);
         return input;
@@ -234,7 +253,8 @@
         container.className = "checkbox-list";
         const initial = initialValue(field, "checkboxes");
         const selected = new Set((Array.isArray(initial) ? initial : []).map(String));
-        for (const optionValue of field.options || []) {
+        const options = Array.isArray(field.options) ? field.options : [];
+        for (const optionValue of options) {
             const option = document.createElement("label");
             option.className = "checkbox-option";
             const checkbox = document.createElement("input");
@@ -277,12 +297,16 @@
         renderPrompt();
 
         button.addEventListener("click", async () => {
-            if (state.submitting) return;
+            if (state.submitting || state.capturingSelfie) return;
+            const session = state.session;
+            state.capturingSelfie = true;
+            state.captureSession = session;
             button.disabled = true;
             showMessage("");
             try {
                 const result = await nui("civregTakeSelfie");
                 if (!result.ok || !result.image) throw new Error(result.error || "Selfie capture failed.");
+                if (state.session !== session) return;
                 state.selfies[field.uid] = result.image;
                 const preview = document.createElement("img");
                 preview.className = "selfie-preview";
@@ -290,10 +314,16 @@
                 preview.alt = `${field.label || "Character"} selfie preview. Click to retake.`;
                 button.replaceChildren(preview);
             } catch (error) {
-                showMessage(error.message || "Selfie capture failed.");
-                renderPrompt();
+                if (state.session === session) {
+                    showMessage(error.message || "Selfie capture failed.");
+                    renderPrompt();
+                }
             } finally {
-                button.disabled = false;
+                if (state.captureSession === session) {
+                    state.capturingSelfie = false;
+                    state.captureSession = null;
+                }
+                button.disabled = !!field.readOnly;
             }
         });
         return button;
@@ -321,6 +351,7 @@
         let control;
         if (type === "image") {
             control = renderSelfieButton(field);
+            control.disabled = !!field.readOnly;
         } else if (effectiveType === "checkboxes") {
             control = makeCheckboxes(field);
         } else {
@@ -366,7 +397,7 @@
     }
 
     function collectValues() {
-        const values = {};
+        const values = Object.create(null);
         for (const [uid, entry] of state.fields) {
             if (entry.wrapper.hidden || entry.type === "image" || entry.type === "label") continue;
             if (entry.type === "checkboxes") values[uid] = { flags: currentValue(uid) };
@@ -375,13 +406,24 @@
         return values;
     }
 
+    function collectSelfies() {
+        const selfies = Object.create(null);
+        for (const [uid, image] of Object.entries(state.selfies)) {
+            const entry = state.fields.get(uid);
+            if (entry && entry.type === "image" && !entry.field.readOnly && !entry.wrapper.hidden) {
+                selfies[uid] = image;
+            }
+        }
+        return selfies;
+    }
+
     function validate() {
         for (const [uid, entry] of state.fields) {
             if (entry.wrapper.hidden) continue;
             const value = entry.type === "image" ? state.selfies[uid] : currentValue(uid);
             const empty = (Array.isArray(value) && !value.length) ||
                 (!Array.isArray(value) && !String(value || "").trim());
-            if (entry.field.isRequired && empty) {
+            if (requiresPlayerValue(entry.field) && empty) {
                 entry.wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
                 return `${entry.field.label || uid} is required.`;
             }
@@ -398,7 +440,9 @@
         state.template = payload.template || { sections: [] };
         state.prefill = payload.prefill || {};
         state.language = payload.language || {};
-        state.selfies = {};
+        state.selfies = Object.create(null);
+        state.capturingSelfie = false;
+        state.captureSession = null;
         titleElement.textContent = state.language.title || state.template.name || "Character Registration";
         subtitleElement.textContent = state.language.subtitle || "Complete the live CAD character form below.";
         cancelButton.textContent = state.language.cancel || "Cancel";
@@ -412,6 +456,10 @@
     form.addEventListener("submit", async (event) => {
         event.preventDefault();
         if (state.submitting) return;
+        if (state.capturingSelfie) {
+            showMessage("Wait for the selfie capture to finish before submitting.");
+            return;
+        }
         const validationError = validate();
         if (validationError) {
             showMessage(validationError);
@@ -423,7 +471,7 @@
             const result = await nui("civregSubmit", {
                 session: state.session,
                 values: collectValues(),
-                selfies: state.selfies,
+                selfies: collectSelfies(),
             });
             if (!result.ok) throw new Error("The form could not be submitted.");
         } catch (error) {
