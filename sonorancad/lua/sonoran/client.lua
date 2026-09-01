@@ -851,6 +851,9 @@ local function create_client(config, adapter)
   instance.getPenalCodesV2 = function(self)
     return self:_request("GET", "v2/general/penal-codes")
   end
+  instance.getDatabaseSyncConfigurationV2 = function(self)
+    return self:_request("GET", "v2/general/database-sync")
+  end
   instance.setPenalCodesV2 = function(self, codes)
     return self:_request("PUT", "v2/general/penal-codes", { body = { codes = codes } })
   end
