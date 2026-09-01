@@ -34,6 +34,7 @@ CreateThread(function()
             ["?"] = true
         }
 
+        -- Keep serving portraits referenced by records created before base64 uploads.
         AddPluginFilePath("civreg")
 
         local function notifyPlayer(target, payload)
@@ -231,33 +232,38 @@ CreateThread(function()
             return ("%x-%x-%x-%x"):format(os.time(), source, GetGameTimer(), math.random(0, 0x7fffffff))
         end
 
-        local function resolveSelfieBaseUrl()
-            local configured = type(pluginConfig.selfieBaseUrl) == "string" and
-                pluginConfig.selfieBaseUrl:gsub("%s+$", ""):gsub("/+$", "") or ""
-            if configured ~= "" then
-                return configured
+        local function validateSelfie(dataUrl)
+            if type(dataUrl) ~= "string" then
+                return false, "The character portrait must contain a base64 PNG or JPEG image."
+            end
+            local prefix = dataUrl:match("^data:image/png;base64,") or dataUrl:match("^data:image/jpeg;base64,")
+            if prefix == nil then
+                return false, "The character portrait must contain a base64 PNG or JPEG image."
             end
 
-            local server = type(ServerInfo) == "table" and ServerInfo or nil
-            if server == nil then
-                local response = CadApiGetServers()
-                if response.success and type(response.data) == "table" then
-                    for _, candidate in pairs(response.data.servers or response.data) do
-                        if type(candidate) == "table" and
-                            tostring(candidate.id) == tostring(Config.serverId) then
-                            server = candidate
-                            break
-                        end
-                    end
-                end
+            local limit = tonumber(pluginConfig.maxSelfieBytes)
+            if limit == nil or limit ~= limit or limit <= 0 or limit == math.huge then
+                limit = 1024 * 1024
             end
-
-            local host = server and server.mapIp or nil
-            local port = server and server.listenerPort or GetConvar("netPort", "")
-            if type(host) ~= "string" or host == "" or tostring(port or "") == "" or tostring(port) == "0" then
-                return nil
+            limit = math.floor(limit)
+            local encodedLength = #dataUrl - #prefix
+            -- Bound the input before extracting or scanning the base64 payload.
+            if encodedLength > math.ceil(limit / 3) * 4 then
+                return false, "The character portrait exceeds the configured image size limit."
             end
-            return ("http://%s:%s/%s/civreg"):format(host, tostring(port), GetCurrentResourceName())
+            if encodedLength == 0 or encodedLength % 4 ~= 0 then
+                return false, "The character portrait contains invalid base64 data."
+            end
+            local encoded = dataUrl:sub(#prefix + 1)
+            local padding = encoded:match("=*$")
+            if #padding > 2 or encoded:sub(1, #encoded - #padding):find("[^A-Za-z0-9+/]") then
+                return false, "The character portrait contains invalid base64 data."
+            end
+            local decodedBytes = encodedLength / 4 * 3 - #padding
+            if decodedBytes > limit then
+                return false, "The character portrait exceeds the configured image size limit."
+            end
+            return true
         end
 
         local function dependencyValue(values, fields, uid)
@@ -465,12 +471,6 @@ CreateThread(function()
             return true
         end
 
-        local function deleteSavedFiles(paths)
-            for _, path in ipairs(paths) do
-                os.remove(path)
-            end
-        end
-
         RegisterNetEvent("SonoranCAD::civreg::RequestForm", function()
             local source = source
             local now = GetGameTimer()
@@ -543,16 +543,13 @@ CreateThread(function()
                 return
             end
 
-            local savedFiles = {}
             selfies = type(selfies) == "table" and selfies or {}
-            local baseUrl = nil
             for uid, dataUrl in pairs(selfies) do
                 local field = session.fields[uid]
                 local section = type(field) == "table" and findSectionForField(session.template, field) or nil
                 if type(field) ~= "table" or tostring(field.type) ~= "image" or field.isSupervisor or field.readOnly or
                     type(dataUrl) ~= "string" or
                     not fieldIsVisible(field, section, replacements, session.fields) then
-                    deleteSavedFiles(savedFiles)
                     session.submitting = false
                     sendClientError(source, "CIVREG_SUBMISSION_INVALID")
                     TriggerClientEvent("SonoranCAD::civreg::SubmissionResult", source,
@@ -560,42 +557,19 @@ CreateThread(function()
                     return
                 end
 
-                baseUrl = baseUrl or resolveSelfieBaseUrl()
-                if baseUrl == nil then
-                    logError("CIVREG_SELFIE_URL_MISSING",
-                        "Could not derive a public selfie URL. Configure civreg selfieBaseUrl.")
-                    sendClientError(source, "CIVREG_SELFIE_URL_MISSING")
+                local validSelfie, selfieError = validateSelfie(dataUrl)
+                if not validSelfie then
+                    sendClientError(source, "CIVREG_SUBMISSION_INVALID", selfieError)
                     session.submitting = false
                     TriggerClientEvent("SonoranCAD::civreg::SubmissionResult", source,
-                        { success = false, message = getErrorText("CIVREG_SELFIE_URL_MISSING") })
+                        { success = false, message = selfieError })
                     return
                 end
-
-                local extension = dataUrl:find("^data:image/png;base64,") and "png" or "jpg"
-                local safeUid = uid:gsub("[^%w_]", "_")
-                local fileToken = newSessionToken(source):gsub("[^%w]", "")
-                local filename = ("%s-%s-%s.%s"):format(session.token:gsub("[^%w]", ""), safeUid, fileToken,
-                    extension)
-                local filePath = ("%s/filestore/civreg/%s"):format(GetResourcePath(GetCurrentResourceName()), filename)
-                local saveResult = exports[GetCurrentResourceName()]:SaveBase64Image(dataUrl, filePath,
-                    tonumber(pluginConfig.maxSelfieBytes) or 1024 * 1024)
-                if type(saveResult) ~= "table" or not saveResult.success then
-                    deleteSavedFiles(savedFiles)
-                    logError("CIVREG_SELFIE_SAVE_FAILED",
-                        ("Could not save character selfie: %s"):format(tostring(saveResult and saveResult.reason)))
-                    sendClientError(source, "CIVREG_SELFIE_SAVE_FAILED")
-                    session.submitting = false
-                    TriggerClientEvent("SonoranCAD::civreg::SubmissionResult", source,
-                        { success = false, message = getErrorText("CIVREG_SELFIE_SAVE_FAILED") })
-                    return
-                end
-                savedFiles[#savedFiles + 1] = filePath
-                replacements[uid] = ("%s/%s"):format(baseUrl, filename)
+                replacements[uid] = dataUrl
             end
 
             local valid, requiredError = validateRequiredFields(session, replacements)
             if not valid then
-                deleteSavedFiles(savedFiles)
                 session.submitting = false
                 sendClientError(source, "CIVREG_SUBMISSION_INVALID", requiredError)
                 TriggerClientEvent("SonoranCAD::civreg::SubmissionResult", source,
@@ -610,12 +584,10 @@ CreateThread(function()
                 replaceValues = replacements
             })
             if not createResponse.success then
-                deleteSavedFiles(savedFiles)
                 session.submitting = false
                 CadApiLogFailure("NEW_CHARACTER", createResponse, {
                     communityUserId = session.communityUserId,
-                    recordTypeId = tonumber(pluginConfig.templateId) or 7,
-                    replaceValues = replacements
+                    recordTypeId = tonumber(pluginConfig.templateId) or 7
                 })
                 sendClientError(source, "CIVREG_CREATE_FAILED")
                 TriggerClientEvent("SonoranCAD::civreg::SubmissionResult", source,

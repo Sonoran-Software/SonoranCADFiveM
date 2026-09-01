@@ -21,11 +21,8 @@ local config = {
     -- template endpoint's rate limit. The form is never loaded from a bundled copy.
     templateCacheSeconds = 60,
 
-    -- The CAD stores image fields as URLs. Leave this blank to automatically
-    -- use the public IP/port configured for this CAD server. Set it when the
-    -- server is behind a reverse proxy or the public image URL uses HTTPS.
-    -- Example: "https://play.example.com/civreg"
-    selfieBaseUrl = "",
+    -- Portraits are submitted to CAD as base64 image data. This limit applies
+    -- to the decoded size of each PNG or JPEG. No public image hosting is needed.
     maxSelfieBytes = 1024 * 1024,
 
     -- Map framework identity values to field UIDs from template #7. Change the

@@ -548,13 +548,13 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 
 ### ERR-CR-103
 - `Key`: `CIVREG_SELFIE_URL_MISSING`
-- `Meaning`: The server could not produce a public URL for a captured character selfie.
-- `Potential Fix`: Set `selfieBaseUrl` in `civreg_config.lua` to the public HTTP or HTTPS `/civreg` route for this FXServer.
+- `Meaning`: An older URL-based version of CivReg could not produce a public URL for a captured selfie. Current versions submit base64 image data and do not emit this code.
+- `Potential Fix`: Update CivReg to use base64 portrait submissions. Keep the existing image files and public route available for records that already reference them.
 
 ### ERR-CR-104
 - `Key`: `CIVREG_SELFIE_SAVE_FAILED`
-- `Meaning`: The FXServer could not validate or save the captured character selfie.
-- `Potential Fix`: Confirm the resource can write to `sonorancad/filestore/civreg` and that `maxSelfieBytes` is large enough for the portrait.
+- `Meaning`: An older URL-based version of CivReg could not validate or save a selfie to disk. Current versions submit base64 image data and report invalid portraits with `ERR-CR-102`.
+- `Potential Fix`: Update CivReg. For a current portrait validation error, retake the image and check the decoded size against `maxSelfieBytes`.
 
 ### ERR-CR-105
 - `Key`: `CIVREG_CREATE_FAILED`
