@@ -1237,6 +1237,42 @@ local function create_client(config, adapter)
     })
   end
 
+  -- Custom integration panel definitions and live runtime state.
+  instance.getIntegrationPanelsV2 = function(self)
+    return self:_request("GET", "v2/integration-panels")
+  end
+  instance.getIntegrationPanelV2 = function(self, panel_key)
+    return self:_request("GET", "v2/integration-panels/" .. self:_encode_path_segment(panel_key))
+  end
+  instance.setIntegrationPanelV2 = function(self, panel_key, definition)
+    return self:_request("PUT", "v2/integration-panels/" .. self:_encode_path_segment(panel_key), {
+      body = { definition = definition }
+    })
+  end
+  instance.deleteIntegrationPanelV2 = function(self, panel_key)
+    return self:_request("DELETE", "v2/integration-panels/" .. self:_encode_path_segment(panel_key))
+  end
+  instance.setIntegrationPanelStateV2 = function(self, panel_key, instance_key, state, server_id)
+    local resolved_server_id = self:_resolve_server_id(server_id)
+    return self:_request("PUT", "v2/integration-panels/servers/" .. tostring(resolved_server_id) .. "/panels/" .. self:_encode_path_segment(panel_key) .. "/instances/" .. self:_encode_path_segment(instance_key) .. "/state", {
+      body = { state = state }
+    })
+  end
+  instance.getIntegrationPanelActionsV2 = function(self, panel_key, query)
+    local options = shallow_copy(query or {})
+    local resolved_server_id = self:_resolve_server_id(options.serverId)
+    options.serverId = nil
+    return self:_request("GET", "v2/integration-panels/servers/" .. tostring(resolved_server_id) .. "/panels/" .. self:_encode_path_segment(panel_key) .. "/actions", {
+      query = options
+    })
+  end
+  instance.acknowledgeIntegrationPanelActionV2 = function(self, panel_key, event_id, data)
+    local resolved_server_id = self:_resolve_server_id(data and data.serverId)
+    return self:_request("POST", "v2/integration-panels/servers/" .. tostring(resolved_server_id) .. "/panels/" .. self:_encode_path_segment(panel_key) .. "/actions/" .. self:_encode_path_segment(event_id) .. "/ack", {
+      body = strip_keys(data, { "serverId" })
+    })
+  end
+
   instance.getCommunityChannelsV2 = function(self, community_id)
     local resolved_community_id = self:_resolve_radio_community_id(community_id)
     return self:_request("GET", "v2/servers/" .. tostring(resolved_community_id) .. "/channels")
@@ -1360,6 +1396,10 @@ local function create_client(config, adapter)
     return self:_request("GET", "v2/server-subscriptions/by-ip", {
       authenticated = false
     })
+  end
+  instance.getServerSubscriptionV2 = function(self, community_id)
+    local resolved_community_id = self:_resolve_radio_community_id(community_id)
+    return self:_request("GET", "v2/servers/" .. tostring(resolved_community_id) .. "/subscription")
   end
   instance.setServerIpV2 = function(self, data)
     local resolved_community_id = self:_resolve_radio_community_id(data and data.communityId)

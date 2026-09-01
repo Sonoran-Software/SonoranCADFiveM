@@ -469,7 +469,7 @@ if pluginConfig.enabled then
                         local data = {
                             ['serverId'] = tonumber(Config.serverId),
                             ['callId'] = callId,
-                            ['units'] = {unitData.link}
+                            ['communityUserIds'] = {unitData.link}
                         }
                         local response = CadApiAttachUnitsToDispatchCall(data)
                         if not response.success then

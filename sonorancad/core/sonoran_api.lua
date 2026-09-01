@@ -828,13 +828,11 @@ function CadApiAttachUnitsToDispatchCall(payload)
             request_payload[key] = value
         end
     end
-    request_payload.units = CadApiResolveCommunityUserIds(request_payload.units or {})
     return get_cad_client():attachUnitsToDispatchCallV2(call_id, request_payload)
 end
 
 function CadApiDetachUnitsFromDispatchCall(payload)
     payload = payload or {}
-    payload.units = CadApiResolveCommunityUserIds(payload.units or {})
     return get_cad_client():detachUnitsFromDispatchCallV2(payload)
 end
 

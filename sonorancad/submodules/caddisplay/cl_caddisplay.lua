@@ -213,9 +213,28 @@ CreateThread(function()
 
             function hasTrackedVehicle(tab, veh)
                 local targetVehNet = getVehNetId(veh)
-                for _, value in ipairs(tab) do
+                for index, value in ipairs(tab) do
                     if (targetVehNet ~= nil and value.vehNet == targetVehNet) or value.veh == veh then
-                        return true
+                        local prop = value.prop
+                        local propExists = prop ~= nil and DoesEntityExist(prop)
+                        local attachedTo = propExists and GetEntityAttachedTo(prop) or 0
+                        if propExists and
+                            (prop == veh or IsEntityAttachedToEntity(prop, veh) or attachedTo == veh) then
+                            return true
+                        end
+
+                        -- Vehicle network IDs can be reused after replacement, so discard the stale display record.
+                        debugLog(("[caddisplay] Discarding stale display tracking: vehicle=%s networkId=%s " ..
+                            "storedVehicle=%s storedNetworkId=%s prop=%s propExists=%s attachedTo=%s"):format(
+                            tostring(veh), tostring(targetVehNet), tostring(value.veh), tostring(value.vehNet),
+                            tostring(prop), tostring(propExists), tostring(attachedTo)))
+                        local displayIndex = getSpawnedDisplayIndex(prop) or value.index
+                        if displayIndex ~= nil then
+                            removeDisplayAtIndex(displayIndex)
+                        else
+                            table.remove(tab, index)
+                        end
+                        return false
                     end
                 end
                 return false
@@ -415,26 +434,54 @@ CreateThread(function()
                 end
             end
 
+            function getDisplayPreviewTransform()
+                local cameraPosition = GetGameplayCamCoord()
+                local cameraRotation = GetGameplayCamRot(2)
+                local pitch = math.rad(cameraRotation.x)
+                local yaw = math.rad(cameraRotation.z)
+                local pitchScale = math.cos(pitch)
+                local previewDistance = 0.75
+
+                return {
+                    x = cameraPosition.x - math.sin(yaw) * pitchScale * previewDistance,
+                    y = cameraPosition.y + math.cos(yaw) * pitchScale * previewDistance,
+                    z = cameraPosition.z + math.sin(pitch) * previewDistance
+                }, cameraRotation.z + 180.0
+            end
+
             function spawnDisplay(veh)
                 ensureModel(displayModelHash)
-                local player = PlayerPedId()
-                local x, y, z = table.unpack(GetEntityCoords(player, true))
-                local obj = CreateObject(displayModelHash, x, y, z, true, true, false)
+                local previewPosition, previewHeading = getDisplayPreviewTransform()
+                local obj = CreateObjectNoOffset(displayModelHash, previewPosition.x, previewPosition.y, previewPosition.z,
+                    true, true, false)
+                SetEntityHeading(obj, previewHeading)
+                SetEntityCollision(obj, false, false)
+                FreezeEntityPosition(obj, true)
                 latestSpawnedDisplay = obj
-                trackDisplayForVehicle(veh or GetVehiclePedIsIn(player, false), obj)
+                trackDisplayForVehicle(veh or GetVehiclePedIsIn(PlayerPedId(), false), obj)
                 ensureDui()
                 return obj
             end
 
             function attachDisplayToVehicle(obj, veh, placement)
-                if not DoesEntityExist(obj) or not DoesEntityExist(veh) then
-                    return
-                end
+                local propExists = DoesEntityExist(obj)
+                local vehicleExists = DoesEntityExist(veh)
                 local bone = placement.Bone or -1
-                AttachEntityToEntity(obj, veh, bone, placement.Position.x, placement.Position.y, placement.Position.z,
-                    placement.Rotation.pitch, placement.Rotation.roll, placement.Rotation.yaw, false, false,
-                    true, false, 0, true)
-                FreezeEntityPosition(obj, false)
+                if propExists and vehicleExists then
+                    -- The preview must be movable before applying its saved vehicle-relative transform.
+                    FreezeEntityPosition(obj, false)
+                    AttachEntityToEntity(obj, veh, bone, placement.Position.x, placement.Position.y, placement.Position.z,
+                        placement.Rotation.pitch, placement.Rotation.roll, placement.Rotation.yaw, false, false,
+                        true, false, 0, true)
+                end
+
+                propExists = DoesEntityExist(obj)
+                local attachedTo = propExists and GetEntityAttachedTo(obj) or 0
+                local vehNet = vehicleExists and getVehNetId(veh) or nil
+                debugLog(("[caddisplay] Automatic display attachment result: vehicle=%s networkId=%s " ..
+                    "vehicleExists=%s prop=%s propExists=%s attachedTo=%s attachedToExpectedVehicle=%s bone=%s"):format(
+                    tostring(veh), tostring(vehNet), tostring(vehicleExists), tostring(obj), tostring(propExists),
+                    tostring(attachedTo), tostring(attachedTo == veh), tostring(bone)))
             end
 
             function marker(pos)
@@ -804,6 +851,7 @@ CreateThread(function()
                     local veh = GetVehiclePedIsIn(PlayerPedId(), false)
                     if veh ~= 0 and spawnedDisplays[spawnedDisplayIndex] ~= nil then
                         refreshOffsetsForCurrentSelection()
+                        FreezeEntityPosition(spawnedDisplays[spawnedDisplayIndex], false)
                         AttachEntityToEntity(spawnedDisplays[spawnedDisplayIndex], veh,
                             GetEntityBoneIndexByName(veh, "chassis"), displayPosition.x, displayPosition.y,
                             displayPosition.z, displayRotation.x, displayRotation.y, displayRotation.z,
