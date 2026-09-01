@@ -81,8 +81,20 @@ h1 { margin: 0; font-size: 27px; line-height: 1.2; }
 #registrationForm {
     max-height: calc(90vh - 112px);
     overflow-y: auto;
+    scrollbar-width: thin;
     scrollbar-color: #4a535e transparent;
 }
+
+#registrationForm::-webkit-scrollbar { width: 8px; }
+#registrationForm::-webkit-scrollbar-track { background: transparent; }
+#registrationForm::-webkit-scrollbar-thumb {
+    min-height: 36px;
+    border: 2px solid var(--surface);
+    border-radius: 999px;
+    background: #4a535e;
+    background-clip: padding-box;
+}
+#registrationForm::-webkit-scrollbar-thumb:hover { background: #66717d; }
 
 .sections { padding: 22px 28px 8px; }
 
