@@ -30,7 +30,7 @@ button, input, select, textarea { font: inherit; }
     align-items: center;
     justify-content: center;
     padding: 4vh 4vw;
-    background: rgba(2, 4, 7, 0.76);
+    background: transparent;
 }
 
 .overlay.is-open { display: flex; }
