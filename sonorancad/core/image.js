@@ -1,12 +1,45 @@
 (() => {
 	const fs = require("fs");
 	const path = require("path");
+	const crypto = require("crypto");
+
+	exports("CreateImageToken", function () {
+		return crypto.randomBytes(18).toString("hex");
+	});
 
 	exports("SaveBase64ToFile", function (base64String, filename) {
 		let base64Image = base64String.split(";base64,").pop();
 		fs.writeFile(filename, base64Image, { encoding: "base64" }, function (err) {
 			return true;
 		});
+	});
+
+	exports("SaveBase64Image", function (dataUrl, filename, maxBytes) {
+		try {
+			if (typeof dataUrl !== "string" || typeof filename !== "string") {
+				return { success: false, reason: "invalid_arguments" };
+			}
+			const match = dataUrl.match(/^data:(image\/(?:jpeg|png));base64,([A-Za-z0-9+/=]+)$/);
+			if (!match) {
+				return { success: false, reason: "invalid_image" };
+			}
+			const image = Buffer.from(match[2], "base64");
+			const limit = Number(maxBytes) > 0 ? Number(maxBytes) : 1024 * 1024;
+			if (!image.length || image.length > limit) {
+				return { success: false, reason: image.length ? "image_too_large" : "invalid_image" };
+			}
+			fs.writeFileSync(filename, image, { flag: "wx" });
+			return {
+				success: true,
+				bytes: image.length,
+				extension: match[1] === "image/png" ? "png" : "jpg",
+			};
+		} catch (err) {
+			return {
+				success: false,
+				reason: err && err.code ? err.code : "write_failed",
+			};
+		}
 	});
 
 	exports("createScreenshotDirectory", async function (apiID) {

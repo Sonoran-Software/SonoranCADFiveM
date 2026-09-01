@@ -529,6 +529,33 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 - `Meaning`: The player attempted to show an ID but no nearby viewers were found.
 - `Potential Fix`: Move closer to another player and retry the `show` action.
 
+## Character Registration Errors
+
+### ERR-CR-101
+- `Key`: `CIVREG_TEMPLATE_FAILED`
+- `Meaning`: The live CAD character template could not be retrieved or had an invalid structure.
+- `Potential Fix`: Confirm the CAD API is available and that character template `7` exists, then retry `/civreg`.
+
+### ERR-CR-102
+- `Key`: `CIVREG_SUBMISSION_INVALID`
+- `Meaning`: A character registration submission expired or contained fields that were not in the live template.
+- `Potential Fix`: Close and reopen `/civreg`, complete the current form, and submit it within ten minutes.
+
+### ERR-CR-103
+- `Key`: `CIVREG_SELFIE_URL_MISSING`
+- `Meaning`: The server could not produce a public URL for a captured character selfie.
+- `Potential Fix`: Set `selfieBaseUrl` in `civreg_config.lua` to the public HTTP or HTTPS `/civreg` route for this FXServer.
+
+### ERR-CR-104
+- `Key`: `CIVREG_SELFIE_SAVE_FAILED`
+- `Meaning`: The FXServer could not validate or save the captured character selfie.
+- `Potential Fix`: Confirm the resource can write to `sonorancad/filestore/civreg` and that `maxSelfieBytes` is large enough for the portrait.
+
+### ERR-CR-105
+- `Key`: `CIVREG_CREATE_FAILED`
+- `Meaning`: CAD rejected or failed to create the submitted character record.
+- `Potential Fix`: Confirm the account is linked, template `7` is valid, and all required or unique fields contain acceptable values.
+
 ## Additional Call/Dispatch Errors
 
 ### ERR-CALL-105

@@ -3,7 +3,7 @@ games {'gta5'}
 
 author 'Sonoran CAD'
 description 'Sonoran CAD FiveM Integration'
-version '4.0.101'
+version '4.0.102'
 
 server_scripts {
     'lua/sonoran/init.lua'
@@ -57,6 +57,7 @@ files {
     'submodules/recordPrinter/html/style.css',
     'submodules/recordPrinter/html/ui.html',
     'submodules/recordPrinter/pdfs/**/*.pdf',
+	'submodules/civreg/html/**/*',
 }
 
 data_file 'DLC_ITYP_REQUEST' 'stream/**/*.ytyp'

@@ -20,6 +20,15 @@
 				z-index: 10;
 			}
 
+			#civregContainer {
+				position: absolute;
+				inset: 0;
+				display: none;
+				pointer-events: none;
+				background: transparent;
+				z-index: 1100;
+			}
+
 			#cadLinkOverlay {
 				position: absolute;
 				inset: 0;
@@ -184,6 +193,7 @@
 	</head>
 	<body>
 		<div id="recordPrinterContainer"></div>
+		<div id="civregContainer"></div>
 		<div id="cadLinkOverlay">
 			<div id="cadLinkPanel">
 				<h2>CAD Link</h2>
@@ -256,6 +266,7 @@
 			var audioPlayer = null;
 			var bodycamOverlayVisible = false;
 			const recordPrinterContainer = document.getElementById("recordPrinterContainer");
+			const civregContainer = document.getElementById("civregContainer");
 			const cadLinkOverlay = document.getElementById("cadLinkOverlay");
 			const cadLinkTitleText = document.getElementById("cadLinkTitleText");
 			const cadLinkCode = document.getElementById("cadLinkCode");
@@ -267,6 +278,7 @@
 			const bodycamScreenFrame = document.getElementById("bodycamScreenFrame");
 			const bodycamLightFrame = document.getElementById("bodycamLightFrame");
 			const recordPrinterFrame = document.createElement("iframe");
+			const civregFrame = document.createElement("iframe");
 			const cadLinkState = {
 				visible: false,
 				forceOpen: false,
@@ -293,6 +305,15 @@
 			recordPrinterFrame.style.pointerEvents = "none";
 			recordPrinterFrame.tabIndex = -1;
 			recordPrinterContainer.appendChild(recordPrinterFrame);
+			civregFrame.src = `https://cfx-nui-${GetParentResourceName()}/submodules/civreg/html/ui.html`;
+			civregFrame.style.position = "absolute";
+			civregFrame.style.inset = "0";
+			civregFrame.style.width = "100%";
+			civregFrame.style.height = "100%";
+			civregFrame.style.border = "0";
+			civregFrame.style.pointerEvents = "none";
+			civregFrame.tabIndex = -1;
+			civregContainer.appendChild(civregFrame);
 
 			function setRecordPrinterVisible(visible) {
 				recordPrinterContainer.style.display = visible ? "block" : "none";
@@ -456,6 +477,15 @@
 
 			function updateWatchingState() {
 				notifyWatchingState(peerCalls.size > 0 || pendingCalls.size > 0);
+			}
+
+			function setCivregVisible(visible) {
+				civregContainer.style.display = visible ? "block" : "none";
+				civregContainer.style.pointerEvents = visible ? "auto" : "none";
+				civregFrame.style.pointerEvents = visible ? "auto" : "none";
+				if (visible) {
+					civregFrame.focus();
+				}
 			}
 
 			function notifyBodycamStreamState(ready, reason) {
@@ -1047,6 +1077,14 @@
 						setRecordPrinterVisible(false);
 					}
 					recordPrinterFrame.contentWindow.postMessage(event.data, "*");
+				}
+				if (event.data.civreg) {
+					if (event.data.action === "open") {
+						setCivregVisible(true);
+					} else if (event.data.action === "close") {
+						setCivregVisible(false);
+					}
+					civregFrame.contentWindow.postMessage(event.data, "*");
 				}
 				if (event.data.cadDisplay) {
 					cadDisplayFrame.contentWindow.postMessage(event.data.cadDisplay, "*");

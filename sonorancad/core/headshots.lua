@@ -53,6 +53,8 @@ function GetBase64(ped)
         while not requests[requestId] do
             Wait(250)
             if GetGameTimer() >= timer then
+                UnregisterPedheadshot(headshot.handle)
+                requests[requestId] = nil
                 return {success=false, error="Waiting for base64 conversion timed out."}
             end
         end

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Character Registration</title>
+        <link rel="stylesheet" href="style.css">
+    </head>
+    <body>
+        <main id="overlay" class="overlay" aria-hidden="true">
+            <section class="panel" role="dialog" aria-modal="true" aria-labelledby="formTitle">
+                <header class="panel-header">
+                    <div>
+                        <p class="eyebrow">SonoranCAD</p>
+                        <h1 id="formTitle">Character Registration</h1>
+                        <p id="formSubtitle" class="subtitle"></p>
+                    </div>
+                    <button id="closeButton" class="icon-button" type="button" aria-label="Close character registration">&times;</button>
+                </header>
+
+                <form id="registrationForm" novalidate>
+                    <div id="sections" class="sections"></div>
+                    <div id="formMessage" class="form-message" role="alert" aria-live="polite"></div>
+                    <footer class="actions">
+                        <button id="cancelButton" class="button button-secondary" type="button">Cancel</button>
+                        <button id="submitButton" class="button button-primary" type="submit">Register Character</button>
+                    </footer>
+                </form>
+            </section>
+        </main>
+        <script src="app.js"></script>
+    </body>
+</html>
