@@ -10,7 +10,10 @@ end
 
 local function harness(options)
     options = options or {}
-    local h = { events = {}, replies = {}, requests = {}, failures = {}, now = 10000, registeredPaths = {} }
+    local h = {
+        events = {}, replies = {}, requests = {}, failures = {}, now = 10000, registeredPaths = {},
+        currentLink = "linked-account"
+    }
     local config
     local configEnv = setmetatable({ Config = { RegisterPluginConfig = function(_, value) config = value end } }, { __index = _G })
     assert(loadfile("sonorancad/configuration/civreg_config.dist.lua", "t", configEnv))()
@@ -40,7 +43,7 @@ local function harness(options)
     env.getPlayerCadStatus = function(_, _, checks)
         equal(checks.link, true)
         equal(checks.unit, false)
-        return { success = true, link = "linked-account" }
+        return { success = true, link = h.currentLink }
     end
     env.CadApiGetTemplates = function() return { success = true, data = template } end
     env.CadApiGetDatabaseSyncConfiguration = function()
@@ -208,6 +211,15 @@ test("successful session cannot create a duplicate record", function()
     h:submit({ photo = PNG })
     h:submit({ photo = PNG })
     equal(#h.requests, 1)
+    equal(h.result.success, false)
+end)
+
+test("submission rejects a session after the linked account changes", function()
+    local h = harness()
+    h.currentLink = "different-account"
+    h:submit({ photo = PNG })
+    equal(#h.requests, 0)
+    equal(h.errorKey, "CIVREG_SUBMISSION_INVALID")
     equal(h.result.success, false)
 end)
 

@@ -479,9 +479,11 @@ CreateThread(function()
             local pending = pendingDatabaseSyncCaptures[source]
             if type(pending) == "table" and
                 GetGameTimer() - pending.createdAt <= DB_SYNC_CAPTURE_TIMEOUT_MS then
-                pending.characterId = tostring(characterId)
-                pending.notifyOnSuccess = pending.notifyOnSuccess or notifyOnSuccess == true
-                return true
+                if pending.characterId == tostring(characterId) then
+                    pending.notifyOnSuccess = pending.notifyOnSuccess or notifyOnSuccess == true
+                    return true
+                end
+                return false, "A portrait capture is already in progress for another character."
             end
 
             local token = newSessionToken(source)
@@ -878,6 +880,16 @@ CreateThread(function()
                 return
             end
             if session.submitting then
+                return
+            end
+
+            local currentCadStatus = getPlayerCadStatus(source, "Character Registration", { link = true, unit = false })
+            if not currentCadStatus.success or
+                tostring(currentCadStatus.link or "") ~= tostring(session.communityUserId or "") then
+                sessions[source] = nil
+                sendClientError(source, "CIVREG_SUBMISSION_INVALID")
+                TriggerClientEvent("SonoranCAD::civreg::SubmissionResult", source,
+                    { success = false, message = getErrorText("CIVREG_SUBMISSION_INVALID") })
                 return
             end
             session.submitting = true

@@ -272,7 +272,7 @@ test("an old token cannot delete the current pending capture", function()
     equal(#h.queries, 2)
 end)
 
-test("overlapping requests preserve one capture and use the latest character", function()
+test("an in-flight capture remains bound to its original character", function()
     local h = harness()
     local capture = h:requestCommandCapture()
     h.now = h.now + 3001
@@ -283,7 +283,7 @@ test("overlapping requests preserve one capture and use the latest character", f
     equal(#h.clientEvents, 1)
     equal(h.lastClientEvent.payload.token, capture.payload.token)
     h:submitCapture(capture, PNG)
-    equal(h.queries[2].parameters[2], "SYNC-LATEST")
+    equal(h.queries[2].parameters[2], "QB-123")
 end)
 
 test("expired database portrait uploads cannot write SQL", function()
