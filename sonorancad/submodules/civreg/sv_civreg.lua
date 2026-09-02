@@ -176,6 +176,9 @@ CreateThread(function()
         local function migrateMugshotColumn()
             local mapping, mappingError = resolveDatabaseMapping()
             if mapping == nil then
+                databaseSync.mode = "unavailable"
+                databaseSync.ready = false
+                databaseSync.mapping = nil
                 logDatabaseSyncFailure(mappingError)
                 return
             end
@@ -185,6 +188,9 @@ CreateThread(function()
                 mapping.tableName, MUGSHOT_COLUMN)
             executeDatabase(sql, {}, sql, {}, function(success, result)
                 if not success then
+                    databaseSync.mode = "unavailable"
+                    databaseSync.ready = false
+                    databaseSync.mapping = nil
                     logDatabaseSyncFailure(("Could not add %s.%s: %s"):format(
                         mapping.tableName, MUGSHOT_COLUMN, tostring(result)))
                     return
@@ -555,12 +561,6 @@ CreateThread(function()
                 accountCommunityUserCache[accountUuid] = tostring(communityUserId)
             end
 
-            if type(GetSourceByCadIdentity) == "function" then
-                local player = GetSourceByCadIdentity({ tostring(communityUserId) })
-                if player ~= nil then
-                    return tonumber(player) or player
-                end
-            end
             if type(GetPlayers) == "function" and type(GetPlayerCommunityUserId) == "function" then
                 for _, player in ipairs(GetPlayers()) do
                     if tostring(GetPlayerCommunityUserId(player) or "") == tostring(communityUserId) then
@@ -574,17 +574,25 @@ CreateThread(function()
         local function initializeMode()
             local response = CadApiGetDatabaseSyncConfiguration()
             if type(response) ~= "table" or response.success ~= true or type(response.data) ~= "table" then
+                databaseSync.mode = "unavailable"
+                databaseSync.ready = false
+                databaseSync.mapping = nil
                 CadApiLogFailure("GET_DATABASE_SYNC_CONFIGURATION", response or { success = false }, {})
                 logDatabaseSyncFailure("Could not determine whether CAD character database sync is enabled.")
-                return
+                return false
             end
 
             if response.data.enabled == true and response.data.character == true then
                 databaseSync.mode = "database"
+                databaseSync.ready = false
+                databaseSync.mapping = nil
                 migrateMugshotColumn()
-                return
+                return databaseSync.mode == "database"
             end
             databaseSync.mode = "api"
+            databaseSync.ready = false
+            databaseSync.mapping = nil
+            return true
         end
 
         initializeMode()
@@ -808,6 +816,9 @@ CreateThread(function()
             end
 
             if databaseSync.mode == "unavailable" then
+                initializeMode()
+            end
+            if databaseSync.mode == "unavailable" then
                 sendClientError(source, "CIVREG_DB_SYNC_FAILED")
                 return
             end
@@ -944,6 +955,9 @@ CreateThread(function()
         end)
 
         AddEventHandler("SonoranCAD::pushevents:CharacterSelected", function(data)
+            if databaseSync.mode == "unavailable" then
+                initializeMode()
+            end
             if databaseSync.mode ~= "database" or not databaseSync.ready or type(data) ~= "table" then
                 return
             end

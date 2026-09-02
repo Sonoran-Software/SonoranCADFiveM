@@ -34,6 +34,8 @@ local function harness(options)
         failures = {},
         errors = {},
         accountRequests = 0,
+        configurationRequests = 0,
+        identityRequests = 0,
         tokenIndex = 0
     }
     local config = loadConfig()
@@ -118,8 +120,11 @@ local function harness(options)
         }
     }
 
+    local configurationFailuresRemaining = tonumber(options.configurationFailures) or 0
     env.CadApiGetDatabaseSyncConfiguration = function()
-        if options.configurationFailure then
+        h.configurationRequests = h.configurationRequests + 1
+        if options.configurationFailure or configurationFailuresRemaining > 0 then
+            configurationFailuresRemaining = math.max(0, configurationFailuresRemaining - 1)
             return { success = false, reason = "fixture configuration failure" }
         end
         return {
@@ -143,8 +148,16 @@ local function harness(options)
         h.failures[#h.failures + 1] = { name = name, response = response, payload = payload }
     end
     env.GetSourceByCadIdentity = function(identities)
+        h.identityRequests = h.identityRequests + 1
         equal(identities[1], "linked-player")
         return 42
+    end
+    env.GetPlayers = function() return { "42" } end
+    env.GetPlayerCommunityUserId = function()
+        if options.playerCommunityUserId == false then
+            return nil
+        end
+        return options.playerCommunityUserId or "linked-player"
     end
     if options.cachedAccountPlayer then
         env.GetSourceByCadAccountUuid = function(accountUuid)
@@ -239,6 +252,17 @@ test("character selected uses the existing CAD link cache before the account API
     equal(h.queries[2].parameters[2], "SYNC-CACHED")
 end)
 
+test("character selected requires an active link after account resolution", function()
+    local h = harness({ playerCommunityUserId = false })
+    h.events["SonoranCAD::pushevents:CharacterSelected"]({
+        accId = "00000000-0000-0000-0000-000000000000",
+        id = "SYNC-UNLINKED"
+    })
+    equal(h.accountRequests, 1)
+    equal(h.identityRequests, 0)
+    equal(#h.clientEvents, 0)
+end)
+
 test("an old token cannot delete the current pending capture", function()
     local h = harness()
     local capture = h:requestCommandCapture()
@@ -307,6 +331,16 @@ test("database configuration failure remains fail closed", function()
     equal(#h.queries, 0)
     h.events["SonoranCAD::civreg::RequestForm"]()
     equal(h.errors[#h.errors].key, "CIVREG_DB_SYNC_FAILED")
+end)
+
+test("database configuration discovery retries after a startup failure", function()
+    local h = harness({ configurationFailures = 1 })
+    equal(h.configurationRequests, 1)
+    equal(#h.queries, 0)
+    local capture = h:requestCommandCapture()
+    equal(h.configurationRequests, 2)
+    equal(#h.queries, 1)
+    equal(capture.name, "SonoranCAD::civreg::CaptureDatabaseSyncMugshot")
 end)
 
 test("missing SQL provider prevents portrait writes", function()
