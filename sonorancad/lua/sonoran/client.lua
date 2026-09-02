@@ -969,6 +969,9 @@ local function create_client(config, adapter)
   instance.getInfoV2 = function(self)
     return self:_request("GET", "v2/general/info")
   end
+  instance.getDatabaseSyncConfigurationV2 = function(self)
+    return self:_request("GET", "v2/general/database-sync")
+  end
 
   instance.getCharactersV2 = function(self, query)
     return self:_request("GET", "v2/civilian/characters", { query = normalize_v2_target_aliases(query or {}) })

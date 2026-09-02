@@ -113,6 +113,7 @@ local ErrorCodes = {
     ['CIVREG_SELFIE_URL_MISSING'] = { code = "ERR-CR-103", message = "The character selfie could not be attached because the server has no public image URL." },
     ['CIVREG_SELFIE_SAVE_FAILED'] = { code = "ERR-CR-104", message = "The character selfie could not be saved by the game server." },
     ['CIVREG_CREATE_FAILED'] = { code = "ERR-CR-105", message = "The character could not be registered in CAD." },
+    ['CIVREG_DB_SYNC_FAILED'] = { code = "ERR-CR-106", message = "The character portrait could not be updated in the framework database." },
     ['CALL_CREATE_FAILED'] = { code = "ERR-CALL-105", message = "A dispatch call could not be created." },
     ['CALL_UNEXPECTED_RESPONSE'] = { code = "ERR-CALL-106", message = "A call request succeeded partially but returned an unexpected response." },
     ['DISPATCH_CALL_NOT_FOUND'] = { code = "ERR-DISP-101", message = "The requested dispatch call could not be found." },

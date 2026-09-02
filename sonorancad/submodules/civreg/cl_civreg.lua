@@ -77,6 +77,27 @@ CreateThread(function()
             })
         end)
 
+        local databaseSyncCaptureActive = false
+        RegisterNetEvent("SonoranCAD::civreg::CaptureDatabaseSyncMugshot", function(payload)
+            if type(payload) ~= "table" or type(payload.token) ~= "string" then
+                return
+            end
+            if databaseSyncCaptureActive then
+                TriggerServerEvent("SonoranCAD::civreg::DatabaseSyncMugshot", payload.token, nil,
+                    "Another character portrait capture is already active.")
+                return
+            end
+            databaseSyncCaptureActive = true
+            local ok, result = pcall(GetBase64, PlayerPedId())
+            databaseSyncCaptureActive = false
+
+            local image = ok and type(result) == "table" and result.success and result.base64 or nil
+            local captureError = type(result) == "table" and result.error or
+                "Could not capture your character portrait."
+            TriggerLatentServerEvent("SonoranCAD::civreg::DatabaseSyncMugshot", 200000,
+                payload.token, image, image and nil or captureError)
+        end)
+
         RegisterNUICallback("civregSubmit", function(data, cb)
             if not uiOpen or type(data) ~= "table" then
                 cb({ ok = false })

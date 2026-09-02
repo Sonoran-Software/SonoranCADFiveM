@@ -614,6 +614,10 @@ function CadApiGetServers()
     return response_with_data(response, normalize_server_collection(response.data))
 end
 
+function CadApiGetDatabaseSyncConfiguration()
+    return get_cad_client():getDatabaseSyncConfigurationV2()
+end
+
 function CadApiSetServers(payload)
     local servers = payload
     if type(servers) == "table" and servers.servers ~= nil then

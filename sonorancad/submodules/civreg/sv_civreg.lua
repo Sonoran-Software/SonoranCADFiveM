@@ -9,7 +9,16 @@ CreateThread(function()
         local templateCache = nil
         local SESSION_LIFETIME_MS = 10 * 60 * 1000
         local FORM_REQUEST_COOLDOWN_MS = 3000
+        local DB_SYNC_CAPTURE_TIMEOUT_MS = 30 * 1000
         local MAX_FIELD_LENGTH = 8000
+        local MUGSHOT_COLUMN = "sonoran_mugshot"
+        local databaseSync = {
+            mode = "unavailable",
+            ready = false,
+            mapping = nil
+        }
+        local pendingDatabaseSyncCaptures = {}
+        local accountCommunityUserCache = {}
         local DEFAULT_STATUS_OPTIONS = { "0", "1", "2" }
         local MASK_TOKENS = {
             ["#"] = "%d",
@@ -49,6 +58,126 @@ CreateThread(function()
                 end
             end
             return nil
+        end
+
+        local function validSqlIdentifier(value)
+            return type(value) == "string" and value:match("^[A-Za-z0-9_]+$") ~= nil
+        end
+
+        local function resolveDatabaseMapping()
+            local settings = type(pluginConfig.databaseSync) == "table" and pluginConfig.databaseSync or {}
+            local qbSettings = type(settings.qbCore) == "table" and settings.qbCore or {}
+            local esxSettings = type(settings.esx) == "table" and settings.esx or {}
+            local frameworkConfig = type(Config.plugins) == "table" and
+                Config.plugins.frameworksupport or {}
+            local qbStarted = GetResourceState("qb-core") == "started"
+            local esxStarted = GetResourceState("es_extended") == "started"
+            local useQBCore = qbStarted and (not esxStarted or frameworkConfig.usingQBCore ~= false)
+            local mapping
+
+            if useQBCore then
+                mapping = {
+                    framework = "qbcore",
+                    tableName = qbSettings.tableName or "players",
+                    characterIdColumn = qbSettings.characterIdColumn or "citizenid"
+                }
+            elseif esxStarted then
+                mapping = {
+                    framework = "esx",
+                    tableName = esxSettings.tableName or "users",
+                    characterIdColumn = esxSettings.characterIdColumn or "identifier"
+                }
+            else
+                return nil, "QBCore or ESX must be started before Sonoran CAD."
+            end
+
+            if not validSqlIdentifier(mapping.tableName) or not validSqlIdentifier(mapping.characterIdColumn) then
+                return nil, "The configured database sync table and character ID column must contain only letters, numbers, and underscores."
+            end
+            return mapping
+        end
+
+        local function executeDatabase(oxSql, oxParameters, mysqlSql, mysqlParameters, callback)
+            local completed = false
+            local function finish(success, result)
+                if completed then
+                    return
+                end
+                completed = true
+                callback(success, result)
+            end
+
+            if GetResourceState("oxmysql") == "started" then
+                local ok, err = pcall(function()
+                    exports.oxmysql:query(oxSql, oxParameters or {}, function(result)
+                        finish(true, result)
+                    end)
+                end)
+                if not ok then
+                    finish(false, err)
+                end
+                return
+            end
+            if GetResourceState("mysql-async") == "started" then
+                local ok, err = pcall(function()
+                    exports["mysql-async"]:mysql_execute(mysqlSql or oxSql, mysqlParameters or {}, function(result)
+                        finish(true, result)
+                    end)
+                end)
+                if not ok then
+                    finish(false, err)
+                end
+                return
+            end
+
+            finish(false, "Neither oxmysql nor mysql-async is started.")
+        end
+
+        local function logDatabaseSyncFailure(detail)
+            logError("CIVREG_DB_SYNC_FAILED", tostring(detail or "Unknown database sync error."))
+        end
+
+        local function migrateMugshotColumn()
+            local mapping, mappingError = resolveDatabaseMapping()
+            if mapping == nil then
+                logDatabaseSyncFailure(mappingError)
+                return
+            end
+            databaseSync.mapping = mapping
+
+            local sql = ("ALTER TABLE `%s` ADD COLUMN IF NOT EXISTS `%s` MEDIUMTEXT NULL"):format(
+                mapping.tableName, MUGSHOT_COLUMN)
+            executeDatabase(sql, {}, sql, {}, function(success, result)
+                if not success then
+                    logDatabaseSyncFailure(("Could not add %s.%s: %s"):format(
+                        mapping.tableName, MUGSHOT_COLUMN, tostring(result)))
+                    return
+                end
+                databaseSync.ready = true
+                infoLog(("CivReg database sync mode is ready (%s.%s -> %s)."):format(
+                    mapping.tableName, mapping.characterIdColumn, MUGSHOT_COLUMN))
+            end)
+        end
+
+        local function updateDatabaseMugshot(characterId, dataUrl, callback)
+            local mapping = databaseSync.mapping
+            if databaseSync.mode ~= "database" or not databaseSync.ready or type(mapping) ~= "table" then
+                callback(false, "Database sync mode is not ready.")
+                return
+            end
+            if characterId == nil or tostring(characterId) == "" then
+                callback(false, "The selected character did not include a database sync ID.")
+                return
+            end
+
+            local oxSql = ("UPDATE `%s` SET `%s` = ? WHERE `%s` = ?"):format(
+                mapping.tableName, MUGSHOT_COLUMN, mapping.characterIdColumn)
+            local mysqlSql = ("UPDATE `%s` SET `%s` = @mugshot WHERE `%s` = @characterId"):format(
+                mapping.tableName, MUGSHOT_COLUMN, mapping.characterIdColumn)
+            executeDatabase(oxSql, { dataUrl, tostring(characterId) }, mysqlSql, {
+                ["@mugshot"] = dataUrl,
+                ["@characterId"] = tostring(characterId)
+            }, callback)
         end
 
         local function normalizeTemplate(data, templateId)
@@ -205,6 +334,35 @@ CreateThread(function()
             }
         end
 
+        local function getCurrentFrameworkCharacterId(source)
+            local mapping = databaseSync.mapping
+            if type(mapping) ~= "table" then
+                return nil
+            end
+
+            if mapping.framework == "qbcore" then
+                local ok, characterId = pcall(function()
+                    local core = exports["qb-core"]:GetCoreObject()
+                    local player = core.Functions.GetPlayer(source)
+                    return player and player.PlayerData and player.PlayerData.citizenid or nil
+                end)
+                return ok and nonEmpty(characterId) or nil
+            end
+
+            local ok, characterId = pcall(function()
+                local esx = exports["es_extended"]:getSharedObject()
+                local player = esx.GetPlayerFromId(source)
+                if player == nil then
+                    return nil
+                end
+                if type(player.getIdentifier) == "function" then
+                    return player.getIdentifier()
+                end
+                return player.identifier
+            end)
+            return ok and nonEmpty(characterId) or nil
+        end
+
         local function buildPrefill(source, fields)
             local identity = collectFrameworkIdentity(source)
             local prefill = {}
@@ -230,6 +388,27 @@ CreateThread(function()
                 return token
             end
             return ("%x-%x-%x-%x"):format(os.time(), source, GetGameTimer(), math.random(0, 0x7fffffff))
+        end
+
+        local function requestDatabaseSyncCapture(source, characterId, notifyOnSuccess)
+            if databaseSync.mode ~= "database" or not databaseSync.ready then
+                return false, "Database sync mode is not ready."
+            end
+            if characterId == nil or tostring(characterId) == "" then
+                return false, "No active database sync character was found."
+            end
+
+            local token = newSessionToken(source)
+            pendingDatabaseSyncCaptures[source] = {
+                token = token,
+                characterId = tostring(characterId),
+                createdAt = GetGameTimer(),
+                notifyOnSuccess = notifyOnSuccess == true
+            }
+            TriggerClientEvent("SonoranCAD::civreg::CaptureDatabaseSyncMugshot", source, {
+                token = token
+            })
+            return true
         end
 
         local function validateSelfie(dataUrl)
@@ -265,6 +444,70 @@ CreateThread(function()
             end
             return true
         end
+
+        local function resolveCharacterSelectedPlayer(accountUuid)
+            accountUuid = tostring(accountUuid or "")
+            if accountUuid == "" then
+                return nil
+            end
+
+            if type(GetSourceByCadAccountUuid) == "function" then
+                local cachedPlayer = GetSourceByCadAccountUuid(accountUuid)
+                if cachedPlayer ~= nil then
+                    return tonumber(cachedPlayer) or cachedPlayer
+                end
+            end
+
+            local communityUserId = accountCommunityUserCache[accountUuid]
+            if communityUserId == nil then
+                local response = CadApiGetAccount({ accountUuid = accountUuid })
+                if not response.success then
+                    CadApiLogFailure("GET_ACCOUNT", response, { accountUuid = accountUuid })
+                    return nil
+                end
+                local account = type(response.data) == "table" and
+                    (response.data.account or response.data) or {}
+                communityUserId = nonEmpty(account.communityUserId, account.apiId)
+                if communityUserId == nil then
+                    logDatabaseSyncFailure("The selected character account did not include a communityUserId.")
+                    return nil
+                end
+                accountCommunityUserCache[accountUuid] = tostring(communityUserId)
+            end
+
+            if type(GetSourceByCadIdentity) == "function" then
+                local player = GetSourceByCadIdentity({ tostring(communityUserId) })
+                if player ~= nil then
+                    return tonumber(player) or player
+                end
+            end
+            if type(GetPlayers) == "function" and type(GetPlayerCommunityUserId) == "function" then
+                for _, player in ipairs(GetPlayers()) do
+                    if tostring(GetPlayerCommunityUserId(player) or "") == tostring(communityUserId) then
+                        return tonumber(player) or player
+                    end
+                end
+            end
+            return nil
+        end
+
+        local function initializeMode()
+            local response = CadApiGetDatabaseSyncConfiguration()
+            if type(response) ~= "table" or response.success ~= true or type(response.data) ~= "table" then
+                CadApiLogFailure("GET_DATABASE_SYNC_CONFIGURATION", response or { success = false }, {})
+                logDatabaseSyncFailure("Could not determine whether CAD character database sync is enabled.")
+                return
+            end
+
+            if response.data.enabled == true and response.data.character == true then
+                databaseSync.mode = "database"
+                migrateMugshotColumn()
+                return
+            end
+            databaseSync.mode = "api"
+        end
+
+        initializeMode()
 
         local function dependencyValue(values, fields, uid)
             if values[uid] ~= nil then
@@ -484,6 +727,20 @@ CreateThread(function()
                 return
             end
 
+            if databaseSync.mode == "unavailable" then
+                sendClientError(source, "CIVREG_DB_SYNC_FAILED")
+                return
+            end
+            if databaseSync.mode == "database" then
+                local characterId = getCurrentFrameworkCharacterId(source)
+                local requested, requestError = requestDatabaseSyncCapture(source, characterId, true)
+                if not requested then
+                    logDatabaseSyncFailure(requestError)
+                    sendClientError(source, "CIVREG_DB_SYNC_FAILED", requestError)
+                end
+                return
+            end
+
             local templateId = tonumber(pluginConfig.templateId) or 7
             local template, response = getLiveTemplate(templateId)
             if template == nil and response and not response.success then
@@ -606,9 +863,74 @@ CreateThread(function()
                 { success = true, message = successMessage, recordId = createResponse.recordId })
         end)
 
+        AddEventHandler("SonoranCAD::pushevents:CharacterSelected", function(data)
+            if databaseSync.mode ~= "database" or not databaseSync.ready or type(data) ~= "table" then
+                return
+            end
+            local characterId = nonEmpty(data.id, data.syncId, data.characterId)
+            local accountUuid = nonEmpty(data.accId, data.accountUuid, data.accountId)
+            if characterId == nil or accountUuid == nil then
+                logDatabaseSyncFailure("EVENT_CHAR_SELECTED was missing the account UUID or database sync character ID.")
+                return
+            end
+
+            local player = resolveCharacterSelectedPlayer(accountUuid)
+            if player == nil then
+                debugLog(("CivReg did not refresh database sync mugshot %s because its CAD account is not linked to an online player."):format(
+                    tostring(characterId)))
+                return
+            end
+            local requested, requestError = requestDatabaseSyncCapture(player, characterId, false)
+            if not requested then
+                logDatabaseSyncFailure(requestError)
+            end
+        end)
+
+        RegisterNetEvent("SonoranCAD::civreg::DatabaseSyncMugshot", function(token, dataUrl, captureError)
+            local source = source
+            local pending = pendingDatabaseSyncCaptures[source]
+            if type(pending) ~= "table" or token ~= pending.token or
+                GetGameTimer() - pending.createdAt > DB_SYNC_CAPTURE_TIMEOUT_MS then
+                pendingDatabaseSyncCaptures[source] = nil
+                return
+            end
+            pendingDatabaseSyncCaptures[source] = nil
+
+            local valid, validationError = validateSelfie(dataUrl)
+            if not valid then
+                local detail = nonEmpty(captureError, validationError)
+                logDatabaseSyncFailure(detail)
+                if pending.notifyOnSuccess then
+                    sendClientError(source, "CIVREG_DB_SYNC_FAILED", detail)
+                end
+                return
+            end
+
+            updateDatabaseMugshot(pending.characterId, dataUrl, function(success, result)
+                if not success then
+                    logDatabaseSyncFailure(result)
+                    if pending.notifyOnSuccess then
+                        sendClientError(source, "CIVREG_DB_SYNC_FAILED", result)
+                    end
+                    return
+                end
+                debugLog(("CivReg updated the database sync mugshot for character %s."):format(
+                    tostring(pending.characterId)))
+                if pending.notifyOnSuccess then
+                    notifyPlayer(source, {
+                        title = "CAD - Success",
+                        message = pluginConfig.language.databaseSyncSuccess or
+                            "Character portrait updated successfully.",
+                        type = "success"
+                    })
+                end
+            end)
+        end)
+
         AddEventHandler("playerDropped", function()
             sessions[source] = nil
             lastFormRequest[source] = nil
+            pendingDatabaseSyncCaptures[source] = nil
         end)
     end)
 end)

@@ -561,6 +561,11 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 - `Meaning`: CAD rejected or failed to create the submitted character record.
 - `Potential Fix`: Confirm the account is linked, template `7` is valid, and all required or unique fields contain acceptable values.
 
+### ERR-CR-106
+- `Key`: `CIVREG_DB_SYNC_FAILED`
+- `Meaning`: CivReg detected CAD character database sync but could not initialize or update the configured framework character table.
+- `Potential Fix`: Start QBCore or ESX and oxmysql or mysql-async before Sonoran CAD. Confirm the CivReg database sync table and character ID column match the CAD DB Sync character mapping.
+
 ## Additional Call/Dispatch Errors
 
 ### ERR-CALL-105

@@ -9,7 +9,7 @@ local config = {
     enabled = true,
     pluginName = "civreg",
     pluginAuthor = "SonoranCAD",
-    configVersion = "1.0",
+    configVersion = "1.1",
 
     -- Optional notification override for this submodule only.
     -- Valid values: "none", "ox_lib", "lation_ui", "pnotify", "chat"
@@ -24,6 +24,20 @@ local config = {
     -- Portraits are submitted to CAD as base64 image data. This limit applies
     -- to the decoded size of each PNG or JPEG. No public image hosting is needed.
     maxSelfieBytes = 1024 * 1024,
+
+    -- When CAD database sync and character mapping are enabled, CivReg writes
+    -- portraits to the framework database instead of creating API characters.
+    -- These defaults match the standard QBCore and ESX character schemas.
+    databaseSync = {
+        qbCore = {
+            tableName = "players",
+            characterIdColumn = "citizenid"
+        },
+        esx = {
+            tableName = "users",
+            characterIdColumn = "identifier"
+        }
+    },
 
     -- Map framework identity values to field UIDs from template #7. Change the
     -- value on the right when a field has a custom Field Mapping ID in CAD.
@@ -46,7 +60,8 @@ local config = {
         submit = "Register Character",
         cancel = "Cancel",
         loading = "Loading the live CAD template...",
-        success = "Character registered successfully in CAD."
+        success = "Character registered successfully in CAD.",
+        databaseSyncSuccess = "Character portrait updated successfully."
     }
 }
 

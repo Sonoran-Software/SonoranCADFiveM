@@ -43,6 +43,9 @@ local function harness(options)
         return { success = true, link = "linked-account" }
     end
     env.CadApiGetTemplates = function() return { success = true, data = template } end
+    env.CadApiGetDatabaseSyncConfiguration = function()
+        return { success = true, data = { enabled = false, character = false } }
+    end
     env.TriggerClientEvent = function(name, target, payload)
         equal(target, 42)
         h.replies[#h.replies + 1] = { name = name, payload = payload }
