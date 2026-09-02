@@ -133,6 +133,42 @@ CreateThread(function()
             finish(false, "Neither oxmysql nor mysql-async is started.")
         end
 
+        local function fetchDatabase(oxSql, oxParameters, mysqlSql, mysqlParameters, callback)
+            local completed = false
+            local function finish(success, result)
+                if completed then
+                    return
+                end
+                completed = true
+                callback(success, result)
+            end
+
+            if GetResourceState("oxmysql") == "started" then
+                local ok, err = pcall(function()
+                    exports.oxmysql:query(oxSql, oxParameters or {}, function(result)
+                        finish(true, result)
+                    end)
+                end)
+                if not ok then
+                    finish(false, err)
+                end
+                return
+            end
+            if GetResourceState("mysql-async") == "started" then
+                local ok, err = pcall(function()
+                    exports["mysql-async"]:mysql_fetch_all(mysqlSql or oxSql, mysqlParameters or {}, function(result)
+                        finish(true, result)
+                    end)
+                end)
+                if not ok then
+                    finish(false, err)
+                end
+                return
+            end
+
+            finish(false, "Neither oxmysql nor mysql-async is started.")
+        end
+
         local function logDatabaseSyncFailure(detail)
             logError("CIVREG_DB_SYNC_FAILED", tostring(detail or "Unknown database sync error."))
         end
@@ -174,10 +210,46 @@ CreateThread(function()
                 mapping.tableName, MUGSHOT_COLUMN, mapping.characterIdColumn)
             local mysqlSql = ("UPDATE `%s` SET `%s` = @mugshot WHERE `%s` = @characterId"):format(
                 mapping.tableName, MUGSHOT_COLUMN, mapping.characterIdColumn)
-            executeDatabase(oxSql, { dataUrl, tostring(characterId) }, mysqlSql, {
+            local normalizedCharacterId = tostring(characterId)
+            executeDatabase(oxSql, { dataUrl, normalizedCharacterId }, mysqlSql, {
                 ["@mugshot"] = dataUrl,
-                ["@characterId"] = tostring(characterId)
-            }, callback)
+                ["@characterId"] = normalizedCharacterId
+            }, function(success, result)
+                if not success then
+                    callback(false, result)
+                    return
+                end
+
+                local affectedRows = type(result) == "number" and result or
+                    (type(result) == "table" and tonumber(result.affectedRows))
+                if affectedRows == nil then
+                    callback(false, "The database did not return an affected-row count for the mugshot update.")
+                    return
+                end
+                if affectedRows > 0 then
+                    callback(true, result)
+                    return
+                end
+
+                -- A zero count can mean either a missing character or an unchanged portrait.
+                -- Check the row before reporting success to the player.
+                local oxExistsSql = ("SELECT 1 AS `found` FROM `%s` WHERE `%s` = ? LIMIT 1"):format(
+                    mapping.tableName, mapping.characterIdColumn)
+                local mysqlExistsSql = ("SELECT 1 AS `found` FROM `%s` WHERE `%s` = @characterId LIMIT 1"):format(
+                    mapping.tableName, mapping.characterIdColumn)
+                fetchDatabase(oxExistsSql, { normalizedCharacterId }, mysqlExistsSql, {
+                    ["@characterId"] = normalizedCharacterId
+                }, function(fetchSuccess, rows)
+                    if not fetchSuccess then
+                        callback(false, rows)
+                    elseif type(rows) == "table" and rows[1] ~= nil then
+                        callback(true, result)
+                    else
+                        callback(false, ("No framework character matched database sync ID %s."):format(
+                            normalizedCharacterId))
+                    end
+                end)
+            end)
         end
 
         local function normalizeTemplate(data, templateId)
@@ -396,6 +468,14 @@ CreateThread(function()
             end
             if characterId == nil or tostring(characterId) == "" then
                 return false, "No active database sync character was found."
+            end
+
+            local pending = pendingDatabaseSyncCaptures[source]
+            if type(pending) == "table" and
+                GetGameTimer() - pending.createdAt <= DB_SYNC_CAPTURE_TIMEOUT_MS then
+                pending.characterId = tostring(characterId)
+                pending.notifyOnSuccess = pending.notifyOnSuccess or notifyOnSuccess == true
+                return true
             end
 
             local token = newSessionToken(source)
@@ -889,8 +969,13 @@ CreateThread(function()
         RegisterNetEvent("SonoranCAD::civreg::DatabaseSyncMugshot", function(token, dataUrl, captureError)
             local source = source
             local pending = pendingDatabaseSyncCaptures[source]
-            if type(pending) ~= "table" or token ~= pending.token or
-                GetGameTimer() - pending.createdAt > DB_SYNC_CAPTURE_TIMEOUT_MS then
+            if type(pending) ~= "table" then
+                return
+            end
+            if token ~= pending.token then
+                return
+            end
+            if GetGameTimer() - pending.createdAt > DB_SYNC_CAPTURE_TIMEOUT_MS then
                 pendingDatabaseSyncCaptures[source] = nil
                 return
             end

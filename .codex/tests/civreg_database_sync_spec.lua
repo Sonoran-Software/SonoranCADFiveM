@@ -67,7 +67,13 @@ local function harness(options)
 
     local function recordQuery(provider, sql, parameters, callback)
         h.queries[#h.queries + 1] = { provider = provider, sql = sql, parameters = parameters }
-        callback(options.queryResult or { affectedRows = 1 })
+        if sql:match("^SELECT ") then
+            callback(options.selectRows or {})
+        elseif sql:match("^UPDATE ") then
+            callback(options.updateResult or (provider == "mysql-async" and 1 or { affectedRows = 1 }))
+        else
+            callback(options.queryResult or { affectedRows = 0 })
+        end
     end
 
     env.exports = {
@@ -84,6 +90,9 @@ local function harness(options)
         },
         ["mysql-async"] = {
             mysql_execute = function(_, sql, parameters, callback)
+                recordQuery("mysql-async", sql, parameters, callback)
+            end,
+            mysql_fetch_all = function(_, sql, parameters, callback)
                 recordQuery("mysql-async", sql, parameters, callback)
             end
         },
@@ -230,16 +239,54 @@ test("character selected uses the existing CAD link cache before the account API
     equal(h.queries[2].parameters[2], "SYNC-CACHED")
 end)
 
-test("forged and expired database portrait uploads cannot write SQL", function()
+test("an old token cannot delete the current pending capture", function()
     local h = harness()
     local capture = h:requestCommandCapture()
     h:submitCapture(capture, PNG, nil, "forged-token")
     equal(#h.queries, 1)
+    h:submitCapture(capture, PNG)
+    equal(#h.queries, 2)
+end)
 
-    capture = h:requestCommandCapture()
+test("overlapping requests preserve one capture and use the latest character", function()
+    local h = harness()
+    local capture = h:requestCommandCapture()
+    h.now = h.now + 3001
+    h.events["SonoranCAD::pushevents:CharacterSelected"]({
+        accId = "00000000-0000-0000-0000-000000000000",
+        id = "SYNC-LATEST"
+    })
+    equal(#h.clientEvents, 1)
+    equal(h.lastClientEvent.payload.token, capture.payload.token)
+    h:submitCapture(capture, PNG)
+    equal(h.queries[2].parameters[2], "SYNC-LATEST")
+end)
+
+test("expired database portrait uploads cannot write SQL", function()
+    local h = harness()
+    local capture = h:requestCommandCapture()
     h.now = h.now + 30001
     h:submitCapture(capture, PNG)
     equal(#h.queries, 1)
+end)
+
+test("zero-row updates reject a missing framework character", function()
+    local h = harness({ updateResult = { affectedRows = 0 }, selectRows = {} })
+    local capture = h:requestCommandCapture()
+    h:submitCapture(capture, PNG)
+    equal(#h.queries, 3)
+    assert(h.queries[3].sql:match("^SELECT 1 AS `found`"))
+    equal(h.notification, nil)
+    equal(h.errors[#h.errors].key, "CIVREG_DB_SYNC_FAILED")
+    assert(h.errors[#h.errors].detail:find("No framework character matched", 1, true))
+end)
+
+test("zero-row updates accept an unchanged portrait on an existing character", function()
+    local h = harness({ updateResult = { affectedRows = 0 }, selectRows = { { found = 1 } } })
+    local capture = h:requestCommandCapture()
+    h:submitCapture(capture, PNG)
+    equal(#h.queries, 3)
+    equal(h.notification.message, "Character portrait updated successfully.")
 end)
 
 test("mysql-async uses the ESX table and named parameters", function()

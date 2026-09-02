@@ -10,4 +10,4 @@ Image fields are clearly marked as selfie controls in API mode. Captured portrai
 
 New portraits do not require a public image URL or a local image file. The old `selfieBaseUrl` option is ignored. Existing URL-based records keep their original references, so the `civreg` file route remains available for previously saved portraits. Preserve those files and their public route while existing records use them.
 
-Run the standalone server regression tests from the repository root with `lua .codex/tests/civreg_registration_spec.lua` and `lua .codex/tests/civreg_database_sync_spec.lua` (Lua 5.4 or newer). They stub the FiveM, CAD, and SQL boundaries and do not connect to a live CAD community or database.
+Run the standalone server regression tests from the repository root with `lua .codex/tests/civreg_registration_spec.lua`, `lua .codex/tests/civreg_database_sync_spec.lua`, and `lua .codex/tests/linking_account_uuid_spec.lua` (Lua 5.4 or newer). They stub the FiveM, CAD, and SQL boundaries and do not connect to a live CAD community or database.

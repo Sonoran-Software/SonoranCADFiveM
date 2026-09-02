@@ -232,7 +232,7 @@ local function update_link_cache(identifier, identifier_type, parsed)
         code = parsed.code or existing.code,
         url = parsed.url or existing.url,
         communityUserId = parsed.communityUserId or existing.communityUserId,
-        accountUuid = parsed.accountUuid or existing.accountUuid,
+        accountUuid = parsed.linked == true and (parsed.accountUuid or existing.accountUuid) or nil,
         updatedAt = GetGameTimer(),
         raw = parsed.raw or existing.raw
     }
@@ -367,7 +367,7 @@ local function build_player_session(identifier, identifier_type, status, existin
     session.lastCheckAt = session.lastCheckAt or 0
     session.linked = status.linked == true
     session.communityUserId = status.communityUserId or session.communityUserId
-    session.accountUuid = status.accountUuid or session.accountUuid
+    session.accountUuid = status.linked == true and (status.accountUuid or session.accountUuid) or nil
     session.updatedAt = GetGameTimer()
     session.createdAt = session.createdAt or session.updatedAt
     return session
@@ -541,10 +541,16 @@ function GetSourceByCadAccountUuid(account_uuid)
         local identifier = get_player_link_identifier(player)
         local cached = identifier and CadLinkCache[identifier] or nil
         local session = CadLinkSessions[player] or CadLinkSessions[tonumber(player)]
-        local raw = cached and cached.raw or nil
-        local cached_account_uuid = cached and (cached.accountUuid or
-            (type(raw) == "table" and (raw.accountUuid or raw.accountUUID or raw.uuid))) or nil
-        local candidate = cached_account_uuid or (session and session.accountUuid)
+        local candidate = nil
+        if cached and cached.linked == true then
+            local raw = cached.raw
+            candidate = cached.accountUuid or
+                (type(raw) == "table" and (raw.accountUuid or raw.accountUUID or raw.uuid)) or nil
+        end
+        if candidate == nil and (cached == nil or cached.linked == true) and
+            session and session.linked == true then
+            candidate = session.accountUuid
+        end
         if candidate ~= nil and tostring(candidate):lower() == expected then
             return tonumber(player) or player
         end
