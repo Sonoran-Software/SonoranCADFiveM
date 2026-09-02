@@ -42,6 +42,13 @@ CreateThread(function()
             ["-"] = true,
             ["?"] = true
         }
+        local BASE64_VALUES = {}
+        do
+            local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+            for index = 1, #alphabet do
+                BASE64_VALUES[alphabet:sub(index, index)] = index - 1
+            end
+        end
 
         -- Keep serving portraits referenced by records created before base64 uploads.
         AddPluginFilePath("civreg")
@@ -331,13 +338,51 @@ CreateThread(function()
 
         local function normalizeMaskedPrefill(field, value)
             value = tostring(value)
-            if tostring(field.mask or "") == "MM/DD/YYYY" then
+            local mask = type(field.mask) == "string" and field.mask or ""
+            if mask == "MM/DD/YYYY" then
                 local year, month, day = value:match("^(%d%d%d%d)[-/](%d%d)[-/](%d%d)$")
                 if year ~= nil then
-                    return ("%s/%s/%s"):format(month, day, year)
+                    value = ("%s/%s/%s"):format(month, day, year)
                 end
             end
-            return value
+            if mask == "" then
+                return value
+            end
+
+            local maskReverse = field.maskReverse == true
+            if maskReverse then
+                value = value:reverse()
+                mask = mask:reverse()
+            end
+
+            local result = {}
+            local sourceIndex = 1
+            local consumedToken = false
+            for character in mask:gmatch(".") do
+                local token = MASK_TOKENS[character]
+                if token == nil then
+                    if value:sub(sourceIndex, sourceIndex) == character then
+                        sourceIndex = sourceIndex + 1
+                    end
+                    if consumedToken or sourceIndex <= #value then
+                        result[#result + 1] = character
+                    end
+                else
+                    while sourceIndex <= #value and
+                        value:sub(sourceIndex, sourceIndex):match("^" .. token .. "$") == nil do
+                        sourceIndex = sourceIndex + 1
+                    end
+                    if sourceIndex > #value then
+                        break
+                    end
+                    result[#result + 1] = value:sub(sourceIndex, sourceIndex)
+                    sourceIndex = sourceIndex + 1
+                    consumedToken = true
+                end
+            end
+
+            local normalized = table.concat(result)
+            return maskReverse and normalized:reverse() or normalized
         end
 
         local function generateRandomValue(field)
@@ -499,6 +544,41 @@ CreateThread(function()
             return true
         end
 
+        local function decodeBase64Prefix(encoded, byteLimit)
+            local decoded = {}
+            local encodedLimit = math.min(#encoded, math.ceil(byteLimit / 3) * 4)
+            for index = 1, encodedLimit, 4 do
+                local first = BASE64_VALUES[encoded:sub(index, index)]
+                local second = BASE64_VALUES[encoded:sub(index + 1, index + 1)]
+                if first == nil or second == nil then
+                    return nil
+                end
+                decoded[#decoded + 1] = string.char(first * 4 + math.floor(second / 16))
+                if #decoded >= byteLimit or encoded:sub(index + 2, index + 2) == "=" then
+                    break
+                end
+
+                local third = BASE64_VALUES[encoded:sub(index + 2, index + 2)]
+                if third == nil then
+                    return nil
+                end
+                decoded[#decoded + 1] = string.char((second % 16) * 16 + math.floor(third / 4))
+                if #decoded >= byteLimit or encoded:sub(index + 3, index + 3) == "=" then
+                    break
+                end
+
+                local fourth = BASE64_VALUES[encoded:sub(index + 3, index + 3)]
+                if fourth == nil then
+                    return nil
+                end
+                decoded[#decoded + 1] = string.char((third % 4) * 64 + fourth)
+                if #decoded >= byteLimit then
+                    break
+                end
+            end
+            return table.concat(decoded)
+        end
+
         local function validateSelfie(dataUrl)
             if type(dataUrl) ~= "string" then
                 return false, "The character portrait must contain a base64 PNG or JPEG image."
@@ -529,6 +609,14 @@ CreateThread(function()
             local decodedBytes = encodedLength / 4 * 3 - #padding
             if decodedBytes > limit then
                 return false, "The character portrait exceeds the configured image size limit."
+            end
+            local header = decodeBase64Prefix(encoded, 8)
+            local validSignature = prefix == "data:image/png;base64," and
+                header ~= nil and header:sub(1, 8) == "\137PNG\r\n\26\n" or
+                prefix == "data:image/jpeg;base64," and
+                header ~= nil and header:sub(1, 3) == "\255\216\255"
+            if not validSignature then
+                return false, "The character portrait bytes do not match the declared PNG or JPEG image type."
             end
             return true
         end
@@ -710,6 +798,9 @@ CreateThread(function()
                     value = session.prefill[uid]
                     if value == nil then
                         value = fieldUsesFlags(field) and field.data or field.value
+                    end
+                    if value ~= nil and not fieldUsesFlags(field) then
+                        value = normalizeMaskedPrefill(field, value)
                     end
                 end
 

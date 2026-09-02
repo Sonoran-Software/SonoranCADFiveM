@@ -22,11 +22,15 @@ local function harness(options)
     config.selfieBaseUrl = "https://obsolete.example.com/civreg"
     local photo = { uid = "photo", label = "Portrait", type = "image", isRequired = true }
     if options.photo then options.photo(photo) end
-    local template = { recordTypeId = 7, sections = { { label = "Character", fields = {
+    local fields = {
         { uid = "first", label = "First Name", type = "text", isRequired = true },
         { uid = "visibility", label = "Visibility", type = "select", options = { "show", "hide" }, value = "show" },
         photo
-    } } } }
+    }
+    for _, field in ipairs(options.fields or {}) do
+        fields[#fields + 1] = field
+    end
+    local template = { recordTypeId = 7, sections = { { label = "Character", fields = fields } } }
     local env = setmetatable({ source = 42 }, { __index = _G })
     env.Config = { LoadPlugin = function(_, callback) callback(config) end }
     env.CreateThread = function(callback) callback() end
@@ -34,6 +38,9 @@ local function harness(options)
     env.AddEventHandler = function(name, callback) h.events[name] = callback end
     env.GetGameTimer = function() return h.now end
     env.GetCurrentResourceName = function() return "sonorancad" end
+    if options.identity then
+        env.GetIdentity = function(_, callback) callback(options.identity) end
+    end
     env.AddPluginFilePath = function(path) h.registeredPaths[path] = true end
     env.CadApiGetServers = function() error("Base64 registration must not look up a public server URL") end
     env.exports = { sonorancad = setmetatable({
@@ -153,6 +160,10 @@ for name, value in pairs({
     ["excess padding"] = "data:image/png;base64,A===",
     ["only padding"] = "data:image/png;base64,====",
     ["truncated quartet"] = "data:image/png;base64,AAA",
+    ["invalid PNG signature"] = "data:image/png;base64,AAAA",
+    ["invalid JPEG signature"] = "data:image/jpeg;base64,AAAA",
+    ["PNG bytes declared as JPEG"] = PNG:gsub("image/png", "image/jpeg", 1),
+    ["JPEG bytes declared as PNG"] = JPEG:gsub("image/jpeg", "image/png", 1),
     ["non-string payload"] = { image = PNG }
 }) do
     test(name .. " is rejected before the CAD request", function()
@@ -165,16 +176,27 @@ for name, value in pairs({
 end
 
 test("decoded size limit accepts the exact padded boundary", function()
-    local h = harness({ limit = 1 })
-    h:submit({ photo = "data:image/png;base64,AA==" })
+    local h = harness({ limit = 8 })
+    h:submit({ photo = "data:image/png;base64,iVBORw0KGgo=" })
     equal(h.result.success, true)
 end)
 
 test("decoded size is checked even when encoded length fits", function()
-    local h = harness({ limit = 1 })
-    h:submit({ photo = "data:image/png;base64,AAA=" })
+    local h = harness({ limit = 8 })
+    h:submit({ photo = "data:image/png;base64,iVBORw0KGgoA" })
     equal(#h.requests, 0)
     assert(h.result.message:find("size limit", 1, true))
+end)
+
+test("read-only framework prefills use the live field mask", function()
+    local h = harness({
+        identity = { phone = "5551234567" },
+        fields = {
+            { uid = "phone", label = "Phone", type = "text", readOnly = true, mask = "(###) ### - ####" }
+        }
+    })
+    h:submit({ photo = PNG }, { first = "Alex", visibility = "show", phone = "forged" })
+    equal(h.requests[1].replaceValues.phone, "(555) 123 - 4567")
 end)
 
 test("oversized encoded payload is rejected", function()
