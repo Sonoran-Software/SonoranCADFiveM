@@ -91,6 +91,50 @@ Core Configuration
     ]]):format(version, Config.latestVersion, getServerVersion(), table.concat(pluginVersions, ", "), table.concat(loadedPlugins, ", "), table.concat(disabledPlugins, ", "), variableList, table.concat(coreConfig, "\n"))
 end
 
+local function collectNetworkDiagnostics()
+    local complete = false
+    local statusCode = nil
+    local responseBody = nil
+    PerformHttpRequest('https://api.ipify.org?format=json', function(code, body)
+        statusCode = tonumber(code)
+        responseBody = body
+        complete = true
+    end, 'GET', '', { ['Accept'] = 'application/json', ['X-User-Agent'] = 'SonoranCAD' })
+
+    local startedAt = GetGameTimer()
+    while not complete and (GetGameTimer() - startedAt) < 10000 do
+        Wait(50)
+    end
+
+    local detectedIp = '<unavailable>'
+    local lookupStatus = complete and ('HTTP %s'):format(tostring(statusCode or 'unknown')) or 'timed out'
+    if complete and statusCode == 200 then
+        local decoded = SafeJsonDecode(responseBody, 'support outbound IP lookup', nil)
+        if type(decoded) == 'table' and type(decoded.ip) == 'string' and decoded.ip ~= '' then
+            detectedIp = decoded.ip
+            lookupStatus = 'success'
+        else
+            lookupStatus = 'invalid response'
+        end
+    end
+
+    local serverInfo = type(ServerInfo) == 'table' and ServerInfo or {}
+    return ([[
+Fresh outbound IP = %s
+Lookup status = %s
+Configured map IP = %s
+Configured listener port = %s
+Differing outbound enabled = %s
+Configured outbound IP = %s
+    ]]):format(
+        detectedIp,
+        lookupStatus,
+        tostring(serverInfo.mapIp or '<unavailable>'),
+        tostring(serverInfo.listenerPort or GetConvar('netPort', '<unavailable>')),
+        tostring(serverInfo.differingOutbound == true),
+        tostring(serverInfo.outboundIp or ''))
+end
+
 function dumpPlugin(name)
     local pluginDetail = {}
     if not Config.plugins[name] then
@@ -121,6 +165,7 @@ local function sendSupportLogs(key, requester)
         end
         return false
     end
+    local networkDiagnostics = collectNetworkDiagnostics()
     local plugins = {}
     for name, config in pairs(Config.plugins) do
         local pluginData = {}
@@ -146,6 +191,11 @@ Configuration Information
 %s
 
 ---------------------------------------
+Network Diagnostics
+-------------------
+%s
+
+---------------------------------------
 Structured Error Buffer
 -----------------------
 %s
@@ -157,7 +207,7 @@ Console Buffer
 Last 50 Debug Messages
 ----------------------
 %s
-    ]]):format(dumpInfo(), encodedErrors, GetConsoleBuffer(), table.concat(getDebugBuffer(), "\n"))
+    ]]):format(dumpInfo(), networkDiagnostics, encodedErrors, GetConsoleBuffer(), table.concat(getDebugBuffer(), "\n"))
     Config.debugMode = false
     if SetCadClientLogLevel ~= nil then
         SetCadClientLogLevel()
