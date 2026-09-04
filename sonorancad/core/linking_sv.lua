@@ -213,6 +213,7 @@ local function parse_link_response(data)
         code = code,
         url = url,
         communityUserId = community_user_id,
+        accountUuid = account_uuid,
         raw = parsed
     }
 end
@@ -231,6 +232,7 @@ local function update_link_cache(identifier, identifier_type, parsed)
         code = parsed.code or existing.code,
         url = parsed.url or existing.url,
         communityUserId = parsed.communityUserId or existing.communityUserId,
+        accountUuid = parsed.linked == true and (parsed.accountUuid or existing.accountUuid) or nil,
         updatedAt = GetGameTimer(),
         raw = parsed.raw or existing.raw
     }
@@ -365,6 +367,7 @@ local function build_player_session(identifier, identifier_type, status, existin
     session.lastCheckAt = session.lastCheckAt or 0
     session.linked = status.linked == true
     session.communityUserId = status.communityUserId or session.communityUserId
+    session.accountUuid = status.linked == true and (status.accountUuid or session.accountUuid) or nil
     session.updatedAt = GetGameTimer()
     session.createdAt = session.createdAt or session.updatedAt
     return session
@@ -528,6 +531,33 @@ function GetPlayerCommunityUserId(player)
     return GetCommunityUserIdFromIdentifier(identifier, identifier_type)
 end
 
+function GetSourceByCadAccountUuid(account_uuid)
+    if not is_non_empty_string(account_uuid) then
+        return nil
+    end
+
+    local expected = tostring(account_uuid):lower()
+    for _, player in ipairs(GetPlayers()) do
+        local identifier = get_player_link_identifier(player)
+        local cached = identifier and CadLinkCache[identifier] or nil
+        local session = CadLinkSessions[player] or CadLinkSessions[tonumber(player)]
+        local candidate = nil
+        if cached and cached.linked == true then
+            local raw = cached.raw
+            candidate = cached.accountUuid or
+                (type(raw) == "table" and (raw.accountUuid or raw.accountUUID or raw.uuid)) or nil
+        end
+        if candidate == nil and (cached == nil or cached.linked == true) and
+            session and session.linked == true then
+            candidate = session.accountUuid
+        end
+        if candidate ~= nil and tostring(candidate):lower() == expected then
+            return tonumber(player) or player
+        end
+    end
+    return nil
+end
+
 function IsIdentifierLinkedToCad(identifier, identifier_type)
     return GetCommunityUserIdFromIdentifier(identifier, identifier_type) ~= nil
 end
@@ -541,6 +571,7 @@ exports("getServerId", GetServerId)
 exports("getCadCommunityId", GetCadCommunityId)
 exports("getCadServerId", GetCadServerId)
 exports("getPlayerCommunityUserId", GetPlayerCommunityUserId)
+exports("getSourceByCadAccountUuid", GetSourceByCadAccountUuid)
 
 local function send_tablet_link_status(player, linked)
     if linked then
@@ -646,6 +677,7 @@ local function set_community_link_for_player(player, account_uuid, secret_uuid)
     local linked_status = update_link_cache(community_user_id, identifier_type, {
         linked = response_data.linked ~= false,
         communityUserId = community_user_id,
+        accountUuid = sanitized_account_uuid,
         raw = response_data
     })
     local session = build_player_session(community_user_id, identifier_type, linked_status, CadLinkSessions[player])
