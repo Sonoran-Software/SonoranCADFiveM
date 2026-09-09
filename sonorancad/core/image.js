@@ -1,12 +1,57 @@
 (() => {
 	const fs = require("fs");
 	const path = require("path");
+	const crypto = require("crypto");
+
+	exports("CreateImageToken", function () {
+		return crypto.randomBytes(18).toString("hex");
+	});
 
 	exports("SaveBase64ToFile", function (base64String, filename) {
 		let base64Image = base64String.split(";base64,").pop();
 		fs.writeFile(filename, base64Image, { encoding: "base64" }, function (err) {
 			return true;
 		});
+	});
+
+	exports("SaveBase64Image", function (dataUrl, filename, maxBytes) {
+		try {
+			if (typeof dataUrl !== "string" || typeof filename !== "string") {
+				return { success: false, reason: "invalid_arguments" };
+			}
+			const requestedLimit = Number(maxBytes);
+			const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+				? Math.floor(requestedLimit)
+				: 1024 * 1024;
+			const prefix = dataUrl.match(/^data:(image\/(?:jpeg|png));base64,/);
+			if (!prefix) {
+				return { success: false, reason: "invalid_image" };
+			}
+			const encodedLength = dataUrl.length - prefix[0].length;
+			const maxEncodedLength = Math.ceil(limit / 3) * 4;
+			if (encodedLength > maxEncodedLength) {
+				return { success: false, reason: "image_too_large" };
+			}
+			const encodedImage = dataUrl.slice(prefix[0].length);
+			if (!encodedImage || !/^[A-Za-z0-9+/=]+$/.test(encodedImage)) {
+				return { success: false, reason: "invalid_image" };
+			}
+			const image = Buffer.from(encodedImage, "base64");
+			if (!image.length || image.length > limit) {
+				return { success: false, reason: image.length ? "image_too_large" : "invalid_image" };
+			}
+			fs.writeFileSync(filename, image, { flag: "wx" });
+			return {
+				success: true,
+				bytes: image.length,
+				extension: prefix[1] === "image/png" ? "png" : "jpg",
+			};
+		} catch (err) {
+			return {
+				success: false,
+				reason: err && err.code ? err.code : "write_failed",
+			};
+		}
 	});
 
 	exports("createScreenshotDirectory", async function (apiID) {

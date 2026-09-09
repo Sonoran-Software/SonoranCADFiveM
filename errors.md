@@ -534,6 +534,38 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 - `Meaning`: The player attempted to show an ID but no nearby viewers were found.
 - `Potential Fix`: Move closer to another player and retry the `show` action.
 
+## Character Registration Errors
+
+### ERR-CR-101
+- `Key`: `CIVREG_TEMPLATE_FAILED`
+- `Meaning`: The live CAD character template could not be retrieved or had an invalid structure.
+- `Potential Fix`: Confirm the CAD API is available and that character template `7` exists, then retry `/civreg`.
+
+### ERR-CR-102
+- `Key`: `CIVREG_SUBMISSION_INVALID`
+- `Meaning`: A character registration submission expired or contained fields that were not in the live template.
+- `Potential Fix`: Close and reopen `/civreg`, complete the current form, and submit it within ten minutes.
+
+### ERR-CR-103
+- `Key`: `CIVREG_SELFIE_URL_MISSING`
+- `Meaning`: An older URL-based version of CivReg could not produce a public URL for a captured selfie. Current versions submit base64 image data and do not emit this code.
+- `Potential Fix`: Update CivReg to use base64 portrait submissions. Keep the existing image files and public route available for records that already reference them.
+
+### ERR-CR-104
+- `Key`: `CIVREG_SELFIE_SAVE_FAILED`
+- `Meaning`: An older URL-based version of CivReg could not validate or save a selfie to disk. Current versions submit base64 image data and report invalid portraits with `ERR-CR-102`.
+- `Potential Fix`: Update CivReg. For a current portrait validation error, retake the image and check the decoded size against `maxSelfieBytes`.
+
+### ERR-CR-105
+- `Key`: `CIVREG_CREATE_FAILED`
+- `Meaning`: CAD rejected or failed to create the submitted character record.
+- `Potential Fix`: Confirm the account is linked, template `7` is valid, and all required or unique fields contain acceptable values.
+
+### ERR-CR-106
+- `Key`: `CIVREG_DB_SYNC_FAILED`
+- `Meaning`: CivReg detected CAD character database sync but could not initialize or update the configured framework character table.
+- `Potential Fix`: Start QBCore or ESX and oxmysql or mysql-async before Sonoran CAD. Confirm the CivReg database sync table and character ID column match the CAD DB Sync character mapping.
+
 ## Additional Call/Dispatch Errors
 
 ### ERR-CALL-105

@@ -628,6 +628,15 @@ SetHttpHandler(function(req, res)
 			res.writeHead(404)
 			res.send('404')
 		else
+			local extension = tostring(file or ''):lower():match('%.([%w]+)$')
+			local contentTypes = {
+				jpg = 'image/jpeg',
+				jpeg = 'image/jpeg',
+				png = 'image/png'
+			}
+			if contentTypes[extension] ~= nil then
+				res.writeHead(200, { ['Content-Type'] = contentTypes[extension] })
+			end
 			res.send(data)
 		end
 	elseif method == 'GET' and normalizedPathOnly:find('^/bodycam') then

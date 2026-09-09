@@ -26,6 +26,9 @@ function GetHeadshot(ped)
         while not IsPedheadshotReady(handle) or not IsPedheadshotValid(handle) do
             Wait(50)
             if GetGameTimer() >= timer then
+                if handle and handle ~= -1 then
+                    UnregisterPedheadshot(handle)
+                end
                 return {success=false, error="Could not load ped headshot."}
             end
         end
@@ -39,7 +42,7 @@ end
 function GetBase64(ped)
     if not ped then ped = PlayerPedId() end
     local headshot = GetHeadshot(ped)
-    if headshot.success then
+    if type(headshot) == "table" and headshot.success then
         local requestId = GenerateId()
         requests[requestId] = nil
         SendNUIMessage({
@@ -53,12 +56,15 @@ function GetBase64(ped)
         while not requests[requestId] do
             Wait(250)
             if GetGameTimer() >= timer then
+                UnregisterPedheadshot(headshot.handle)
+                requests[requestId] = nil
                 return {success=false, error="Waiting for base64 conversion timed out."}
             end
         end
         return {success=true, base64=requests[requestId]}
     else
-        return headshot
+        return type(headshot) == "table" and headshot or
+            {success=false, error="Could not load ped headshot."}
     end
 end
 

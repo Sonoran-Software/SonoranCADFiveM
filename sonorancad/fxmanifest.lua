@@ -57,6 +57,7 @@ files {
     'submodules/recordPrinter/html/style.css',
     'submodules/recordPrinter/html/ui.html',
     'submodules/recordPrinter/pdfs/**/*.pdf',
+	'submodules/civreg/html/**/*',
 }
 
 data_file 'DLC_ITYP_REQUEST' 'stream/**/*.ytyp'
