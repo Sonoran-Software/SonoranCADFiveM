@@ -686,6 +686,7 @@ function receiveMessage(event) {
 				}
 				return;
 			}
+			if (!cadSessionAuthenticated) return;
 			nui("NotepadSyncResponse", { message: notepadResponse.message });
 			return;
 		}

@@ -69,6 +69,15 @@ CreateThread(function()
             RegisterNetEvent("QBCore:Client:OnPlayerLoaded", function()
                 captureFrameworkCharacterWhenSpawned()
             end)
+
+            local loaded, playerData = pcall(function()
+                local qbCore = exports["qb-core"]:GetCoreObject()
+                return qbCore and qbCore.Functions and qbCore.Functions.GetPlayerData()
+            end)
+            if loaded and type(playerData) == "table" and
+                type(playerData.citizenid) == "string" and playerData.citizenid ~= "" then
+                captureFrameworkCharacterWhenSpawned()
+            end
         elseif esxStarted then
             local selectedEsxCharacterPending = false
             RegisterNetEvent("esx:playerLoaded", function()

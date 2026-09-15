@@ -532,13 +532,15 @@ CreateThread(function()
             end
 
             local pending = pendingDatabaseSyncCaptures[source]
-            if type(pending) == "table" and
-                GetGameTimer() - pending.createdAt <= DB_SYNC_CAPTURE_TIMEOUT_MS then
-                if pending.characterId == tostring(characterId) then
-                    pending.notifyOnSuccess = pending.notifyOnSuccess or notifyOnSuccess == true
-                    return true
+            if type(pending) == "table" then
+                if pending.processing or
+                    GetGameTimer() - pending.createdAt <= DB_SYNC_CAPTURE_TIMEOUT_MS then
+                    if pending.characterId == tostring(characterId) then
+                        pending.notifyOnSuccess = pending.notifyOnSuccess or notifyOnSuccess == true
+                        return true
+                    end
+                    return false, "A portrait capture is already in progress for another character."
                 end
-                return false, "A portrait capture is already in progress for another character."
             end
 
             local token = newSessionToken(source)
@@ -1065,14 +1067,20 @@ CreateThread(function()
             if token ~= pending.token then
                 return
             end
+            if pending.processing then
+                return
+            end
             if GetGameTimer() - pending.createdAt > DB_SYNC_CAPTURE_TIMEOUT_MS then
                 pendingDatabaseSyncCaptures[source] = nil
                 return
             end
-            pendingDatabaseSyncCaptures[source] = nil
+            pending.processing = true
 
             local valid, validationError = validateSelfie(dataUrl)
             if not valid then
+                if pendingDatabaseSyncCaptures[source] == pending then
+                    pendingDatabaseSyncCaptures[source] = nil
+                end
                 local detail = nonEmpty(captureError, validationError)
                 logDatabaseSyncFailure(detail)
                 if pending.notifyOnSuccess then
@@ -1082,6 +1090,9 @@ CreateThread(function()
             end
 
             updateDatabaseMugshot(pending.characterId, dataUrl, function(success, result)
+                if pendingDatabaseSyncCaptures[source] == pending then
+                    pendingDatabaseSyncCaptures[source] = nil
+                end
                 if not success then
                     logDatabaseSyncFailure(result)
                     if pending.notifyOnSuccess then

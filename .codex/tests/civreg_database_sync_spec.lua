@@ -73,7 +73,13 @@ local function harness(options)
         if sql:match("^SELECT ") then
             callback(options.selectRows or {})
         elseif sql:match("^UPDATE ") then
-            callback(options.updateResult or (provider == "mysql-async" and 1 or { affectedRows = 1 }))
+            local result = options.updateResult or (provider == "mysql-async" and 1 or { affectedRows = 1 })
+            if options.deferUpdate then
+                h.pendingUpdateCallback = callback
+                h.pendingUpdateResult = result
+            else
+                callback(result)
+            end
         else
             callback(options.queryResult or { affectedRows = 0 })
         end
@@ -201,6 +207,13 @@ local function harness(options)
             token or clientEvent.payload.token, image, captureError)
     end
 
+    function h:completeUpdate()
+        local callback = self.pendingUpdateCallback
+        assert(type(callback) == "function", "no deferred database update is pending")
+        self.pendingUpdateCallback = nil
+        callback(self.pendingUpdateResult)
+    end
+
     return h
 end
 
@@ -265,6 +278,22 @@ test("an in-flight capture remains bound to its original character", function()
     equal(h.lastClientEvent.payload.token, capture.payload.token)
     h:submitCapture(capture, PNG)
     equal(h.queries[2].parameters[2], "QB-123")
+end)
+
+test("a capture remains in flight until its database update completes", function()
+    local h = harness({ deferUpdate = true })
+    local capture = h:requestFrameworkCapture()
+    h:submitCapture(capture, PNG)
+    equal(#h.queries, 2)
+
+    h.events["SonoranCAD::civreg::FrameworkCharacterSelected"]()
+    equal(#h.clientEvents, 1)
+    h:submitCapture(capture, PNG)
+    equal(#h.queries, 2)
+
+    h:completeUpdate()
+    h.events["SonoranCAD::civreg::FrameworkCharacterSelected"]()
+    equal(#h.clientEvents, 2)
 end)
 
 test("expired database portrait uploads cannot write SQL", function()

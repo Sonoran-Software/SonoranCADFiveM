@@ -185,5 +185,9 @@ test('notepad sync requires both a community link and a responsive CAD session',
         scriptSource,
         /requestId === NOTEPAD_SYNC_PROBE_REQUEST_ID[\s\S]*?type === tabletNotepadSync\.MESSAGE_TYPES\.state[\s\S]*?cadNotepadProbeSucceeded = true/,
     );
+    assert.match(
+        scriptSource,
+        /if \(!cadSessionAuthenticated\) return;\s+nui\("NotepadSyncResponse"/,
+    );
     assert.doesNotMatch(scriptSource, /setCadSessionAuthenticated\(true\)/);
 });

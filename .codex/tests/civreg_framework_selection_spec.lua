@@ -49,6 +49,19 @@ local function harness(framework, options)
         end
         return name == "qb-core" and "started" or "missing"
     end
+    env.exports = {
+        ["qb-core"] = {
+            GetCoreObject = function()
+                return {
+                    Functions = {
+                        GetPlayerData = function()
+                            return options.alreadyLoaded and { citizenid = "QB-123" } or nil
+                        end
+                    }
+                }
+            end
+        }
+    }
     env.RegisterCommand = function() end
     env.TriggerEvent = function() end
     env.RegisterPlayerCommandHelp = function() end
@@ -70,6 +83,13 @@ test("QBCore selection settles after the player is fully spawned", function()
     equal(h.serverEvents[1], "SonoranCAD::civreg::FrameworkCharacterSelected")
     equal(h.waits[1], 3000)
     equal(h.now, 3000)
+end)
+
+test("an already-loaded QBCore character is captured after resource restart", function()
+    local h = harness("qbcore", { alreadyLoaded = true })
+    equal(#h.serverEvents, 1)
+    equal(h.serverEvents[1], "SonoranCAD::civreg::FrameworkCharacterSelected")
+    equal(h.waits[1], 3000)
 end)
 
 test("ESX selection waits for the selected character ped to spawn", function()
