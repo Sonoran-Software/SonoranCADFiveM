@@ -81,7 +81,13 @@ local function harness(options)
                 callback(result)
             end
         else
-            callback(options.queryResult or { affectedRows = 0 })
+            local result = options.queryResult or { affectedRows = 0 }
+            if options.deferMigration then
+                h.pendingMigrationCallback = callback
+                h.pendingMigrationResult = result
+            else
+                callback(result)
+            end
         end
     end
 
@@ -214,6 +220,13 @@ local function harness(options)
         callback(self.pendingUpdateResult)
     end
 
+    function h:completeMigration()
+        local callback = self.pendingMigrationCallback
+        assert(type(callback) == "function", "no deferred database migration is pending")
+        self.pendingMigrationCallback = nil
+        callback(self.pendingMigrationResult)
+    end
+
     return h
 end
 
@@ -252,6 +265,16 @@ test("framework character selection captures the active ESX character", function
     h:submitCapture(capture, PNG)
     equal(h.queries[2].parameters["@characterId"], "license:esx-123")
     equal(h.notification, nil)
+end)
+
+test("framework selection waits for database migration readiness", function()
+    local h = harness({ deferMigration = true })
+    h.events["SonoranCAD::civreg::FrameworkCharacterSelected"]()
+    equal(#h.clientEvents, 0)
+
+    h:completeMigration()
+    equal(#h.clientEvents, 1)
+    equal(h.lastClientEvent.name, "SonoranCAD::civreg::CaptureDatabaseSyncMugshot")
 end)
 
 test("CAD character selection no longer starts framework portrait capture", function()

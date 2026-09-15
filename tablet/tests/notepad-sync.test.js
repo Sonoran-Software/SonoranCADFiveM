@@ -177,13 +177,13 @@ test('notepad sync requires both a community link and a responsive CAD session',
     assert.match(availabilityBlock, /isRegistered == true and notepadCadSessionAuthenticated == true/);
     assert.match(luaSource, /if not notepadSyncAvailable\(\) then/);
     assert.ok(loadBlock, 'CAD frame load handler should be present');
-    assert.match(loadBlock, /resetCadSessionSignals\(\)/);
+    assert.doesNotMatch(loadBlock, /resetCadSessionSignals\(\)/);
     assert.match(loadBlock, /probeCadNotepadSession\(\)/);
     assert.match(scriptSource, /NOTEPAD_SYNC_PROBE_REQUEST_ID = "tablet-notepad-auth-probe"/);
     assert.match(scriptSource, /cadAccountLinked = true;\s+refreshCadSessionAuthenticated\(\)/);
     assert.match(
         scriptSource,
-        /requestId === NOTEPAD_SYNC_PROBE_REQUEST_ID[\s\S]*?type === tabletNotepadSync\.MESSAGE_TYPES\.state[\s\S]*?cadNotepadProbeSucceeded = true/,
+        /requestId === NOTEPAD_SYNC_PROBE_REQUEST_ID[\s\S]*?cadFrameReady[\s\S]*?type === tabletNotepadSync\.MESSAGE_TYPES\.state[\s\S]*?cadNotepadProbeSucceeded = true/,
     );
     assert.match(
         scriptSource,

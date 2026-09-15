@@ -60,6 +60,15 @@ local function harness(framework, options)
                     }
                 }
             end
+        },
+        ["es_extended"] = {
+            getSharedObject = function()
+                return {
+                    GetPlayerData = function()
+                        return options.alreadyLoaded and { identifier = "license:esx-123" } or nil
+                    end
+                }
+            end
         }
     }
     env.RegisterCommand = function() end
@@ -101,6 +110,13 @@ test("ESX selection waits for the selected character ped to spawn", function()
     equal(h.serverEvents[1], "SonoranCAD::civreg::FrameworkCharacterSelected")
     h.events["esx:onPlayerSpawn"]()
     equal(#h.serverEvents, 1)
+end)
+
+test("an already-loaded ESX character is captured after resource restart", function()
+    local h = harness("esx", { alreadyLoaded = true })
+    equal(#h.serverEvents, 1)
+    equal(h.serverEvents[1], "SonoranCAD::civreg::FrameworkCharacterSelected")
+    equal(h.waits[1], 3000)
 end)
 
 test("framework selection times out when the player never fully spawns", function()

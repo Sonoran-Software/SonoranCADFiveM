@@ -90,6 +90,15 @@ CreateThread(function()
                 selectedEsxCharacterPending = false
                 captureFrameworkCharacterWhenSpawned()
             end)
+
+            local loaded, playerData = pcall(function()
+                local esx = exports["es_extended"]:getSharedObject()
+                return esx and esx.GetPlayerData and esx.GetPlayerData()
+            end)
+            if loaded and type(playerData) == "table" and
+                type(playerData.identifier) == "string" and playerData.identifier ~= "" then
+                captureFrameworkCharacterWhenSpawned()
+            end
         end
 
         RegisterNetEvent("SonoranCAD::civreg::OpenForm", function(payload)

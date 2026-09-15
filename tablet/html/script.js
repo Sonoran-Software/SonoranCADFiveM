@@ -154,7 +154,6 @@ const cadFrameForSync = document.getElementById("cadFrame");
 if (cadFrameForSync) {
 	cadFrameForSync.addEventListener("load", function () {
 		cadFrameReady = true;
-		resetCadSessionSignals();
 		probeCadNotepadSession();
 	});
 }
@@ -680,7 +679,8 @@ function receiveMessage(event) {
 		const notepadResponse = tabletNotepadSync.parseCadResponseEvent(event, cadframe);
 		if (notepadResponse.accepted) {
 			if (notepadResponse.message.requestId === NOTEPAD_SYNC_PROBE_REQUEST_ID) {
-				if (notepadResponse.message.type === tabletNotepadSync.MESSAGE_TYPES.state) {
+				if (cadFrameReady
+					&& notepadResponse.message.type === tabletNotepadSync.MESSAGE_TYPES.state) {
 					cadNotepadProbeSucceeded = true;
 					refreshCadSessionAuthenticated();
 				}

@@ -18,6 +18,8 @@ CreateThread(function()
             mapping = nil
         }
         local pendingDatabaseSyncCaptures = {}
+        local pendingFrameworkSelections = {}
+        local processFrameworkCharacterSelection
         local DEFAULT_STATUS_OPTIONS = { "0", "1", "2" }
         local MASK_TOKENS = {
             ["#"] = "%d",
@@ -215,6 +217,11 @@ CreateThread(function()
                 databaseSync.ready = true
                 infoLog(("CivReg database sync mode is ready (%s.%s -> %s)."):format(
                     mapping.tableName, mapping.characterIdColumn, MUGSHOT_COLUMN))
+                local queuedSelections = pendingFrameworkSelections
+                pendingFrameworkSelections = {}
+                for source in pairs(queuedSelections) do
+                    processFrameworkCharacterSelection(source)
+                end
             end)
         end
 
@@ -554,6 +561,19 @@ CreateThread(function()
                 token = token
             })
             return true
+        end
+
+        processFrameworkCharacterSelection = function(source)
+            local characterId = getCurrentFrameworkCharacterId(source)
+            if characterId == nil then
+                debugLog(("CivReg did not capture a database sync mugshot for player %s because no active framework character was found."):format(
+                    tostring(source)))
+                return
+            end
+            local requested, requestError = requestDatabaseSyncCapture(source, characterId, false)
+            if not requested then
+                logDatabaseSyncFailure(requestError)
+            end
         end
 
         local function decodeBase64Prefix(encoded, byteLimit)
@@ -1043,19 +1063,14 @@ CreateThread(function()
             if databaseSync.mode == "unavailable" then
                 initializeMode()
             end
-            if databaseSync.mode ~= "database" or not databaseSync.ready then
+            if databaseSync.mode ~= "database" then
                 return
             end
-            local characterId = getCurrentFrameworkCharacterId(source)
-            if characterId == nil then
-                debugLog(("CivReg did not capture a database sync mugshot for player %s because no active framework character was found."):format(
-                    tostring(source)))
+            if not databaseSync.ready then
+                pendingFrameworkSelections[source] = true
                 return
             end
-            local requested, requestError = requestDatabaseSyncCapture(source, characterId, false)
-            if not requested then
-                logDatabaseSyncFailure(requestError)
-            end
+            processFrameworkCharacterSelection(source)
         end)
 
         RegisterNetEvent("SonoranCAD::civreg::DatabaseSyncMugshot", function(token, dataUrl, captureError)
@@ -1117,6 +1132,7 @@ CreateThread(function()
             sessions[source] = nil
             lastFormRequest[source] = nil
             pendingDatabaseSyncCaptures[source] = nil
+            pendingFrameworkSelections[source] = nil
         end)
     end)
 end)
