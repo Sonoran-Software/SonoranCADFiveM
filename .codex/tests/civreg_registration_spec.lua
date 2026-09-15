@@ -12,8 +12,12 @@ local function harness(options)
     options = options or {}
     local h = {
         events = {}, replies = {}, requests = {}, failures = {}, now = 10000, registeredPaths = {},
-        currentLink = "linked-account"
+        currentLink = "linked-account",
+        playerIdentifier = options.playerIdentifier or "license-identifier"
     }
+    if options.unlinked then
+        h.currentLink = nil
+    end
     local config
     local configEnv = setmetatable({ Config = { RegisterPluginConfig = function(_, value) config = value end } }, { __index = _G })
     assert(loadfile("sonorancad/configuration/civreg_config.dist.lua", "t", configEnv))()
@@ -34,10 +38,15 @@ local function harness(options)
     local env = setmetatable({ source = 42 }, { __index = _G })
     env.Config = { LoadPlugin = function(_, callback) callback(config) end }
     env.CreateThread = function(callback) callback() end
+    env.Wait = function() end
     env.RegisterNetEvent = function(name, callback) h.events[name] = callback end
     env.AddEventHandler = function(name, callback) h.events[name] = callback end
     env.GetGameTimer = function() return h.now end
     env.GetCurrentResourceName = function() return "sonorancad" end
+    env.GetPlayerLinkIdentifier = function(player)
+        equal(player, 42)
+        return h.playerIdentifier, "license"
+    end
     if options.identity then
         env.GetIdentity = function(_, callback) callback(options.identity) end
     end
@@ -48,7 +57,7 @@ local function harness(options)
     }, { __index = function(_, key) error("Unexpected export (file writes are forbidden): " .. key) end }) }
     env.os = { time = os.time, remove = function() error("Registration must not delete portrait files") end }
     env.getPlayerCadStatus = function(_, _, checks)
-        equal(checks.link, true)
+        equal(checks.link, false)
         equal(checks.unit, false)
         return { success = true, link = h.currentLink }
     end
@@ -102,6 +111,14 @@ test("PNG is embedded unchanged in the linked account's CAD record", function()
     equal(h.result.success, true)
     equal(h.result.recordId, 123)
     assert(h.registeredPaths.civreg, "previous URL-based portraits must remain accessible")
+end)
+
+test("an unlinked player registers with their FiveM license for later account linking", function()
+    local h = harness({ unlinked = true, playerIdentifier = "license-unlinked-player" })
+    h:submit({ photo = PNG })
+    equal(#h.requests, 1)
+    equal(h.requests[1].communityUserId, "license-unlinked-player")
+    equal(h.result.success, true)
 end)
 
 test("JPEG is embedded unchanged", function()
@@ -242,6 +259,14 @@ test("submission rejects a session after the linked account changes", function()
     h:submit({ photo = PNG })
     equal(#h.requests, 0)
     equal(h.errorKey, "CIVREG_SUBMISSION_INVALID")
+    equal(h.result.success, false)
+end)
+
+test("submission rejects a session after the FiveM identifier changes", function()
+    local h = harness({ unlinked = true })
+    h.playerIdentifier = "different-license"
+    h:submit({ photo = PNG })
+    equal(#h.requests, 0)
     equal(h.result.success, false)
 end)
 

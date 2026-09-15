@@ -18,7 +18,6 @@ CreateThread(function()
             mapping = nil
         }
         local pendingDatabaseSyncCaptures = {}
-        local accountCommunityUserCache = {}
         local DEFAULT_STATUS_OPTIONS = { "0", "1", "2" }
         local MASK_TOKENS = {
             ["#"] = "%d",
@@ -65,6 +64,17 @@ CreateThread(function()
                 end
             end
             return nil
+        end
+
+        local function getPlayerRegistrationIdentifier(source)
+            if type(GetPlayerLinkIdentifier) ~= "function" then
+                return nil
+            end
+            local identifier = GetPlayerLinkIdentifier(source)
+            if type(identifier) ~= "string" or identifier == "" then
+                return nil
+            end
+            return identifier
         end
 
         local function validSqlIdentifier(value)
@@ -621,47 +631,8 @@ CreateThread(function()
             return true
         end
 
-        local function resolveCharacterSelectedPlayer(accountUuid)
-            accountUuid = tostring(accountUuid or "")
-            if accountUuid == "" then
-                return nil
-            end
-
-            if type(GetSourceByCadAccountUuid) == "function" then
-                local cachedPlayer = GetSourceByCadAccountUuid(accountUuid)
-                if cachedPlayer ~= nil then
-                    return tonumber(cachedPlayer) or cachedPlayer
-                end
-            end
-
-            local communityUserId = accountCommunityUserCache[accountUuid]
-            if communityUserId == nil then
-                local response = CadApiGetAccount({ accountUuid = accountUuid })
-                if not response.success then
-                    CadApiLogFailure("GET_ACCOUNT", response, { accountUuid = accountUuid })
-                    return nil
-                end
-                local account = type(response.data) == "table" and
-                    (response.data.account or response.data) or {}
-                communityUserId = nonEmpty(account.communityUserId, account.apiId)
-                if communityUserId == nil then
-                    logDatabaseSyncFailure("The selected character account did not include a communityUserId.")
-                    return nil
-                end
-                accountCommunityUserCache[accountUuid] = tostring(communityUserId)
-            end
-
-            if type(GetPlayers) == "function" and type(GetPlayerCommunityUserId) == "function" then
-                for _, player in ipairs(GetPlayers()) do
-                    if tostring(GetPlayerCommunityUserId(player) or "") == tostring(communityUserId) then
-                        return tonumber(player) or player
-                    end
-                end
-            end
-            return nil
-        end
-
         local function initializeMode()
+            Wait(2500)
             local response = CadApiGetDatabaseSyncConfiguration()
             if type(response) ~= "table" or response.success ~= true or type(response.data) ~= "table" then
                 databaseSync.mode = "unavailable"
@@ -903,11 +874,6 @@ CreateThread(function()
             end
             lastFormRequest[source] = now
 
-            local playerCadStatus = getPlayerCadStatus(source, "Character Registration", { link = true, unit = false })
-            if not playerCadStatus.success then
-                return
-            end
-
             if databaseSync.mode == "unavailable" then
                 initializeMode()
             end
@@ -916,14 +882,23 @@ CreateThread(function()
                 return
             end
             if databaseSync.mode == "database" then
-                local characterId = getCurrentFrameworkCharacterId(source)
-                local requested, requestError = requestDatabaseSyncCapture(source, characterId, true)
-                if not requested then
-                    logDatabaseSyncFailure(requestError)
-                    sendClientError(source, "CIVREG_DB_SYNC_FAILED", requestError)
-                end
+                notifyPlayer(source, {
+                    title = pluginConfig.language.title or "Character Registration",
+                    message = pluginConfig.language.databaseSyncCommandNotice or
+                        "Character registration and portraits are handled automatically when you select your framework character. You do not need to use this command.",
+                    type = "info"
+                })
                 return
             end
+
+            local playerIdentifier = getPlayerRegistrationIdentifier(source)
+            if playerIdentifier == nil then
+                sendClientError(source, "CIVREG_CREATE_FAILED", "Could not determine your FiveM identifier.")
+                return
+            end
+            local playerCadStatus = getPlayerCadStatus(source, "Character Registration",
+                { link = false, unit = false })
+            local registrationCommunityUserId = nonEmpty(playerCadStatus.link, playerIdentifier)
 
             local templateId = tonumber(pluginConfig.templateId) or 7
             local template, response = getLiveTemplate(templateId)
@@ -945,7 +920,8 @@ CreateThread(function()
             sessions[source] = {
                 token = token,
                 createdAt = now,
-                communityUserId = playerCadStatus.link,
+                playerIdentifier = playerIdentifier,
+                communityUserId = registrationCommunityUserId,
                 template = template,
                 fields = fields,
                 prefill = prefill
@@ -974,9 +950,12 @@ CreateThread(function()
                 return
             end
 
-            local currentCadStatus = getPlayerCadStatus(source, "Character Registration", { link = true, unit = false })
-            if not currentCadStatus.success or
-                tostring(currentCadStatus.link or "") ~= tostring(session.communityUserId or "") then
+            local currentPlayerIdentifier = getPlayerRegistrationIdentifier(source)
+            local currentCadStatus = getPlayerCadStatus(source, "Character Registration",
+                { link = false, unit = false })
+            local currentCommunityUserId = nonEmpty(currentCadStatus.link, currentPlayerIdentifier)
+            if currentPlayerIdentifier ~= session.playerIdentifier or
+                tostring(currentCommunityUserId or "") ~= tostring(session.communityUserId or "") then
                 sessions[source] = nil
                 sendClientError(source, "CIVREG_SUBMISSION_INVALID")
                 TriggerClientEvent("SonoranCAD::civreg::SubmissionResult", source,
@@ -1057,27 +1036,21 @@ CreateThread(function()
                 { success = true, message = successMessage, recordId = createResponse.recordId })
         end)
 
-        AddEventHandler("SonoranCAD::pushevents:CharacterSelected", function(data)
+        RegisterNetEvent("SonoranCAD::civreg::FrameworkCharacterSelected", function()
+            local source = source
             if databaseSync.mode == "unavailable" then
                 initializeMode()
             end
-            if databaseSync.mode ~= "database" or not databaseSync.ready or type(data) ~= "table" then
+            if databaseSync.mode ~= "database" or not databaseSync.ready then
                 return
             end
-            local characterId = nonEmpty(data.id, data.syncId, data.characterId)
-            local accountUuid = nonEmpty(data.accId, data.accountUuid, data.accountId)
-            if characterId == nil or accountUuid == nil then
-                logDatabaseSyncFailure("EVENT_CHAR_SELECTED was missing the account UUID or database sync character ID.")
+            local characterId = getCurrentFrameworkCharacterId(source)
+            if characterId == nil then
+                debugLog(("CivReg did not capture a database sync mugshot for player %s because no active framework character was found."):format(
+                    tostring(source)))
                 return
             end
-
-            local player = resolveCharacterSelectedPlayer(accountUuid)
-            if player == nil then
-                debugLog(("CivReg did not refresh database sync mugshot %s because its CAD account is not linked to an online player."):format(
-                    tostring(characterId)))
-                return
-            end
-            local requested, requestError = requestDatabaseSyncCapture(player, characterId, false)
+            local requested, requestError = requestDatabaseSyncCapture(source, characterId, false)
             if not requested then
                 logDatabaseSyncFailure(requestError)
             end

@@ -24,6 +24,126 @@ const nui = (eventName, payload) => {
 	return $.post(`https://${getResourceName()}/${eventName}`, JSON.stringify(payload || {})).fail(() => {});
 };
 
+const tabletNotepadSync = typeof TabletNotepadSync === "object" ? TabletNotepadSync : null;
+const NOTEPAD_SYNC_QUEUE_LIMIT = 32;
+const NOTEPAD_SYNC_PROBE_REQUEST_ID = "tablet-notepad-auth-probe";
+let cadFrameReady = false;
+let cadSessionAuthenticated = false;
+let cadSessionStatusDelivery = Promise.resolve();
+const notepadSyncQueue = [];
+
+function safeNotepadRequestId(message) {
+	const requestId = message && message.requestId;
+	return tabletNotepadSync && tabletNotepadSync.isValidRequestId(requestId)
+		? requestId
+		: undefined;
+}
+
+function sendNotepadSyncError(reason, requestId) {
+	const message = {
+		type: "scad:notepad:error",
+		error: tabletNotepadSync
+			? tabletNotepadSync.sanitizeErrorText(reason)
+			: "unknown_error"
+	};
+	const safeRequestId = tabletNotepadSync && tabletNotepadSync.isValidRequestId(requestId)
+		? requestId
+		: undefined;
+	if (safeRequestId) {
+		message.requestId = safeRequestId;
+	}
+	nui("NotepadSyncResponse", { message });
+}
+
+function setCadSessionAuthenticated(authenticated) {
+	const nextAuthenticated = authenticated === true;
+	if (cadSessionAuthenticated === nextAuthenticated) return;
+
+	cadSessionAuthenticated = nextAuthenticated;
+	const statusAuthenticated = cadSessionAuthenticated;
+	cadSessionStatusDelivery = cadSessionStatusDelivery
+		.catch(() => {})
+		.then(() => nui("NotepadSyncSessionStatus", { authenticated: statusAuthenticated }));
+	if (cadSessionAuthenticated) {
+		flushNotepadSyncQueue();
+	}
+}
+
+function markCadFrameNotReady() {
+	cadFrameReady = false;
+	setCadSessionAuthenticated(false);
+}
+
+function probeCadNotepadSession() {
+	const cadFrame = document.getElementById("cadFrame");
+	if (!cadFrameReady || !cadFrame || !tabletNotepadSync) return;
+
+	tabletNotepadSync.postToCad(cadFrame, {
+		type: "scad:notepad:get",
+		requestId: NOTEPAD_SYNC_PROBE_REQUEST_ID
+	});
+}
+
+function flushNotepadSyncQueue() {
+	const cadFrame = document.getElementById("cadFrame");
+	if (!cadFrameReady || !cadSessionAuthenticated || !cadFrame || !tabletNotepadSync) return;
+
+	while (notepadSyncQueue.length > 0) {
+		const message = notepadSyncQueue.shift();
+		const result = tabletNotepadSync.postToCad(cadFrame, message);
+		if (!result.sent) {
+			sendNotepadSyncError(result.reason === "invalid_request" ? "invalid_message" : "cad_unavailable", safeNotepadRequestId(message));
+		}
+	}
+}
+
+function forwardNotepadSyncRequest(message) {
+	if (!tabletNotepadSync) {
+		sendNotepadSyncError("cad_unavailable", safeNotepadRequestId(message));
+		return;
+	}
+
+	const validation = tabletNotepadSync.validateOutboundMessage(message);
+	if (!validation.valid) {
+		sendNotepadSyncError("invalid_message", safeNotepadRequestId(message));
+		return;
+	}
+
+	if (!cadSessionAuthenticated) {
+		sendNotepadSyncError("cad_unavailable", validation.message.requestId);
+		return;
+	}
+
+	const cadFrame = document.getElementById("cadFrame");
+	if (!cadFrame || !cadFrame.contentWindow || !tabletNotepadSync.deriveCadFrameOrigin(cadFrame)) {
+		sendNotepadSyncError("cad_unavailable", validation.message.requestId);
+		return;
+	}
+
+	if (!cadFrameReady) {
+		if (notepadSyncQueue.length >= NOTEPAD_SYNC_QUEUE_LIMIT) {
+			sendNotepadSyncError("queue_overflow", validation.message.requestId);
+			return;
+		}
+		notepadSyncQueue.push(validation.message);
+		return;
+	}
+
+	const result = tabletNotepadSync.postToCad(cadFrame, validation.message);
+	if (!result.sent) {
+		sendNotepadSyncError(result.reason === "invalid_request" ? "invalid_message" : "cad_unavailable", validation.message.requestId);
+	}
+}
+
+const cadFrameForSync = document.getElementById("cadFrame");
+if (cadFrameForSync) {
+	cadFrameForSync.addEventListener("load", function () {
+		cadFrameReady = true;
+		setCadSessionAuthenticated(false);
+		probeCadNotepadSession();
+	});
+}
+
 function handleCadAccountLinkMessage(event) {
 	const cadFrame = document.getElementById("cadFrame");
 	if (!cadFrame || event.source !== cadFrame.contentWindow) return;
@@ -39,6 +159,7 @@ function handleCadAccountLinkMessage(event) {
 
 	const { accountUuid, secretUuid } = event.data;
 	if (typeof accountUuid !== "string" || typeof secretUuid !== "string") return;
+	setCadSessionAuthenticated(true);
 
 	// Keep the account secret in memory only. The server derives the player's
 	// communityUserId and performs the authenticated CAD request.
@@ -296,8 +417,12 @@ $(function () {
 			CallCache.emergency = event.data.emergencyCalls;
 			refreshCall();
 		}
+		else if (event.data.type == "notepad_sync_request") {
+			forwardNotepadSyncRequest(event.data.message);
+		}
 		else if (event.data.type == "setUrl") {
 			if (event.data.module == "cad") {
+				markCadFrameNotReady();
                 let date = Date.now()
 				if (event.data.comId) {
 					document.getElementById("cadFrame").src = event.data.url + "&cachebuster=" + date;
@@ -332,6 +457,7 @@ $(function () {
 		else if (event.data.type == "refresh") {
 			let t = new Date().getTime();
 			if (event.data.module == "cad") {
+				markCadFrameNotReady();
 				let s = document.getElementById('cadFrame').src;
 				document.getElementById('cadFrame').src = s + "&" + t.toString();
 				document.getElementById('cadFrame').setAttribute("name", Date.now())
@@ -532,7 +658,26 @@ function downscaleCadScreenshot(dataUrl, done) {
 function receiveMessage(event) {
 
 	let cadframe = document.getElementById("cadFrame");
-	let frameorigin = new URL(cadframe.src).origin;
+	if (!cadframe) return;
+
+	if (tabletNotepadSync) {
+		const notepadResponse = tabletNotepadSync.parseCadResponseEvent(event, cadframe);
+		if (notepadResponse.accepted) {
+			setCadSessionAuthenticated(true);
+			if (notepadResponse.message.requestId === NOTEPAD_SYNC_PROBE_REQUEST_ID) {
+				return;
+			}
+			nui("NotepadSyncResponse", { message: notepadResponse.message });
+			return;
+		}
+	}
+
+	let frameorigin;
+	try {
+		frameorigin = new URL(cadframe.src).origin;
+	} catch (_) {
+		return;
+	}
 
 	if (currentlyCheckingLink && event.origin == frameorigin) {
 		const sanitizeLinkField = (value) => {
@@ -580,6 +725,7 @@ function addCallNote(call, data) {
 
 function runLinkCheck() {
 	currentlyCheckingLink = true;
+	markCadFrameNotReady();
 	document.getElementById("cadFrame").src += '';
 	nui('runLinkCheck');
 	$("#check-api-data").hide();

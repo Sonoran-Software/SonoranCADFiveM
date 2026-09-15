@@ -32,6 +32,57 @@ CreateThread(function()
         RegisterPlayerCommandHelp("civreg", pluginConfig.commandName or "civreg",
             pluginConfig.language.helpMsg)
 
+        local frameworkConfig = Config.GetPluginConfig("frameworksupport") or {}
+        local qbStarted = GetResourceState("qb-core") == "started"
+        local esxStarted = GetResourceState("es_extended") == "started"
+        local useQBCore = qbStarted and (not esxStarted or frameworkConfig.usingQBCore ~= false)
+        local frameworkSelectionGeneration = 0
+        local FRAMEWORK_SPAWN_TIMEOUT_MS = 30 * 1000
+        local FRAMEWORK_CAPTURE_SETTLE_MS = 3 * 1000
+
+        local function frameworkCharacterIsFullySpawned()
+            local ped = PlayerPedId()
+            return NetworkIsPlayerActive(PlayerId()) and DoesEntityExist(ped) and
+                IsEntityVisible(ped) and HasCollisionLoadedAroundEntity(ped) and IsScreenFadedIn()
+        end
+
+        local function captureFrameworkCharacterWhenSpawned()
+            frameworkSelectionGeneration = frameworkSelectionGeneration + 1
+            local generation = frameworkSelectionGeneration
+            CreateThread(function()
+                local timeoutAt = GetGameTimer() + FRAMEWORK_SPAWN_TIMEOUT_MS
+                while generation == frameworkSelectionGeneration and GetGameTimer() < timeoutAt do
+                    if frameworkCharacterIsFullySpawned() then
+                        Wait(FRAMEWORK_CAPTURE_SETTLE_MS)
+                        if generation == frameworkSelectionGeneration and frameworkCharacterIsFullySpawned() then
+                            TriggerServerEvent("SonoranCAD::civreg::FrameworkCharacterSelected")
+                            return
+                        end
+                    else
+                        Wait(250)
+                    end
+                end
+            end)
+        end
+
+        if useQBCore then
+            RegisterNetEvent("QBCore:Client:OnPlayerLoaded", function()
+                captureFrameworkCharacterWhenSpawned()
+            end)
+        elseif esxStarted then
+            local selectedEsxCharacterPending = false
+            RegisterNetEvent("esx:playerLoaded", function()
+                selectedEsxCharacterPending = true
+            end)
+            AddEventHandler("esx:onPlayerSpawn", function()
+                if not selectedEsxCharacterPending then
+                    return
+                end
+                selectedEsxCharacterPending = false
+                captureFrameworkCharacterWhenSpawned()
+            end)
+        end
+
         RegisterNetEvent("SonoranCAD::civreg::OpenForm", function(payload)
             if type(payload) ~= "table" then
                 return
