@@ -7,6 +7,149 @@ local caddisplayEnabled = true
 local tabletCommand = tostring(GetConvar("sonorantablet_command", "tablet"))
 tabletCommand = tabletCommand:match("^%s*/?([^%s/]+)") or "tablet"
 
+local NOTEPAD_SYNC_MAX_REQUEST_ID = 128
+local NOTEPAD_SYNC_MAX_ERROR = 160
+local notepadCadSessionAuthenticated = false
+
+local NOTEPAD_SYNC_EVENTS = {
+    request = 'SonoranCAD::Tablet::NotepadSyncRequest',
+    response = 'SonoranCAD::Tablet::NotepadSyncResponse',
+    statusRequest = 'SonoranCAD::Tablet::NotepadSyncStatusRequest',
+    status = 'SonoranCAD::Tablet::NotepadSyncStatus'
+}
+
+local function notepadSyncTrim(value)
+    return (value:gsub('^%s+', ''):gsub('%s+$', ''))
+end
+
+local function notepadSyncValidRequestId(value)
+    return type(value) == 'string'
+        and #value > 0
+        and #value <= NOTEPAD_SYNC_MAX_REQUEST_ID
+        and notepadSyncTrim(value) ~= ''
+end
+
+local function notepadSyncIsList(value)
+    if type(value) ~= 'table' then
+        return false
+    end
+
+    local highestIndex = 0
+    for key in pairs(value) do
+        if type(key) ~= 'number' or key < 1 or key % 1 ~= 0 then
+            return false
+        end
+        highestIndex = math.max(highestIndex, key)
+    end
+
+    for index = 1, highestIndex do
+        if value[index] == nil then
+            return false
+        end
+    end
+
+    return true
+end
+
+local function notepadSyncErrorText(value)
+    if type(value) ~= 'string' then
+        return nil
+    end
+
+    local normalized = notepadSyncTrim(value:gsub('[%c]', ' '):gsub('%s+', ' '))
+    if normalized == '' then
+        return nil
+    end
+
+    return normalized:sub(1, NOTEPAD_SYNC_MAX_ERROR)
+end
+
+local function notepadSyncValidateRequest(message)
+    if type(message) ~= 'table' or not notepadSyncValidRequestId(message.requestId) then
+        return nil
+    end
+
+    if message.type == 'scad:notepad:get' then
+        if message.notes ~= nil then
+            return nil
+        end
+        return {
+            type = message.type,
+            requestId = message.requestId
+        }
+    end
+
+    if message.type == 'scad:notepad:set' and notepadSyncIsList(message.notes) then
+        return {
+            type = message.type,
+            requestId = message.requestId,
+            notes = message.notes
+        }
+    end
+
+    return nil
+end
+
+local function notepadSyncValidateResponse(message)
+    if type(message) ~= 'table' then
+        return nil
+    end
+
+    local requestId = nil
+    if message.requestId ~= nil then
+        -- Correlated responses are accepted only when the optional ID is valid.
+        if not notepadSyncValidRequestId(message.requestId) then
+            return nil
+        end
+        requestId = message.requestId
+    end
+
+    if message.type == 'scad:notepad:state' or message.type == 'scad:notepad:changed' then
+        if not notepadSyncIsList(message.notes) then
+            return nil
+        end
+
+        local response = {
+            type = message.type,
+            notes = message.notes
+        }
+        if requestId ~= nil then
+            response.requestId = requestId
+        end
+        return response
+    end
+
+    if message.type == 'scad:notepad:error' then
+        local errorText = notepadSyncErrorText(message.error)
+        if errorText == nil then
+            return nil
+        end
+
+        local response = {
+            type = message.type,
+            error = errorText
+        }
+        if requestId ~= nil then
+            response.requestId = requestId
+        end
+        return response
+    end
+
+    return nil
+end
+
+local function notepadSyncAvailable()
+    return isRegistered == true and notepadCadSessionAuthenticated == true
+end
+
+local function publishNotepadSyncStatus()
+    TriggerEvent(NOTEPAD_SYNC_EVENTS.status, {
+        available = notepadSyncAvailable(),
+        linked = isRegistered == true,
+        loggedIn = notepadCadSessionAuthenticated == true
+    })
+end
+
 exports("GetTabletCommand", function()
 	return tabletCommand
 end)
@@ -700,6 +843,7 @@ AddEventHandler('SonoranCAD::Tablet::LinkMissing', function()
 		type = "regbar",
 		show = true
 	})
+	publishNotepadSyncStatus()
 end)
 
 RegisterNetEvent("SonoranCAD::Tablet::LinkFound")
@@ -709,6 +853,7 @@ AddEventHandler("SonoranCAD::Tablet::LinkFound", function()
 		type = "regbar",
 		show = false
 	})
+	publishNotepadSyncStatus()
 end)
 
 RegisterNUICallback('SetLinkInformation', function(data,cb)
@@ -728,6 +873,64 @@ end)
 
 RegisterNUICallback('runLinkCheck', function()
 	requestTabletLinkStatus()
+end)
+
+RegisterNUICallback('NotepadSyncSessionStatus', function(data, cb)
+    notepadCadSessionAuthenticated = type(data) == 'table' and data.authenticated == true
+    publishNotepadSyncStatus()
+    if cb then
+        cb({ ok = true })
+    end
+end)
+
+AddEventHandler(NOTEPAD_SYNC_EVENTS.statusRequest, function()
+    publishNotepadSyncStatus()
+end)
+
+-- Notepad sync stays local to this client. It is never exposed as a network event.
+AddEventHandler(NOTEPAD_SYNC_EVENTS.request, function(message)
+    local request = notepadSyncValidateRequest(message)
+    if request == nil then
+        local requestId = type(message) == 'table' and message.requestId or nil
+        local response = {
+            type = 'scad:notepad:error',
+            error = 'invalid_message'
+        }
+        if notepadSyncValidRequestId(requestId) then
+            response.requestId = requestId
+        end
+        TriggerEvent(NOTEPAD_SYNC_EVENTS.response, response)
+        return
+    end
+
+    if not notepadSyncAvailable() then
+        TriggerEvent(NOTEPAD_SYNC_EVENTS.response, {
+            type = 'scad:notepad:error',
+            requestId = request.requestId,
+            error = 'cad_unavailable'
+        })
+        return
+    end
+
+    SendNUIMessage({
+        type = 'notepad_sync_request',
+        message = request
+    })
+end)
+
+RegisterNUICallback('NotepadSyncResponse', function(data, cb)
+    local response = type(data) == 'table' and notepadSyncValidateResponse(data.message) or nil
+    if response == nil then
+        if cb then
+            cb({ ok = false, error = 'invalid_message' })
+        end
+        return
+    end
+
+    TriggerEvent(NOTEPAD_SYNC_EVENTS.response, response)
+    if cb then
+        cb({ ok = true })
+    end
 end)
 
 RegisterNetEvent("sonoran:tablet:failed")

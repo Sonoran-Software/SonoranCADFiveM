@@ -49,6 +49,7 @@ local function harness(options)
         GetPluginConfig = function() return { usingQBCore = options.framework ~= "esx" } end
     }
     env.CreateThread = function(callback) callback() end
+    env.Wait = function() end
     env.RegisterNetEvent = function(name, callback) h.events[name] = callback end
     env.AddEventHandler = function(name, callback) h.events[name] = callback end
     env.GetGameTimer = function() return h.now end
@@ -72,9 +73,21 @@ local function harness(options)
         if sql:match("^SELECT ") then
             callback(options.selectRows or {})
         elseif sql:match("^UPDATE ") then
-            callback(options.updateResult or (provider == "mysql-async" and 1 or { affectedRows = 1 }))
+            local result = options.updateResult or (provider == "mysql-async" and 1 or { affectedRows = 1 })
+            if options.deferUpdate then
+                h.pendingUpdateCallback = callback
+                h.pendingUpdateResult = result
+            else
+                callback(result)
+            end
         else
-            callback(options.queryResult or { affectedRows = 0 })
+            local result = options.queryResult or { affectedRows = 0 }
+            if options.deferMigration then
+                h.pendingMigrationCallback = callback
+                h.pendingMigrationResult = result
+            else
+                callback(result)
+            end
         end
     end
 
@@ -190,14 +203,28 @@ local function harness(options)
 
     assert(loadfile("sonorancad/submodules/civreg/sv_civreg.lua", "t", env))()
 
-    function h:requestCommandCapture()
-        self.events["SonoranCAD::civreg::RequestForm"]()
+    function h:requestFrameworkCapture()
+        self.events["SonoranCAD::civreg::FrameworkCharacterSelected"]()
         return self.lastClientEvent
     end
 
     function h:submitCapture(clientEvent, image, captureError, token)
         self.events["SonoranCAD::civreg::DatabaseSyncMugshot"](
             token or clientEvent.payload.token, image, captureError)
+    end
+
+    function h:completeUpdate()
+        local callback = self.pendingUpdateCallback
+        assert(type(callback) == "function", "no deferred database update is pending")
+        self.pendingUpdateCallback = nil
+        callback(self.pendingUpdateResult)
+    end
+
+    function h:completeMigration()
+        local callback = self.pendingMigrationCallback
+        assert(type(callback) == "function", "no deferred database migration is pending")
+        self.pendingMigrationCallback = nil
+        callback(self.pendingMigrationResult)
     end
 
     return h
@@ -211,61 +238,54 @@ test("enabled character sync always migrates the QBCore table with MEDIUMTEXT", 
         "ALTER TABLE `players` ADD COLUMN IF NOT EXISTS `sonoran_mugshot` MEDIUMTEXT NULL")
 end)
 
-test("the civreg command updates the active QBCore character instead of creating an API record", function()
+test("the civreg command explains that database sync is automatic", function()
     local h = harness()
-    local capture = h:requestCommandCapture()
-    equal(capture.name, "SonoranCAD::civreg::CaptureDatabaseSyncMugshot")
-    h:submitCapture(capture, PNG)
-    equal(#h.queries, 2)
-    equal(h.queries[2].sql, "UPDATE `players` SET `sonoran_mugshot` = ? WHERE `citizenid` = ?")
-    equal(h.queries[2].parameters[1], PNG)
-    equal(h.queries[2].parameters[2], "QB-123")
-    equal(h.notification.message, "Character portrait updated successfully.")
+    h.events["SonoranCAD::civreg::RequestForm"]()
+    equal(#h.clientEvents, 0)
+    equal(#h.queries, 1)
+    equal(h.notification.type, "info")
+    equal(h.notification.title, "Character Registration")
+    equal(h.notification.message,
+        "Character registration and portraits are handled automatically when you select your framework character. You do not need to use this command.")
 end)
 
-test("character selected updates the exact DB sync ID and caches account resolution", function()
+test("framework character selection captures the active QBCore character", function()
     local h = harness()
-    h.events["SonoranCAD::pushevents:CharacterSelected"]({
-        accId = "00000000-0000-0000-0000-000000000000",
-        id = "SYNC-456"
-    })
+    h.events["SonoranCAD::civreg::FrameworkCharacterSelected"]()
     local capture = h.lastClientEvent
     h:submitCapture(capture, PNG)
-    equal(h.queries[2].parameters[2], "SYNC-456")
-    equal(h.accountPayload.accountUuid, "00000000-0000-0000-0000-000000000000")
-
-    h.events["SonoranCAD::pushevents:CharacterSelected"]({
-        accId = "00000000-0000-0000-0000-000000000000",
-        id = "SYNC-789"
-    })
-    equal(h.accountRequests, 1)
+    equal(h.queries[2].parameters[2], "QB-123")
+    equal(h.notification, nil)
 end)
 
-test("character selected uses the existing CAD link cache before the account API", function()
-    local h = harness({ cachedAccountPlayer = true })
-    h.events["SonoranCAD::pushevents:CharacterSelected"]({
-        accId = "00000000-0000-0000-0000-000000000000",
-        id = "SYNC-CACHED"
-    })
-    h:submitCapture(h.lastClientEvent, PNG)
-    equal(h.accountRequests, 0)
-    equal(h.queries[2].parameters[2], "SYNC-CACHED")
+test("framework character selection captures the active ESX character", function()
+    local h = harness({ framework = "esx", provider = "mysql-async" })
+    h.events["SonoranCAD::civreg::FrameworkCharacterSelected"]()
+    local capture = h.lastClientEvent
+    h:submitCapture(capture, PNG)
+    equal(h.queries[2].parameters["@characterId"], "license:esx-123")
+    equal(h.notification, nil)
 end)
 
-test("character selected requires an active link after account resolution", function()
-    local h = harness({ playerCommunityUserId = false })
-    h.events["SonoranCAD::pushevents:CharacterSelected"]({
-        accId = "00000000-0000-0000-0000-000000000000",
-        id = "SYNC-UNLINKED"
-    })
-    equal(h.accountRequests, 1)
-    equal(h.identityRequests, 0)
+test("framework selection waits for database migration readiness", function()
+    local h = harness({ deferMigration = true })
+    h.events["SonoranCAD::civreg::FrameworkCharacterSelected"]()
+    equal(#h.clientEvents, 0)
+
+    h:completeMigration()
+    equal(#h.clientEvents, 1)
+    equal(h.lastClientEvent.name, "SonoranCAD::civreg::CaptureDatabaseSyncMugshot")
+end)
+
+test("CAD character selection no longer starts framework portrait capture", function()
+    local h = harness()
+    equal(h.events["SonoranCAD::pushevents:CharacterSelected"], nil)
     equal(#h.clientEvents, 0)
 end)
 
 test("an old token cannot delete the current pending capture", function()
     local h = harness()
-    local capture = h:requestCommandCapture()
+    local capture = h:requestFrameworkCapture()
     h:submitCapture(capture, PNG, nil, "forged-token")
     equal(#h.queries, 1)
     h:submitCapture(capture, PNG)
@@ -274,21 +294,34 @@ end)
 
 test("an in-flight capture remains bound to its original character", function()
     local h = harness()
-    local capture = h:requestCommandCapture()
+    local capture = h:requestFrameworkCapture()
     h.now = h.now + 3001
-    h.events["SonoranCAD::pushevents:CharacterSelected"]({
-        accId = "00000000-0000-0000-0000-000000000000",
-        id = "SYNC-LATEST"
-    })
+    h.events["SonoranCAD::civreg::FrameworkCharacterSelected"]()
     equal(#h.clientEvents, 1)
     equal(h.lastClientEvent.payload.token, capture.payload.token)
     h:submitCapture(capture, PNG)
     equal(h.queries[2].parameters[2], "QB-123")
 end)
 
+test("a capture remains in flight until its database update completes", function()
+    local h = harness({ deferUpdate = true })
+    local capture = h:requestFrameworkCapture()
+    h:submitCapture(capture, PNG)
+    equal(#h.queries, 2)
+
+    h.events["SonoranCAD::civreg::FrameworkCharacterSelected"]()
+    equal(#h.clientEvents, 1)
+    h:submitCapture(capture, PNG)
+    equal(#h.queries, 2)
+
+    h:completeUpdate()
+    h.events["SonoranCAD::civreg::FrameworkCharacterSelected"]()
+    equal(#h.clientEvents, 2)
+end)
+
 test("expired database portrait uploads cannot write SQL", function()
     local h = harness()
-    local capture = h:requestCommandCapture()
+    local capture = h:requestFrameworkCapture()
     h.now = h.now + 30001
     h:submitCapture(capture, PNG)
     equal(#h.queries, 1)
@@ -296,7 +329,7 @@ end)
 
 test("invalid image signatures cannot write SQL", function()
     local h = harness()
-    local capture = h:requestCommandCapture()
+    local capture = h:requestFrameworkCapture()
     h:submitCapture(capture, "data:image/png;base64,AAAA")
     equal(#h.queries, 1)
     equal(h.errors[#h.errors].key, "CIVREG_DB_SYNC_FAILED")
@@ -304,7 +337,7 @@ end)
 
 test("zero-row updates reject a missing framework character", function()
     local h = harness({ updateResult = { affectedRows = 0 }, selectRows = {} })
-    local capture = h:requestCommandCapture()
+    local capture = h:requestFrameworkCapture()
     h:submitCapture(capture, PNG)
     equal(#h.queries, 3)
     assert(h.queries[3].sql:match("^SELECT 1 AS `found`"))
@@ -315,17 +348,17 @@ end)
 
 test("zero-row updates accept an unchanged portrait on an existing character", function()
     local h = harness({ updateResult = { affectedRows = 0 }, selectRows = { { found = 1 } } })
-    local capture = h:requestCommandCapture()
+    local capture = h:requestFrameworkCapture()
     h:submitCapture(capture, PNG)
     equal(#h.queries, 3)
-    equal(h.notification.message, "Character portrait updated successfully.")
+    equal(h.notification, nil)
 end)
 
 test("mysql-async uses the ESX table and named parameters", function()
     local h = harness({ framework = "esx", provider = "mysql-async" })
     equal(h.queries[1].sql,
         "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `sonoran_mugshot` MEDIUMTEXT NULL")
-    local capture = h:requestCommandCapture()
+    local capture = h:requestFrameworkCapture()
     h:submitCapture(capture, PNG)
     equal(h.queries[2].provider, "mysql-async")
     equal(h.queries[2].sql,
@@ -345,7 +378,7 @@ test("database configuration discovery retries after a startup failure", functio
     local h = harness({ configurationFailures = 1 })
     equal(h.configurationRequests, 1)
     equal(#h.queries, 0)
-    local capture = h:requestCommandCapture()
+    local capture = h:requestFrameworkCapture()
     equal(h.configurationRequests, 2)
     equal(#h.queries, 1)
     equal(capture.name, "SonoranCAD::civreg::CaptureDatabaseSyncMugshot")
