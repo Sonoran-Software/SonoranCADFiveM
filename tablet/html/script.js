@@ -29,6 +29,8 @@ const NOTEPAD_SYNC_QUEUE_LIMIT = 32;
 const NOTEPAD_SYNC_PROBE_REQUEST_ID = "tablet-notepad-auth-probe";
 let cadFrameReady = false;
 let cadSessionAuthenticated = false;
+let cadAccountLinked = false;
+let cadNotepadProbeSucceeded = false;
 let cadSessionStatusDelivery = Promise.resolve();
 const notepadSyncQueue = [];
 
@@ -69,9 +71,22 @@ function setCadSessionAuthenticated(authenticated) {
 	}
 }
 
+function refreshCadSessionAuthenticated() {
+	setCadSessionAuthenticated(Boolean(
+		tabletNotepadSync
+		&& tabletNotepadSync.isSessionAuthenticated(cadAccountLinked, cadNotepadProbeSucceeded)
+	));
+}
+
+function resetCadSessionSignals() {
+	cadAccountLinked = false;
+	cadNotepadProbeSucceeded = false;
+	refreshCadSessionAuthenticated();
+}
+
 function markCadFrameNotReady() {
 	cadFrameReady = false;
-	setCadSessionAuthenticated(false);
+	resetCadSessionSignals();
 }
 
 function probeCadNotepadSession() {
@@ -139,7 +154,7 @@ const cadFrameForSync = document.getElementById("cadFrame");
 if (cadFrameForSync) {
 	cadFrameForSync.addEventListener("load", function () {
 		cadFrameReady = true;
-		setCadSessionAuthenticated(false);
+		resetCadSessionSignals();
 		probeCadNotepadSession();
 	});
 }
@@ -159,7 +174,8 @@ function handleCadAccountLinkMessage(event) {
 
 	const { accountUuid, secretUuid } = event.data;
 	if (typeof accountUuid !== "string" || typeof secretUuid !== "string") return;
-	setCadSessionAuthenticated(true);
+	cadAccountLinked = true;
+	refreshCadSessionAuthenticated();
 
 	// Keep the account secret in memory only. The server derives the player's
 	// communityUserId and performs the authenticated CAD request.
@@ -663,8 +679,11 @@ function receiveMessage(event) {
 	if (tabletNotepadSync) {
 		const notepadResponse = tabletNotepadSync.parseCadResponseEvent(event, cadframe);
 		if (notepadResponse.accepted) {
-			setCadSessionAuthenticated(true);
 			if (notepadResponse.message.requestId === NOTEPAD_SYNC_PROBE_REQUEST_ID) {
+				if (notepadResponse.message.type === tabletNotepadSync.MESSAGE_TYPES.state) {
+					cadNotepadProbeSucceeded = true;
+					refreshCadSessionAuthenticated();
+				}
 				return;
 			}
 			nui("NotepadSyncResponse", { message: notepadResponse.message });

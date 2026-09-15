@@ -120,6 +120,13 @@ test('malformed outbound and inbound messages fail closed', () => {
     assert.equal(sync.validateInboundMessage({ type: 'unknown', notes: [] }).valid, false);
 });
 
+test('CAD session authentication requires both link and probe signals', () => {
+    assert.equal(sync.isSessionAuthenticated(false, false), false);
+    assert.equal(sync.isSessionAuthenticated(true, false), false);
+    assert.equal(sync.isSessionAuthenticated(false, true), false);
+    assert.equal(sync.isSessionAuthenticated(true, true), true);
+});
+
 test('Lua response validation accepts valid correlated request IDs', () => {
     const luaSource = readFileSync(join(__dirname, '..', 'cl_main.lua'), 'utf8');
     const responseBlock = luaSource.match(
@@ -170,9 +177,13 @@ test('notepad sync requires both a community link and a responsive CAD session',
     assert.match(availabilityBlock, /isRegistered == true and notepadCadSessionAuthenticated == true/);
     assert.match(luaSource, /if not notepadSyncAvailable\(\) then/);
     assert.ok(loadBlock, 'CAD frame load handler should be present');
-    assert.match(loadBlock, /setCadSessionAuthenticated\(false\)/);
+    assert.match(loadBlock, /resetCadSessionSignals\(\)/);
     assert.match(loadBlock, /probeCadNotepadSession\(\)/);
     assert.match(scriptSource, /NOTEPAD_SYNC_PROBE_REQUEST_ID = "tablet-notepad-auth-probe"/);
-    assert.match(scriptSource, /setCadSessionAuthenticated\(true\)/);
-    assert.match(scriptSource, /requestId === NOTEPAD_SYNC_PROBE_REQUEST_ID/);
+    assert.match(scriptSource, /cadAccountLinked = true;\s+refreshCadSessionAuthenticated\(\)/);
+    assert.match(
+        scriptSource,
+        /requestId === NOTEPAD_SYNC_PROBE_REQUEST_ID[\s\S]*?type === tabletNotepadSync\.MESSAGE_TYPES\.state[\s\S]*?cadNotepadProbeSucceeded = true/,
+    );
+    assert.doesNotMatch(scriptSource, /setCadSessionAuthenticated\(true\)/);
 });

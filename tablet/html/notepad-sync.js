@@ -28,6 +28,10 @@
             && value.trim() !== '';
     }
 
+    function isSessionAuthenticated(accountLinked, probeSucceeded) {
+        return accountLinked === true && probeSucceeded === true;
+    }
+
     function sanitizeErrorText(value) {
         if (typeof value !== 'string') {
             return 'unknown_error';
@@ -214,6 +218,7 @@
         MAX_REQUEST_ID_LENGTH,
         MAX_ERROR_LENGTH,
         isValidRequestId,
+        isSessionAuthenticated,
         sanitizeErrorText,
         validateOutboundMessage,
         validateInboundMessage,
