@@ -905,6 +905,34 @@ local function create_client(config, adapter)
   instance.setCommunityLinkV2 = function(self, data)
     return self:_request("POST", "v2/general/links/set", { body = data })
   end
+  instance.getPermissionCatalogV2 = function(self)
+    return self:_request("GET", "v2/general/permissions/catalog")
+  end
+  instance.getAccountPermissionsV2 = function(self, account_uuid)
+    return self:_request("GET", "v2/general/permissions/accounts/" .. self:_encode_path_segment(account_uuid))
+  end
+  -- Replaces every explicit grant; an empty array clears permissions.
+  instance.replaceAccountPermissionsV2 = function(self, account_uuid, grants)
+    if not is_array(grants) then
+      error("grants must be an array of permission IDs.")
+    end
+    for _, grant in ipairs(grants) do
+      if type(grant) ~= "string" then
+        error("grants must be an array of permission IDs.")
+      end
+    end
+    -- JSON adapters disagree on whether an empty table is [] or {}.
+    if #grants == 0 then
+      return self:_request("PUT", "v2/general/permissions/accounts/" .. self:_encode_path_segment(account_uuid), {
+        rawBody = '{"version":2,"grants":[]}',
+        contentType = "application/json",
+        logBody = { version = 2, grants = grants }
+      })
+    end
+    return self:_request("PUT", "v2/general/permissions/accounts/" .. self:_encode_path_segment(account_uuid), {
+      body = { version = 2, grants = grants }
+    })
+  end
   instance.setAccountPermissionsV2 = function(self, data)
     return self:_request("PATCH", "v2/general/accounts/permissions", { body = normalize_v2_target_aliases(data) })
   end
@@ -971,9 +999,6 @@ local function create_client(config, adapter)
   end
   instance.getInfoV2 = function(self)
     return self:_request("GET", "v2/general/info")
-  end
-  instance.getDatabaseSyncConfigurationV2 = function(self)
-    return self:_request("GET", "v2/general/database-sync")
   end
 
   instance.getCharactersV2 = function(self, query)
