@@ -178,13 +178,12 @@ if pluginConfig.enabled then
                 return "Unknown postal"
             end
 
-            local postalResource = exports[postalConfig.nearestPostalResourceName]
-            if postalResource == nil or type(postalResource.getPostalServer) ~= "function" then
-                return "Unknown postal"
-            end
-
-            local nearestPostal = postalResource:getPostalServer({coords.x, coords.y})
-            if type(nearestPostal) ~= "table" or nearestPostal.code == nil then
+            -- FiveM throws when resolving a missing export, even during a type check.
+            -- A failed postal lookup must not prevent the call from reaching CAD.
+            local postalOk, nearestPostal = pcall(function()
+                return exports[postalConfig.nearestPostalResourceName]:getPostalServer({coords.x, coords.y})
+            end)
+            if not postalOk or type(nearestPostal) ~= "table" or nearestPostal.code == nil then
                 return "Unknown postal"
             end
 
