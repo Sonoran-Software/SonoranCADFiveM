@@ -7,6 +7,7 @@ local sendConsole
 local QuietPrintStartupComplete = false
 
 local WarningCodes = {
+    ['POSTAL_RESOURCE_EXTERNAL_PATH'] = { code = "WRN-LOC-101", message = "FiveM selected a nearest-postal resource outside the bundled location. Check the reported paths for a duplicate installation." },
     ['INVALID_API_MODE'] = { code = "WRN-CORE-001", message = "An invalid SonoranCAD API mode was configured. The resource is falling back to production." },
     ['DEPRECATED_DEBUGPRINT'] = { code = "WRN-CORE-002", message = "The deprecated debugPrint function was used. Migrate callers to debugLog." },
     ['JSON_DECODE_FAILED'] = { code = "WRN-CORE-003", message = "A JSON payload could not be decoded cleanly." },

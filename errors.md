@@ -634,6 +634,11 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 
 ## Locations/Livemap Errors
 
+### WRN-LOC-101
+- `Key`: `POSTAL_RESOURCE_EXTERNAL_PATH`
+- `Meaning`: The default nearest-postal resource resolves outside the sibling folder bundled with SonoranCAD. This can indicate a duplicate folder overriding the bundled copy; an intentional external installation is also possible.
+- `Potential Fix`: Compare the actual and bundled paths printed in the warning. Keep the intended compatible nearest-postal copy, remove unintended duplicates, and fully restart FXServer. Custom resource names and file/event modes are not subject to this path check. This warning does not disable a working resource.
+
 ### ERR-LOC-101
 - `Key`: `LOCATIONS_CONFIG_MISSING`
 - `Meaning`: The locations/livemap vehicle model config file could not be found.
