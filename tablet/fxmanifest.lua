@@ -18,6 +18,7 @@ files {
     'html/style.css',
     'html/reset.css',
     "html/script.js",
+    "html/notepad-sync.js",
     "html/display.html",
     "html/background.png"
 }

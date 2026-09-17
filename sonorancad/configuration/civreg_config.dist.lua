@@ -61,6 +61,7 @@ local config = {
         cancel = "Cancel",
         loading = "Loading the live CAD template...",
         success = "Character registered successfully in CAD.",
+        databaseSyncCommandNotice = "Character registration and portraits are handled automatically when you select your framework character. You do not need to use this command.",
         databaseSyncSuccess = "Character portrait updated successfully."
     }
 }
