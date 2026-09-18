@@ -1,4 +1,5 @@
 local cadLinkUiOpen = false
+local cadLinkWasLinked = nil
 local cadLinkForceOpen = false
 local cadLinkAllowClose = true
 local cadLinkUrl = nil
@@ -137,6 +138,7 @@ AddEventHandler("SonoranCAD::links:OpenResult", function(data)
         return
     end
 
+    cadLinkWasLinked = data.linked == true
     refresh_client_link_config(data)
     cadLinkUrl = data.url or cadLinkUrl
     cadLinkCode = data.code or cadLinkCode
@@ -156,15 +158,20 @@ AddEventHandler("SonoranCAD::links:Status", function(data)
     cadLinkCode = data.code or cadLinkCode
     send_link_status_update(data.linked == true, data.statusText or (data.linked == true and "Linked successfully." or "Waiting for account link..."))
 
+    local newlyLinked = data.linked == true
+        and (data.newlyLinked == true or cadLinkWasLinked == false)
+    cadLinkWasLinked = data.linked == true
     if data.linked == true then
         debugLog("[link] player linked successfully")
         cadLinkForceOpen = false
-        close_link_ui(true)
-        NotifyClient({
-            title = "SonoranCAD",
-            message = "Your CAD account is now linked.",
-            type = "success"
-        })
+        if cadLinkUiOpen then close_link_ui(true) end
+        if newlyLinked then
+            NotifyClient({
+                title = "SonoranCAD",
+                message = "Your CAD account is now linked.",
+                type = "success"
+            })
+        end
     elseif cadLinkUiOpen then
         set_link_ui_state(true, cadLinkForceOpen)
     end

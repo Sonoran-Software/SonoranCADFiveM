@@ -1,5 +1,7 @@
 local CadLinkCache = {}
 local CadLinkSessions = {}
+local TabletLinkRequests = {}
+local ClientLinkStates = {}
 local LinkCodeReuseWindowMs = 5 * 60 * 1000
 local LinkMenuCheckIntervalMs = 30000
 
@@ -581,8 +583,11 @@ local function send_tablet_link_status(player, linked)
     end
 end
 
-local function send_link_status_to_client(player, session)
-    TriggerClientEvent("SonoranCAD::links:Status", player, build_link_client_payload(session))
+local function send_link_status_to_client(player, session, newly_linked)
+    local payload = build_link_client_payload(session)
+    payload.newlyLinked = payload.linked and (newly_linked == true or ClientLinkStates[player] == false)
+    ClientLinkStates[player] = payload.linked
+    TriggerClientEvent("SonoranCAD::links:Status", player, payload)
 end
 
 AddEventHandler("SonoranCAD::pushevents:CommunityLinkVerified", function(data)
@@ -609,7 +614,7 @@ AddEventHandler("SonoranCAD::pushevents:CommunityLinkVerified", function(data)
             updated_session.popupOpen = false
             updated_session.lastCheckAt = GetGameTimer()
             CadLinkSessions[player] = updated_session
-            send_link_status_to_client(player, updated_session)
+            send_link_status_to_client(player, updated_session, true)
         end
     end
 end)
@@ -661,6 +666,23 @@ local function set_community_link_for_player(player, account_uuid, secret_uuid)
         return nil, secret_err
     end
 
+    -- Repeated iframe login acknowledgments are status refreshes, not new links.
+    -- Reuse only a recent server-verified result; recheck after the cache expires
+    -- so clearing a link or switching CAD accounts still works.
+    local previous = CadLinkCache[community_user_id]
+    if not previous or not previous.updatedAt or GetGameTimer() - previous.updatedAt >= LinkMenuCheckIntervalMs then
+        previous = refresh_link_status_by_identifier(community_user_id, identifier_type, nil, {
+            ttlMs = 0, forceRefresh = true
+        })
+    end
+    if previous.linked == true and type(previous.accountUuid) == "string"
+        and previous.accountUuid:lower() == sanitized_account_uuid:lower() then
+        local existing = build_player_session(community_user_id, identifier_type, previous, CadLinkSessions[player])
+        CadLinkSessions[player] = existing
+        return existing, nil, false
+    end
+    local was_linked = previous.linked == true
+
     local response = GetCadClient():setCommunityLinkV2({
         accountUuid = sanitized_account_uuid,
         secretUuid = sanitized_secret_uuid,
@@ -689,7 +711,7 @@ local function set_community_link_for_player(player, account_uuid, secret_uuid)
     if session.linked then
         infoLog(("Player %s linked CAD account through the tablet iframe."):format(tostring(player)))
     end
-    return session
+    return session, nil, not was_linked and session.linked == true
 end
 
 local function check_tablet_link_status(player)
@@ -854,14 +876,24 @@ end)
 RegisterNetEvent("SonoranCAD::Tablet::SetCommunityLink")
 AddEventHandler("SonoranCAD::Tablet::SetCommunityLink", function(account_uuid, secret_uuid)
     local player = source
-    local session, err = set_community_link_for_player(player, account_uuid, secret_uuid)
+    -- An API request yields; collapse duplicate messages while it is running.
+    if TabletLinkRequests[player] then return end
+    local request = {}
+    TabletLinkRequests[player] = request
+    local ok, session, err, newly_linked = pcall(set_community_link_for_player, player, account_uuid, secret_uuid)
+    if TabletLinkRequests[player] ~= request then return end
+    TabletLinkRequests[player] = nil
+    if not ok then
+        session = nil
+        err = "Failed to link the CAD account."
+    end
     if session == nil then
         TriggerClientEvent("sonoran:tablet:failed", player, err)
         return
     end
 
     send_tablet_link_status(player, session.linked == true)
-    send_link_status_to_client(player, session)
+    send_link_status_to_client(player, session, newly_linked)
     TriggerClientEvent("SonoranCAD::links:SsoResult", player, {
         ok = session.linked == true,
         communityUserId = session.communityUserId
@@ -871,4 +903,6 @@ end)
 AddEventHandler("playerDropped", function()
     log_link_debug(("clear link state for player %s"):format(tostring(source)))
     CadLinkSessions[source] = nil
+    TabletLinkRequests[source] = nil
+    ClientLinkStates[source] = nil
 end)
