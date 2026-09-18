@@ -13,6 +13,8 @@ local bodycamDutyRevoked = false
 local showOverlay = true
 local doAnimation = true
 local soundLevel = 0.2
+local beepFrequencyOverrideMs = nil
+local nextBeepAt = nil
 local peerStreamEnabled = false
 local peerStreamRemotePeerId = nil
 local peerStreamPeerConfig = nil
@@ -798,6 +800,7 @@ CreateThread(function()
             end)
 
             function PlayBeepSound()
+                if soundLevel == 0 then return end
                 if pluginConfig.beepType == 'native' then
                     local coord = GetEntityCoords(GetPlayerPed(PlayerId()))
                     PlaySoundFromCoord(-1, 'Beep_Red', coord.x, coord.y, coord.z,
@@ -812,6 +815,7 @@ CreateThread(function()
             end
 
             function PlayOffBeep()
+                if soundLevel == 0 then return end
                 if pluginConfig.beepType == 'native' then
                     local coord = GetEntityCoords(GetPlayerPed(PlayerId()))
                     PlaySoundFromCoord(-1, 'Beep_Green', coord.x, coord.y, coord.z,
@@ -830,8 +834,8 @@ CreateThread(function()
             end)
 
             TriggerEvent('chat:addSuggestion', '/' .. pluginConfig.command, '',
-                { { name = "[sound|anim|overlay|forceoff]", help = "Subcommand" } })
-            RegisterPlayerCommandHelp("bodycam", pluginConfig.command, "Manage Sonoran bodycam display options.", "[sound|anim|overlay|forceoff]")
+                { { name = "[sound|frequency|anim|overlay|forceoff]", help = "Subcommand" } })
+            RegisterPlayerCommandHelp("bodycam", pluginConfig.command, "Manage Sonoran bodycam display options.", "[sound|frequency|anim|overlay|forceoff]")
             RegisterCommand('SonoranCAD::bodycam::Keybind', function()
                 local turnOn = not bodyCamDisplayOn
                 TriggerServerEvent('SonoranCAD::bodycam::RequestToggle', true, turnOn)
@@ -899,9 +903,10 @@ CreateThread(function()
 
             CreateThread(function()
                 while true do
-                    Wait(1)
-                    if pluginConfig.enableBeeps then
-                        if bodyCamDisplayOn then
+                    Wait(100)
+                    if pluginConfig.enableBeeps and bodyCamDisplayOn then
+                        if not nextBeepAt or nowMs() >= nextBeepAt then
+                            nextBeepAt = nowMs() + (beepFrequencyOverrideMs or pluginConfig.beepFrequency)
                             PlayBeepSound()
                             if pluginConfig.enablePadShake then
                                 SetPadShake(0, 300, 255)
@@ -909,8 +914,9 @@ CreateThread(function()
                                 SetPadShake(0, 300, 255)
                             end
                             TriggerServerEvent('SonoranCAD::bodycam::RequestSound')
-                            Wait(pluginConfig.beepFrequency)
                         end
+                    else
+                        nextBeepAt = nil
                     end
                 end
             end)
@@ -1106,8 +1112,8 @@ CreateThread(function()
             RegisterNetEvent('SonoranCAD::bodycam::SetSoundLevel', function(level)
                 if level then
                     level = tonumber(level)
-                    if not level or level <= 0 or level > 1 then
-                        errorLog('BODYCAM_SOUND_LEVEL_INVALID', 'Sound level must be a number greater than 0 and less than or equal to 1.')
+                    if not level or level ~= level or level < 0 or level > 1 then
+                        errorLog('BODYCAM_SOUND_LEVEL_INVALID', 'Sound level must be a number from 0 to 1, including 0 to mute.')
                         showClientError('BODYCAM_SOUND_LEVEL_INVALID')
                         return
                     end
@@ -1115,6 +1121,22 @@ CreateThread(function()
                     sendBodycamInfo(('Sound level set to %s'):format(soundLevel))
                 else
                     sendBodycamInfo(('Current sound level is %s'):format((soundLevel)))
+                end
+            end)
+            RegisterNetEvent('SonoranCAD::bodycam::SetBeepFrequency', function(seconds)
+                if seconds then
+                    seconds = tonumber(seconds)
+                    if not seconds or seconds ~= seconds or seconds < 1 or seconds > 3600 or seconds % 1 ~= 0 then
+                        errorLog('BODYCAM_BEEP_FREQUENCY_INVALID', 'Beep frequency must be a whole number from 1 to 3600 seconds.')
+                        showClientError('BODYCAM_BEEP_FREQUENCY_INVALID')
+                        return
+                    end
+                    beepFrequencyOverrideMs = seconds * 1000
+                    nextBeepAt = nowMs() + beepFrequencyOverrideMs
+                    sendBodycamInfo(('Beep frequency set to %s seconds'):format(seconds))
+                else
+                    sendBodycamInfo(('Current beep frequency is %s seconds'):format(
+                        (beepFrequencyOverrideMs or pluginConfig.beepFrequency) / 1000))
                 end
             end)
             RegisterNetEvent('SonoranCAD::bodycam::ToggleAnimation', function()

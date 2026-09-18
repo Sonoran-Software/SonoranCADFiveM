@@ -358,7 +358,7 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 ### ERR-BC-118
 - `Key`: `BODYCAM_SOUND_LEVEL_INVALID`
 - `Meaning`: The requested bodycam sound level was not a valid number within the accepted range.
-- `Potential Fix`: Pass a numeric value greater than `0` and less than or equal to `1`.
+- `Potential Fix`: Pass a numeric value from `0` to `1`, including `0` to mute locally.
 
 ### ERR-BC-119
 - `Key`: `BODYCAM_UPLOAD_FAILED`
@@ -369,6 +369,11 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 - `Key`: `BODYCAM_RECORDING_START_TIMEOUT`
 - `Meaning`: A recording start request timed out while waiting for bodycam initialization, display activation, or the client media stream to become ready.
 - `Potential Fix`: Review the state details printed with the error and the matching `[bodycam-recording]` server warning. Verify bodycam initialization, CAD duty state, TURN connectivity, and the reported NUI stream reason.
+
+### ERR-BC-121
+- `Key`: `BODYCAM_BEEP_FREQUENCY_INVALID`
+- `Meaning`: The requested bodycam beep interval is invalid.
+- `Potential Fix`: Use `/bodycam frequency SECONDS` with a whole number from `1` to `3600`.
 
 ## CAD Display Errors
 
