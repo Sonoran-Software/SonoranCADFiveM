@@ -39,6 +39,7 @@ CreateThread(function()
         local frameworkSelectionGeneration = 0
         local FRAMEWORK_SPAWN_TIMEOUT_MS = 30 * 1000
         local FRAMEWORK_CAPTURE_SETTLE_MS = 3 * 1000
+        local FRAMEWORK_UNCHANGED_APPEARANCE_GRACE_MS = 15 * 1000
         local FRAMEWORK_READY_POLL_MS = 250
         local qbAppearanceReadyAt = nil
 
@@ -115,6 +116,8 @@ CreateThread(function()
                 local expectedCharacterId = options.characterId
                 local stableFingerprint = nil
                 local stableSince = nil
+                local unchangedAppearanceReadySince = nil
+                local appearanceChanged = false
                 while generation == frameworkSelectionGeneration and GetGameTimer() < timeoutAt do
                     local ped = PlayerPedId()
                     local characterReady = true
@@ -133,8 +136,19 @@ CreateThread(function()
                     local ready = characterReady and appearanceReady and frameworkCharacterIsFullySpawned()
                     local fingerprint = ready and getPedAppearanceFingerprint(ped) or nil
                     if ready and options.initialFingerprint and not options.allowUnchangedAppearance and
-                        fingerprint == options.initialFingerprint then
-                        ready = false
+                        not appearanceChanged then
+                        if fingerprint ~= options.initialFingerprint then
+                            appearanceChanged = true
+                            unchangedAppearanceReadySince = nil
+                        else
+                            unchangedAppearanceReadySince = unchangedAppearanceReadySince or GetGameTimer()
+                            if GetGameTimer() - unchangedAppearanceReadySince <
+                                FRAMEWORK_UNCHANGED_APPEARANCE_GRACE_MS then
+                                ready = false
+                            end
+                        end
+                    elseif not ready then
+                        unchangedAppearanceReadySince = nil
                     end
 
                     if ready then

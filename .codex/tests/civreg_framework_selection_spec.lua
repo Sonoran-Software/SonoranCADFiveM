@@ -290,6 +290,23 @@ test("QBCore detects alternate-provider changes to tattoos only", function()
     equal(h.now, 4000)
 end)
 
+test("QBCore accepts a stable unchanged alternate-provider appearance after a grace period", function()
+    local h = harness("qbcore", { illenium = true })
+    h.events["QBCore:Client:OnPlayerLoaded"]()
+    equal(#h.serverEvents, 1)
+    equal(h.now, 18000)
+end)
+
+test("QBCore restarts stability when alternate-provider appearance changes during the grace fallback", function()
+    local h = harness("qbcore", {
+        fivemAppearance = true,
+        appearanceChangeAt = 16000
+    })
+    h.events["QBCore:Client:OnPlayerLoaded"]()
+    equal(#h.serverEvents, 1)
+    equal(h.now, 19000)
+end)
+
 test("QBCore cancels capture if the active citizen changes while loading", function()
     local h = harness("qbcore", { characterChangeAt = 1000 })
     h.events["QBCore:Client:OnPlayerLoaded"]()
