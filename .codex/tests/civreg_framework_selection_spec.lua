@@ -42,7 +42,8 @@ local function harness(framework, options)
         headOverlays = {},
         eyeColor = 0,
         hairColor = 0,
-        hairHighlightColor = 0
+        hairHighlightColor = 0,
+        decorationsState = 0
     }
     for component = 0, 11 do
         h.components[component] = component
@@ -101,6 +102,11 @@ local function harness(framework, options)
             h.hairColor = 5
             h.hairHighlightColor = 6
         end
+        if options.tattooAppearanceChangeAt and not h.tattooAppearanceChanged and
+            h.now >= options.tattooAppearanceChangeAt then
+            h.tattooAppearanceChanged = true
+            h.decorationsState = h.decorationsState + 1
+        end
         if options.characterChangeAt and not h.characterChanged and
             h.now >= options.characterChangeAt then
             h.characterChanged = true
@@ -139,6 +145,7 @@ local function harness(framework, options)
     env.GetPedEyeColor = function() return h.eyeColor end
     env.GetPedHairColor = function() return h.hairColor end
     env.GetPedHairHighlightColor = function() return h.hairHighlightColor end
+    env.GetPedDecorationsState = function() return h.decorationsState end
     env.GetResourceState = function(name)
         if framework == "esx" then
             return name == "es_extended" and "started" or "missing"
@@ -267,6 +274,16 @@ test("QBCore detects alternate-provider changes to facial appearance only", func
     local h = harness("qbcore", {
         fivemAppearance = true,
         facialAppearanceChangeAt = 1000
+    })
+    h.events["QBCore:Client:OnPlayerLoaded"]()
+    equal(#h.serverEvents, 1)
+    equal(h.now, 4000)
+end)
+
+test("QBCore detects alternate-provider changes to tattoos only", function()
+    local h = harness("qbcore", {
+        illenium = true,
+        tattooAppearanceChangeAt = 1000
     })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 1)

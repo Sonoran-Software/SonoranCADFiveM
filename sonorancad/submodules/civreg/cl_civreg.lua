@@ -96,6 +96,7 @@ CreateThread(function()
             parts[#parts + 1] = table.concat({
                 GetPedEyeColor(ped), GetPedHairColor(ped), GetPedHairHighlightColor(ped)
             }, ":")
+            parts[#parts + 1] = tostring(GetPedDecorationsState(ped))
             return table.concat(parts, "|")
         end
 
