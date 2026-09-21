@@ -16,7 +16,28 @@ end
 
 local function harness(framework, options)
     options = options or {}
-    local h = { events = {}, serverEvents = {}, now = 0, waits = {} }
+    local h = {
+        events = {},
+        serverEvents = {},
+        now = 0,
+        waits = {},
+        playerLoaded = false,
+        characterId = framework == "esx" and "license:esx-123" or "QB-123",
+        components = {},
+        componentTextures = {},
+        componentPalettes = {},
+        props = {},
+        propTextures = {}
+    }
+    for component = 0, 11 do
+        h.components[component] = component
+        h.componentTextures[component] = 0
+        h.componentPalettes[component] = 0
+    end
+    for prop = 0, 7 do
+        h.props[prop] = -1
+        h.propTextures[prop] = 0
+    end
     local env = setmetatable({}, { __index = _G })
     env.Config = {
         LoadPlugin = function(_, callback)
@@ -35,6 +56,21 @@ local function harness(framework, options)
     env.Wait = function(milliseconds)
         h.waits[#h.waits + 1] = milliseconds
         h.now = h.now + milliseconds
+        if options.qbAppearanceReadyAt and not h.qbAppearanceReady and
+            h.now >= options.qbAppearanceReadyAt then
+            h.qbAppearanceReady = true
+            h.events["qb-clothing:client:loadPlayerClothing"]()
+        end
+        if options.appearanceChangeAt and not h.appearanceChanged and
+            h.now >= options.appearanceChangeAt then
+            h.appearanceChanged = true
+            h.components[1] = h.components[1] + 10
+        end
+        if options.characterChangeAt and not h.characterChanged and
+            h.now >= options.characterChangeAt then
+            h.characterChanged = true
+            h.characterId = framework == "esx" and "license:esx-999" or "QB-999"
+        end
     end
     env.PlayerId = function() return 1 end
     env.PlayerPedId = function() return 99 end
@@ -43,10 +79,20 @@ local function harness(framework, options)
     env.IsEntityVisible = function() return options.neverReady ~= true end
     env.HasCollisionLoadedAroundEntity = function() return options.neverReady ~= true end
     env.IsScreenFadedIn = function() return options.neverReady ~= true end
+    env.GetEntityModel = function() return 1885233650 end
+    env.GetPedDrawableVariation = function(_, component) return h.components[component] end
+    env.GetPedTextureVariation = function(_, component) return h.componentTextures[component] end
+    env.GetPedPaletteVariation = function(_, component) return h.componentPalettes[component] end
+    env.GetPedPropIndex = function(_, prop) return h.props[prop] end
+    env.GetPedPropTextureIndex = function(_, prop) return h.propTextures[prop] end
+    env.GetPedFaceFeature = function(_, feature) return feature / 100 end
     env.GetResourceState = function(name)
         if framework == "esx" then
             return name == "es_extended" and "started" or "missing"
         end
+        if name == "qb-clothing" and options.qbClothing then return "started" end
+        if name == "illenium-appearance" and options.illenium then return "started" end
+        if name == "fivem-appearance" and options.fivemAppearance then return "started" end
         return name == "qb-core" and "started" or "missing"
     end
     env.exports = {
@@ -55,7 +101,8 @@ local function harness(framework, options)
                 return {
                     Functions = {
                         GetPlayerData = function()
-                            return options.alreadyLoaded and { citizenid = "QB-123" } or nil
+                            return (options.alreadyLoaded or h.playerLoaded) and
+                                { citizenid = h.characterId } or nil
                         end
                     }
                 }
@@ -65,7 +112,8 @@ local function harness(framework, options)
             getSharedObject = function()
                 return {
                     GetPlayerData = function()
-                        return options.alreadyLoaded and { identifier = "license:esx-123" } or nil
+                        return (options.alreadyLoaded or h.playerLoaded) and
+                            { identifier = h.characterId } or nil
                     end
                 }
             end
@@ -74,7 +122,16 @@ local function harness(framework, options)
     env.RegisterCommand = function() end
     env.TriggerEvent = function() end
     env.RegisterPlayerCommandHelp = function() end
-    env.RegisterNetEvent = function(name, callback) h.events[name] = callback end
+    env.RegisterNetEvent = function(name, callback)
+        if name == "QBCore:Client:OnPlayerLoaded" or name == "esx:playerLoaded" then
+            h.events[name] = function(...)
+                h.playerLoaded = true
+                return callback(...)
+            end
+        else
+            h.events[name] = callback
+        end
+    end
     env.AddEventHandler = function(name, callback) h.events[name] = callback end
     env.RegisterNUICallback = function() end
     env.TriggerServerEvent = function(name)
@@ -90,7 +147,7 @@ test("QBCore selection settles after the player is fully spawned", function()
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 1)
     equal(h.serverEvents[1], "SonoranCAD::civreg::FrameworkCharacterSelected")
-    equal(h.waits[1], 3000)
+    equal(h.waits[1], 250)
     equal(h.now, 3000)
 end)
 
@@ -98,7 +155,7 @@ test("an already-loaded QBCore character is captured after resource restart", fu
     local h = harness("qbcore", { alreadyLoaded = true })
     equal(#h.serverEvents, 1)
     equal(h.serverEvents[1], "SonoranCAD::civreg::FrameworkCharacterSelected")
-    equal(h.waits[1], 3000)
+    equal(h.waits[1], 250)
 end)
 
 test("ESX selection waits for the selected character ped to spawn", function()
@@ -116,11 +173,45 @@ test("an already-loaded ESX character is captured after resource restart", funct
     local h = harness("esx", { alreadyLoaded = true })
     equal(#h.serverEvents, 1)
     equal(h.serverEvents[1], "SonoranCAD::civreg::FrameworkCharacterSelected")
-    equal(h.waits[1], 3000)
+    equal(h.waits[1], 250)
 end)
 
 test("framework selection times out when the player never fully spawns", function()
     local h = harness("qbcore", { neverReady = true })
+    h.events["QBCore:Client:OnPlayerLoaded"]()
+    equal(#h.serverEvents, 0)
+    equal(h.now, 30000)
+end)
+
+test("QBCore waits for qb-clothing to apply the selected appearance", function()
+    local h = harness("qbcore", {
+        qbClothing = true,
+        qbAppearanceReadyAt = 1000
+    })
+    h.events["QBCore:Client:OnPlayerLoaded"]()
+    equal(#h.serverEvents, 1)
+    equal(h.now, 4000)
+end)
+
+test("QBCore fails closed when qb-clothing never reports an applied appearance", function()
+    local h = harness("qbcore", { qbClothing = true })
+    h.events["QBCore:Client:OnPlayerLoaded"]()
+    equal(#h.serverEvents, 0)
+    equal(h.now, 30000)
+end)
+
+test("QBCore waits for an alternate appearance provider to replace the placeholder", function()
+    local h = harness("qbcore", {
+        illenium = true,
+        appearanceChangeAt = 1000
+    })
+    h.events["QBCore:Client:OnPlayerLoaded"]()
+    equal(#h.serverEvents, 1)
+    equal(h.now, 4000)
+end)
+
+test("QBCore cancels capture if the active citizen changes while loading", function()
+    local h = harness("qbcore", { characterChangeAt = 1000 })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 0)
     equal(h.now, 30000)
