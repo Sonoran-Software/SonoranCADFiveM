@@ -87,7 +87,7 @@ local function harness(options)
         h.props[prop] = { drawable = drawable, texture = texture }
     end
     env.GetPedFaceFeature = function() return 0 end
-    env.GetBase64 = function()
+    env.GetBase64 = function(_, onHeadshotReady)
         h.duringCapture = {
             mask = h.components[1].drawable,
             hair = h.components[2].drawable,
@@ -98,6 +98,18 @@ local function harness(options)
         }
         if options.captureError then
             error("fixture capture failure")
+        end
+        equal(type(onHeadshotReady), "function", "capture must provide a headshot-ready callback")
+        h.restoredBeforeConversion = onHeadshotReady()
+        h.beforeConversion = {
+            mask = h.components[1].drawable,
+            accessory = h.components[7].drawable,
+            hat = h.props[0].drawable
+        }
+        if options.outfitUpdateDuringConversion then
+            h.components[1] = { drawable = 21, texture = 7, palette = 3 }
+            h.components[7] = { drawable = 22, texture = 8, palette = 4 }
+            h.props[0] = { drawable = 23, texture = 9 }
         end
         return { success = true, base64 = "data:image/png;base64,fixture" }
     end
@@ -162,6 +174,62 @@ test("capture failures still restore the exact appearance", function()
     equal(h.latent.args[1], "token-2")
     equal(h.latent.args[2], nil)
     equal(h.latent.args[3], "Could not capture your character portrait.")
+end)
+
+test("gear is restored before base64 conversion without overwriting later outfit updates", function()
+    local h = harness({ outfitUpdateDuringConversion = true })
+    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-3" })
+    equal(h.restoredBeforeConversion, true)
+    equal(h.beforeConversion.mask, 12, "mask must be restored before conversion")
+    equal(h.beforeConversion.accessory, 5, "accessory must be restored before conversion")
+    equal(h.beforeConversion.hat, 8, "hat must be restored before conversion")
+    equal(h.components[1].drawable, 21, "later mask update must be preserved")
+    equal(h.components[7].drawable, 22, "later accessory update must be preserved")
+    equal(h.props[0].drawable, 23, "later hat update must be preserved")
+end)
+
+test("headshot helper restores before conversion and cleans up restoration failures", function()
+    local order = {}
+    local now = 0
+    local registered = false
+    local env = setmetatable({}, { __index = _G })
+    env.PlayerPedId = function() return 99 end
+    env.DoesEntityExist = function() return true end
+    env.IsPedheadshotValid = function(handle) return registered and handle == 7 end
+    env.RegisterPedheadshot = function()
+        registered = true
+        return 7
+    end
+    env.IsPedheadshotReady = function() return true end
+    env.GetPedheadshotTxdString = function() return "fixture_txd" end
+    env.GetGameTimer = function() return now end
+    env.Wait = function(milliseconds) now = now + (milliseconds or 0) end
+    env.UnregisterPedheadshot = function() registered = false end
+    env.SendNUIMessage = function()
+        order[#order + 1] = "convert"
+    end
+    env.RegisterNUICallback = function() end
+    env.exports = function() end
+
+    assert(loadfile("sonorancad/core/headshots.lua", "t", env))()
+    local result = env.GetBase64(99, function()
+        order[#order + 1] = "restore"
+        return true
+    end)
+
+    equal(result.success, false, "fixture conversion should time out")
+    equal(order[1], "restore", "appearance must restore first")
+    equal(order[2], "convert", "conversion must start after restoration")
+
+    local restoreFailure = env.GetBase64(99, function()
+        order[#order + 1] = "restore-failed"
+        return false
+    end)
+    equal(restoreFailure.success, false)
+    equal(restoreFailure.error, "Could not restore character appearance.")
+    equal(order[3], "restore-failed")
+    equal(order[4], nil, "failed restoration must not start conversion")
+    equal(registered, false, "failed restoration must release the headshot")
 end)
 
 print(("%d CivReg portrait capture regression tests passed."):format(passed))

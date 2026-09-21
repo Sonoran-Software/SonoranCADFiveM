@@ -267,6 +267,41 @@ CreateThread(function()
             portraitCaptureActive = true
             local components = {}
             local props = {}
+            local appearanceRestored = false
+            local function restoreAppearance()
+                -- Do not reapply this snapshot after conversion; the player's outfit may change meanwhile.
+                if appearanceRestored then
+                    return true
+                end
+
+                local restored = true
+                if DoesEntityExist(ped) then
+                    for _, component in ipairs(HIDDEN_PORTRAIT_COMPONENTS) do
+                        local value = components[component]
+                        if value then
+                            local restoredComponent = pcall(SetPedComponentVariation, ped, component,
+                                value.drawable, value.texture, value.palette)
+                            restored = restored and restoredComponent
+                        end
+                    end
+                    for _, prop in ipairs(HIDDEN_PORTRAIT_PROPS) do
+                        local value = props[prop]
+                        if value then
+                            local restoredProp
+                            if value.drawable and value.drawable >= 0 then
+                                restoredProp = pcall(SetPedPropIndex, ped, prop, value.drawable, value.texture, true)
+                            else
+                                restoredProp = pcall(ClearPedProp, ped, prop)
+                            end
+                            restored = restored and restoredProp
+                        end
+                    end
+                end
+
+                appearanceRestored = restored
+                return restored
+            end
+
             local ok, result = pcall(function()
                 for _, component in ipairs(HIDDEN_PORTRAIT_COMPONENTS) do
                     components[component] = {
@@ -286,32 +321,10 @@ CreateThread(function()
 
                 Wait(0)
                 Wait(0)
-                return GetBase64(ped)
+                return GetBase64(ped, restoreAppearance)
             end)
 
-            local restored = true
-            if DoesEntityExist(ped) then
-                for _, component in ipairs(HIDDEN_PORTRAIT_COMPONENTS) do
-                    local value = components[component]
-                    if value then
-                        local restoredComponent = pcall(SetPedComponentVariation, ped, component,
-                            value.drawable, value.texture, value.palette)
-                        restored = restored and restoredComponent
-                    end
-                end
-                for _, prop in ipairs(HIDDEN_PORTRAIT_PROPS) do
-                    local value = props[prop]
-                    if value then
-                        local restoredProp
-                        if value.drawable and value.drawable >= 0 then
-                            restoredProp = pcall(SetPedPropIndex, ped, prop, value.drawable, value.texture, true)
-                        else
-                            restoredProp = pcall(ClearPedProp, ped, prop)
-                        end
-                        restored = restored and restoredProp
-                    end
-                end
-            end
+            local restored = restoreAppearance()
             portraitCaptureActive = false
 
             if not ok or not restored then
