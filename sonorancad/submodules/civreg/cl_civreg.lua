@@ -97,7 +97,21 @@ CreateThread(function()
             parts[#parts + 1] = table.concat({
                 GetPedEyeColor(ped), GetPedHairColor(ped), GetPedHairHighlightColor(ped)
             }, ":")
-            parts[#parts + 1] = tostring(GetPedDecorationsState(ped))
+
+            local decorationParts = {}
+            local decorations = GetPedDecorations(ped)
+            if type(decorations) == "table" then
+                for _, decoration in ipairs(decorations) do
+                    if type(decoration) == "table" then
+                        decorationParts[#decorationParts + 1] = table.concat({
+                            tostring(decoration[1]), tostring(decoration[2])
+                        }, ":")
+                    end
+                end
+            end
+            -- Equivalent tattoo sets should fingerprint identically regardless of application order.
+            table.sort(decorationParts)
+            parts[#parts + 1] = table.concat(decorationParts, ",")
             return table.concat(parts, "|")
         end
 
