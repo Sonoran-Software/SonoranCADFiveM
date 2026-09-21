@@ -27,7 +27,22 @@ local function harness(framework, options)
         componentTextures = {},
         componentPalettes = {},
         props = {},
-        propTextures = {}
+        propTextures = {},
+        headBlend = {
+            shapeFirst = 0,
+            shapeSecond = 0,
+            shapeThird = 0,
+            skinFirst = 0,
+            skinSecond = 0,
+            skinThird = 0,
+            shapeMix = 0.0,
+            skinMix = 0.0,
+            thirdMix = 0.0
+        },
+        headOverlays = {},
+        eyeColor = 0,
+        hairColor = 0,
+        hairHighlightColor = 0
     }
     for component = 0, 11 do
         h.components[component] = component
@@ -37,6 +52,15 @@ local function harness(framework, options)
     for prop = 0, 7 do
         h.props[prop] = -1
         h.propTextures[prop] = 0
+    end
+    for overlay = 0, 12 do
+        h.headOverlays[overlay] = {
+            value = 255,
+            colorType = 0,
+            firstColor = 0,
+            secondColor = 0,
+            opacity = 0.0
+        }
     end
     local env = setmetatable({}, { __index = _G })
     env.Config = {
@@ -66,6 +90,17 @@ local function harness(framework, options)
             h.appearanceChanged = true
             h.components[1] = h.components[1] + 10
         end
+        if options.facialAppearanceChangeAt and not h.facialAppearanceChanged and
+            h.now >= options.facialAppearanceChangeAt then
+            h.facialAppearanceChanged = true
+            h.headBlend.shapeFirst = h.headBlend.shapeFirst + 1
+            h.headOverlays[4].value = 2
+            h.headOverlays[4].firstColor = 3
+            h.headOverlays[4].opacity = 0.8
+            h.eyeColor = 4
+            h.hairColor = 5
+            h.hairHighlightColor = 6
+        end
         if options.characterChangeAt and not h.characterChanged and
             h.now >= options.characterChangeAt then
             h.characterChanged = true
@@ -86,6 +121,24 @@ local function harness(framework, options)
     env.GetPedPropIndex = function(_, prop) return h.props[prop] end
     env.GetPedPropTextureIndex = function(_, prop) return h.propTextures[prop] end
     env.GetPedFaceFeature = function(_, feature) return feature / 100 end
+    env.Citizen = {
+        PointerValueIntInitialized = function(value) return value end,
+        PointerValueFloatInitialized = function(value) return value end,
+        InvokeNative = function()
+            local value = h.headBlend
+            return value.shapeFirst, value.shapeSecond, value.shapeThird,
+                value.skinFirst, value.skinSecond, value.skinThird,
+                value.shapeMix, value.skinMix, value.thirdMix
+        end
+    }
+    env.GetPedHeadOverlayData = function(_, overlay)
+        local value = h.headOverlays[overlay]
+        return true, value.value, value.colorType, value.firstColor,
+            value.secondColor, value.opacity
+    end
+    env.GetPedEyeColor = function() return h.eyeColor end
+    env.GetPedHairColor = function() return h.hairColor end
+    env.GetPedHairHighlightColor = function() return h.hairHighlightColor end
     env.GetResourceState = function(name)
         if framework == "esx" then
             return name == "es_extended" and "started" or "missing"
@@ -204,6 +257,16 @@ test("QBCore waits for an alternate appearance provider to replace the placehold
     local h = harness("qbcore", {
         illenium = true,
         appearanceChangeAt = 1000
+    })
+    h.events["QBCore:Client:OnPlayerLoaded"]()
+    equal(#h.serverEvents, 1)
+    equal(h.now, 4000)
+end)
+
+test("QBCore detects alternate-provider changes to facial appearance only", function()
+    local h = harness("qbcore", {
+        fivemAppearance = true,
+        facialAppearanceChangeAt = 1000
     })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 1)

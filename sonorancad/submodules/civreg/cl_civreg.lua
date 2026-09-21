@@ -71,6 +71,31 @@ CreateThread(function()
             for feature = 0, 19 do
                 parts[#parts + 1] = string.format("%.4f", GetPedFaceFeature(ped, feature))
             end
+
+            local shapeFirst, shapeSecond, shapeThird, skinFirst, skinSecond, skinThird,
+                shapeMix, skinMix, thirdMix = Citizen.InvokeNative(0x2746BD9D88C5C5D0, ped,
+                    Citizen.PointerValueIntInitialized(0), Citizen.PointerValueIntInitialized(0),
+                    Citizen.PointerValueIntInitialized(0), Citizen.PointerValueIntInitialized(0),
+                    Citizen.PointerValueIntInitialized(0), Citizen.PointerValueIntInitialized(0),
+                    Citizen.PointerValueFloatInitialized(0), Citizen.PointerValueFloatInitialized(0),
+                    Citizen.PointerValueFloatInitialized(0))
+            parts[#parts + 1] = table.concat({
+                shapeFirst, shapeSecond, shapeThird, skinFirst, skinSecond, skinThird,
+                string.format("%.4f", shapeMix), string.format("%.4f", skinMix),
+                string.format("%.4f", thirdMix or 0)
+            }, ":")
+
+            for overlay = 0, 12 do
+                local success, value, colorType, firstColor, secondColor, opacity =
+                    GetPedHeadOverlayData(ped, overlay)
+                parts[#parts + 1] = table.concat({
+                    tostring(success), value, colorType, firstColor, secondColor,
+                    string.format("%.4f", opacity)
+                }, ":")
+            end
+            parts[#parts + 1] = table.concat({
+                GetPedEyeColor(ped), GetPedHairColor(ped), GetPedHairHighlightColor(ped)
+            }, ":")
             return table.concat(parts, "|")
         end
 
