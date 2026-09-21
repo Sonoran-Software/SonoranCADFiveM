@@ -73,7 +73,7 @@ CreateThread(function()
                 parts[#parts + 1] = string.format("%.4f", GetPedFaceFeature(ped, feature))
             end
 
-            local shapeFirst, shapeSecond, shapeThird, skinFirst, skinSecond, skinThird,
+            local _, shapeFirst, shapeSecond, shapeThird, skinFirst, skinSecond, skinThird,
                 shapeMix, skinMix, thirdMix = Citizen.InvokeNative(0x2746BD9D88C5C5D0, ped,
                     Citizen.PointerValueIntInitialized(0), Citizen.PointerValueIntInitialized(0),
                     Citizen.PointerValueIntInitialized(0), Citizen.PointerValueIntInitialized(0),

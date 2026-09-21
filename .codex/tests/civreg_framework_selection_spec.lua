@@ -132,7 +132,7 @@ local function harness(framework, options)
         PointerValueFloatInitialized = function(value) return value end,
         InvokeNative = function()
             local value = h.headBlend
-            return value.shapeFirst, value.shapeSecond, value.shapeThird,
+            return true, value.shapeFirst, value.shapeSecond, value.shapeThird,
                 value.skinFirst, value.skinSecond, value.skinThird,
                 value.shapeMix, value.skinMix, value.thirdMix
         end
