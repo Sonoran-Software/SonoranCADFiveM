@@ -54,6 +54,65 @@ CreateThread(function()
             return nil
         end
 
+        local function serializeFingerprintValue(value, seen)
+            local valueType = type(value)
+            if valueType ~= "table" then
+                local serialized = tostring(value)
+                return valueType .. ":" .. #serialized .. ":" .. serialized
+            end
+
+            seen = seen or {}
+            if seen[value] then
+                return "table:cycle"
+            end
+            seen[value] = true
+
+            local count = 0
+            local highestIndex = 0
+            local isArray = true
+            for key in pairs(value) do
+                count = count + 1
+                if type(key) ~= "number" or key < 1 or key % 1 ~= 0 then
+                    isArray = false
+                elseif key > highestIndex then
+                    highestIndex = key
+                end
+            end
+            isArray = isArray and highestIndex == count
+
+            local parts = {}
+            if isArray then
+                for _, item in ipairs(value) do
+                    parts[#parts + 1] = serializeFingerprintValue(item, seen)
+                end
+                -- Tattoo order is not meaningful and can vary between provider loads.
+                table.sort(parts)
+            else
+                for key, item in pairs(value) do
+                    parts[#parts + 1] = serializeFingerprintValue(key, seen) .. "=" ..
+                        serializeFingerprintValue(item, seen)
+                end
+                table.sort(parts)
+            end
+
+            seen[value] = nil
+            return "table:{" .. table.concat(parts, ",") .. "}"
+        end
+
+        local function getProviderTattooFingerprint(ped)
+            for _, resourceName in ipairs({ "illenium-appearance", "fivem-appearance" }) do
+                if GetResourceState(resourceName) == "started" then
+                    local ok, appearance = pcall(function()
+                        return exports[resourceName]:getPedAppearance(ped)
+                    end)
+                    if ok and type(appearance) == "table" and type(appearance.tattoos) == "table" then
+                        return serializeFingerprintValue(appearance.tattoos)
+                    end
+                end
+            end
+            return nil
+        end
+
         local function getPedAppearanceFingerprint(ped)
             local parts = { tostring(ped), tostring(GetEntityModel(ped)) }
             for component = 0, 11 do
@@ -98,20 +157,10 @@ CreateThread(function()
                 GetPedEyeColor(ped), GetPedHairColor(ped), GetPedHairHighlightColor(ped)
             }, ":")
 
-            local decorationParts = {}
-            local decorations = GetPedDecorations(ped)
-            if type(decorations) == "table" then
-                for _, decoration in ipairs(decorations) do
-                    if type(decoration) == "table" then
-                        decorationParts[#decorationParts + 1] = table.concat({
-                            tostring(decoration[1]), tostring(decoration[2])
-                        }, ":")
-                    end
-                end
+            local tattooFingerprint = getProviderTattooFingerprint(ped)
+            if tattooFingerprint then
+                parts[#parts + 1] = tattooFingerprint
             end
-            -- Equivalent tattoo sets should fingerprint identically regardless of application order.
-            table.sort(decorationParts)
-            parts[#parts + 1] = table.concat(decorationParts, ",")
             return table.concat(parts, "|")
         end
 

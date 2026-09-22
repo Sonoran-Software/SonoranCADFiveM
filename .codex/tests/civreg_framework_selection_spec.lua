@@ -43,9 +43,11 @@ local function harness(framework, options)
         eyeColor = 0,
         hairColor = 0,
         hairHighlightColor = 0,
-        decorations = {
-            { 100, 200 },
-            { 300, 400 }
+        tattoos = {
+            ZONE_HEAD = {
+                { collection = "collection-a", hashMale = "male-a", hashFemale = "female-a" },
+                { collection = "collection-b", hashMale = "male-b", hashFemale = "female-b" }
+            }
         }
     }
     for component = 0, 11 do
@@ -108,15 +110,18 @@ local function harness(framework, options)
         if options.tattooAppearanceChangeAt and not h.tattooAppearanceChanged and
             h.now >= options.tattooAppearanceChangeAt then
             h.tattooAppearanceChanged = true
-            h.decorations = {
-                { 500, 600 },
-                { 700, 800 }
+            h.tattoos = {
+                ZONE_HEAD = {
+                    { collection = "collection-c", hashMale = "male-c", hashFemale = "female-c" },
+                    { collection = "collection-d", hashMale = "male-d", hashFemale = "female-d" }
+                }
             }
         end
         if options.tattooOrderChangeAt and not h.tattooOrderChanged and
             h.now >= options.tattooOrderChangeAt then
             h.tattooOrderChanged = true
-            h.decorations[1], h.decorations[2] = h.decorations[2], h.decorations[1]
+            local tattoos = h.tattoos.ZONE_HEAD
+            tattoos[1], tattoos[2] = tattoos[2], tattoos[1]
         end
         if options.characterChangeAt and not h.characterChanged and
             h.now >= options.characterChangeAt then
@@ -156,7 +161,6 @@ local function harness(framework, options)
     env.GetPedEyeColor = function() return h.eyeColor end
     env.GetPedHairColor = function() return h.hairColor end
     env.GetPedHairHighlightColor = function() return h.hairHighlightColor end
-    env.GetPedDecorations = function() return h.decorations end
     env.GetResourceState = function(name)
         if framework == "esx" then
             return name == "es_extended" and "started" or "missing"
@@ -187,6 +191,18 @@ local function harness(framework, options)
                             { identifier = h.characterId } or nil
                     end
                 }
+            end
+        },
+        ["illenium-appearance"] = {
+            getPedAppearance = function()
+                if options.appearanceExportFails then error("appearance export unavailable") end
+                return { tattoos = h.tattoos }
+            end
+        },
+        ["fivem-appearance"] = {
+            getPedAppearance = function()
+                if options.appearanceExportFails then error("appearance export unavailable") end
+                return { tattoos = h.tattoos }
             end
         }
     }
@@ -305,6 +321,16 @@ test("QBCore ignores alternate-provider tattoo application order changes", funct
     local h = harness("qbcore", {
         fivemAppearance = true,
         tattooOrderChangeAt = 1000
+    })
+    h.events["QBCore:Client:OnPlayerLoaded"]()
+    equal(#h.serverEvents, 1)
+    equal(h.now, 18000)
+end)
+
+test("QBCore tolerates an unavailable alternate-provider appearance export", function()
+    local h = harness("qbcore", {
+        illenium = true,
+        appearanceExportFails = true
     })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 1)
