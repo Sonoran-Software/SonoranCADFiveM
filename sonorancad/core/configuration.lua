@@ -134,9 +134,16 @@ if parsedConfig == nil then
     Config.apiSendEnabled = false
     return
 end
--- Only connection/bootstrap values remain local. Existing feature config keys are ignored.
+local function bootstrapValue(key)
+    local fileValue = parsedConfig[key]
+    local convar = GetConvar('sonoran_' .. key, 'NONE')
+    if key == 'apiKey' and convar == 'protection_initialized' then return fileValue end
+    if convar ~= 'NONE' and convar ~= 'protection_initialized' then return convar end
+    return fileValue
+end
+
 for _, k in ipairs({'communityID', 'apiKey', 'serverId', 'mode'}) do
-    Config[k] = parsedConfig[k]
+    Config[k] = bootstrapValue(k)
 end
 Config.serverId = tonumber(Config.serverId) or 1
 Config.mode = Config.mode or 'production'
@@ -149,7 +156,12 @@ SetConvar('sonoran_apiKey', Config.apiKey)
 SetConvar('sonoran_communityID', Config.communityID)
 SetConvar('sonoran_serverId', tostring(Config.serverId))
 SetConvar('sonoran_mode', Config.mode)
-LoadRemoteFiveMConfiguration()
+local localConfiguration = LoadLocalFiveMConfiguration()
+AugmentLocalFiveMConfigurationInventory(localConfiguration)
+for _, migrationError in ipairs(localConfiguration.errors or {}) do
+    warnLog('UNHANDLED_WARNING', 'Local configuration migration scan: ' .. tostring(migrationError))
+end
+LoadRemoteFiveMConfiguration(localConfiguration)
 
 local validNotificationSystems = {
     auto = true,
@@ -170,10 +182,6 @@ local function normalizeNotificationSystem(value)
         normalized = "pnotify"
     end
     return normalized
-end
-
-if false then
-    warnLog("UNHANDLED_WARNING", "notificationSystem is missing from config.json. Defaulting to auto. Please update your config.json from config.CHANGEME.json.")
 end
 
 local normalizedNotificationSystem = normalizeNotificationSystem(Config.notificationSystem)

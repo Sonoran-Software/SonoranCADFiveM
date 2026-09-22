@@ -137,6 +137,11 @@ AddEventHandler('SonoranCAD::core:recvClientConfig', function(config)
     for k,v in pairs(config) do
         if k == 'plugins' then Config.plugins = ResolveFiveMConfig(v) else Config[k] = v end
     end
+    local localConfiguration = LoadLocalFiveMConfiguration()
+    if localConfiguration.detected then
+        Config.plugins = MergeFiveMConfig(Config.plugins, localConfiguration.plugins)
+        for key, value in pairs(localConfiguration.core) do Config[key] = value end
+    end
     Plugins = {}
     for name, plugin in pairs(Config.plugins) do
         if plugin.enabled then Plugins[#Plugins + 1] = name end

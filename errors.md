@@ -187,6 +187,16 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 - `Meaning`: SonoranCAD was started without the required convar and permission setup from the bundled `sonorancad.cfg`. This can break SonoranCAD updates and third-party integrations.
 - `Potential Fix`: In `server.cfg`, remove every `ensure sonorancad` line, use `exec @sonorancad/sonorancad.cfg` instead, and then fully restart FXServer.
 
+### ERR-CORE-037
+- `Key`: `LOCAL_CONFIG_MIGRATION_REQUIRED`
+- `Meaning`: Legacy local FiveM configuration files are still active and overriding settings saved in the CAD game panel.
+- `Potential Fix`: Open **In-Game Integration > FiveM** in Sonoran CAD, verify the imported settings, and complete the guided migration.
+
+### ERR-CORE-038
+- `Key`: `LOCAL_CONFIG_MIGRATION_CLEANUP_FAILED`
+- `Meaning`: The guided migration was verified, but one or more legacy configuration files could not be removed safely.
+- `Potential Fix`: Check filesystem permissions for the `sonorancad/configuration` directory, then run the migration action again.
+
 ### ERR-CORE-900
 - `Key`: `UNHANDLED_SERVER_ERROR`
 - `Meaning`: An unexpected server-side error occurred and was normalized into a generic coded failure.

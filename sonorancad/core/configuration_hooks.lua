@@ -155,8 +155,27 @@ local hooks = {
             end,
 }
 
+local function hookFingerprint(value)
+    local dumped = string.dump(value, true)
+    -- Lua 5.4 keeps the prototype's line range even in a stripped chunk. Remove
+    -- the two variable-length integers so identical functions from old config
+    -- files compare independently of where they appeared in the source file.
+    local position = 34
+    for _ = 1, 2 do
+        while position <= #dumped do
+            local byte = dumped:byte(position)
+            position = position + 1
+            if byte >= 0x80 then break end
+        end
+    end
+    return dumped:sub(1, 33) .. dumped:sub(position)
+end
+
 function MatchFiveMConfigHook(value, path)
-    if hooks[path] and string.dump(value, true) == string.dump(hooks[path], true) then return 'builtin:' .. path end
+    if not hooks[path] or type(value) ~= "function" then return nil end
+    local leftOk, left = pcall(hookFingerprint, value)
+    local rightOk, right = pcall(hookFingerprint, hooks[path])
+    if leftOk and rightOk and left == right then return 'builtin:' .. path end
     return nil
 end
 
@@ -168,6 +187,8 @@ function ResolveFiveMConfig(value, path)
     end
     if type(value) ~= "table" then return value end
     local result = {}
+    local valueMeta = getmetatable(value)
+    if valueMeta then setmetatable(result, valueMeta) end
     for k,v in pairs(value) do
         local key = k
         if path:find('localcallers.clothingConfig', 1, true) or path:find('localcallers.weaponConfig.weaponResponses', 1, true) then key = tonumber(k) or k end
@@ -180,3 +201,183 @@ function ResolveFiveMConfig(value, path)
 end
 
 function unitDutyCustom(player) return false end
+
+local bootstrapConfigKeys = {
+    communityID = true,
+    apiKey = true,
+    serverId = true,
+    mode = true
+}
+
+local function isArray(value)
+    if type(value) ~= "table" then return false end
+    local count = 0
+    local highest = 0
+    for key in pairs(value) do
+        if type(key) ~= "number" or key < 1 or key % 1 ~= 0 then return false end
+        count = count + 1
+        if key > highest then highest = key end
+    end
+    return count > 0 and highest == count
+end
+
+local function cloneConfigValue(value, seen)
+    if type(value) ~= "table" then return value end
+    seen = seen or {}
+    if seen[value] then return seen[value] end
+    local copy = {}
+    local valueMeta = getmetatable(value)
+    if valueMeta then setmetatable(copy, valueMeta) end
+    seen[value] = copy
+    for key, entry in pairs(value) do copy[key] = cloneConfigValue(entry, seen) end
+    return copy
+end
+
+function MergeFiveMConfig(base, override)
+    if type(override) ~= "table" then
+        return override ~= nil and override or cloneConfigValue(base)
+    end
+    if next(override) == nil then
+        local cleared = cloneConfigValue(override)
+        local baseMeta = type(base) == "table" and getmetatable(base) or nil
+        if baseMeta and not getmetatable(cleared) then setmetatable(cleared, baseMeta) end
+        return cleared
+    end
+    if isArray(override) then return cloneConfigValue(override) end
+
+    local result = type(base) == "table" and cloneConfigValue(base) or {}
+    for key, value in pairs(override) do
+        if type(value) == "table" and not isArray(value) and type(result[key]) == "table" and not isArray(result[key]) then
+            result[key] = MergeFiveMConfig(result[key], value)
+        else
+            result[key] = cloneConfigValue(value)
+        end
+    end
+    return result
+end
+
+local function readJsonFile(path)
+    local raw = LoadResourceFile(GetCurrentResourceName(), path)
+    if not raw or raw == "" then return nil end
+    local ok, decoded = pcall(json.decode, raw)
+    if not ok or type(decoded) ~= "table" then return nil end
+    return decoded
+end
+
+local function loadLegacyPluginConfig(name, path, source)
+    local proxyConfig = setmetatable({
+        RegisterPluginConfig = function() end
+    }, {__index = Config})
+    local env = setmetatable({Config = proxyConfig}, {
+        __index = _G,
+        -- Preserve trusted customer-defined hooks exactly as the old manifest did.
+        __newindex = _G
+    })
+    local chunk, loadError = load(source .. "\nreturn config", "@@" .. path, "t", env)
+    if not chunk then return nil, loadError end
+    local ok, loaded = pcall(chunk)
+    if not ok then return nil, loaded end
+    if type(loaded) ~= "table" then return nil, name .. " did not return a config table" end
+    return loaded
+end
+
+function LoadLocalFiveMConfiguration()
+    local state = {
+        detected = false,
+        core = {},
+        plugins = {},
+        files = {},
+        errors = {}
+    }
+
+    local localCore = readJsonFile("configuration/config.json")
+    if localCore then
+        for key, value in pairs(localCore) do
+            if not bootstrapConfigKeys[key] then
+                state.detected = true
+                state.core[key] = value
+            end
+        end
+    end
+
+    local version = readJsonFile("version.json") or {}
+    local pluginNames = {}
+    for name in pairs(version.submoduleConfigs or {}) do pluginNames[#pluginNames + 1] = name end
+    table.sort(pluginNames)
+
+    for _, name in ipairs(pluginNames) do
+        local normalPath = "configuration/" .. name .. "_config.lua"
+        local distPath = "configuration/" .. name .. "_config.dist.lua"
+        local path = normalPath
+        local source = LoadResourceFile(GetCurrentResourceName(), normalPath)
+        if not source then
+            path = distPath
+            source = LoadResourceFile(GetCurrentResourceName(), distPath)
+        end
+        if source then
+            state.detected = true
+            state.files[#state.files + 1] = path
+            local plugin, loadError = loadLegacyPluginConfig(name, path, source)
+            if plugin then
+                state.plugins[name] = plugin
+            else
+                state.errors[#state.errors + 1] = path .. ": " .. tostring(loadError)
+            end
+        end
+    end
+
+    local models = readJsonFile("configuration/livemap_vehicle_models.json")
+    if models then
+        state.detected = true
+        state.files[#state.files + 1] = "configuration/livemap_vehicle_models.json"
+        state.plugins.locations = state.plugins.locations or {}
+        state.plugins.locations.vehicleModels = models
+    end
+
+    return state
+end
+
+local function appendSerializationError(errors, path, message)
+    if type(errors) == "table" then errors[#errors + 1] = path .. ": " .. message end
+end
+
+function SerializeFiveMConfig(value, path, errors, seen)
+    path = path or ""
+    local kind = type(value)
+    if kind == "function" then
+        local hook = MatchFiveMConfigHook(value, path)
+        if hook then return hook end
+        appendSerializationError(errors, path, "custom Lua function requires a reviewed named hook")
+        return nil
+    end
+    if kind == "vector2" or kind == "vector3" or kind == "vector4" then
+        local serialized = {x = value.x, y = value.y}
+        if value.z ~= nil then serialized.z = value.z end
+        if value.w ~= nil then serialized.w = value.w end
+        return serialized
+    end
+    if kind ~= "table" then return value end
+
+    seen = seen or {}
+    if seen[value] then
+        appendSerializationError(errors, path, "cyclic table is not supported")
+        return nil
+    end
+    seen[value] = true
+
+    local result = {}
+    local valueMeta = getmetatable(value)
+    if valueMeta then setmetatable(result, valueMeta) end
+    if isArray(value) then
+        for index, entry in ipairs(value) do
+            result[index] = SerializeFiveMConfig(entry, path .. "." .. tostring(index), errors, seen)
+        end
+    else
+        for key, entry in pairs(value) do
+            local serialized = SerializeFiveMConfig(entry, path .. "." .. tostring(key), errors, seen)
+            if serialized ~= nil then result[tostring(key)] = serialized end
+        end
+    end
+    seen[value] = nil
+    return result
+end

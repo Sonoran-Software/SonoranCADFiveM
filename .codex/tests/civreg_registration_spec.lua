@@ -18,9 +18,7 @@ local function harness(options)
     if options.unlinked then
         h.currentLink = nil
     end
-    local config
-    local configEnv = setmetatable({ Config = { RegisterPluginConfig = function(_, value) config = value end } }, { __index = _G })
-    assert(loadfile("sonorancad/configuration/civreg_config.dist.lua", "t", configEnv))()
+    local config = assert(loadfile(".codex/tests/fixtures/civreg_config.lua"))()
     config.maxSelfieBytes = options.limit or config.maxSelfieBytes
     -- Existing configurations may still contain this; it must not affect uploads.
     config.selfieBaseUrl = "https://obsolete.example.com/civreg"

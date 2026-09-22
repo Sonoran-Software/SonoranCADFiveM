@@ -1,5 +1,6 @@
 .vscode
 *.zip
+__pycache__/
 wk_wars2x/config.lua
 tablet/config.lua
 sonoran_updatehelper/run.lock

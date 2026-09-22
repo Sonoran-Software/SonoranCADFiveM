@@ -12,10 +12,11 @@ server_scripts {
     ,'core/unzipper/unzip.js'
     ,'core/image.js'
     ,'core/pdf.js'
+    ,'core/configuration_files.js'
     ,'core/logging.lua'
     ,'core/shared_functions.lua'
     ,'core/configuration_hooks.lua'
-    ,'core/configuration_export.lua'
+    ,'core/local_configuration.lua'
     ,'core/remote_configuration.lua'
     ,'core/configuration.lua'
     ,'core/sonoran_api.lua'
@@ -46,11 +47,14 @@ client_scripts {
 ui_page 'core/client_nui/index.html'
 
 files {
+    'version.json',
     'stream/**/*.ytyp',
     'core/client_nui/*.html',
     'core/client_nui/js/*.js',
     'core/client_nui/sounds/*.mp3',
     'core/client_nui/img/*.*',
+    'configuration/*.lua',
+    'configuration/livemap_vehicle_models.json',
     'submodules/**/*.mp3',
     'submodules/caddisplay/html/**/*',
     'submodules/postals/*.json',

@@ -128,7 +128,7 @@ function RunAutoUpdater(manualRun)
                         print("^3| Download at: ^4https://sonoran.link/caddownload                         ^3|")
                         print("^3|===========================================================================|^7")
                         if Config.allowAutoUpdate == nil then
-                            warnLog("UNHANDLED_WARNING", "You have not configured the automatic updater. Please set allowAutoUpdate in config.json to allow updates.")
+                            warnLog("UNHANDLED_WARNING", "You have not configured the automatic updater. Enable allowAutoUpdate in CAD > In-Game Integration > FiveM to allow updates.")
                         end
                     else
                         infoLog("Running auto-update now...")

@@ -389,7 +389,7 @@ CreateThread(function() Config.LoadPlugin("sonrad", function(pluginConfig)
                 enabled = false, -- should the radio name be synced with the CAD?
                 nameFormat = "{UNIT_NUMBER} | {UNIT_NAME}" -- format of the radio name | available variables: {UNIT_NUMBER}, {UNIT_NAME}
             }
-            warnLog("UNHANDLED_WARNING", 'Missing critial configuration for Sonrad. Missing syncRadioName configuration, using default values... Please update from sonrad_config.dist.lua')
+            warnLog("UNHANDLED_WARNING", 'Missing critical Sonrad syncRadioName configuration; using defaults. Update Sonrad in CAD > In-Game Integration > FiveM.')
         end
         local function syncRadioName(unit)
             if pluginConfig.syncRadioName.enabled then

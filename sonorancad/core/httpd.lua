@@ -66,9 +66,14 @@ local function handleUnitUpdate(body)
 end
 
 local PushEventHandler = {
-    EVENT_FIVEM_CONFIGURATION = function(body)
-        return ApplyRemoteFiveMConfiguration(body.data)
-    end,
+	EVENT_FIVEM_CONFIGURATION = function(body, source)
+		if source ~= 'ws' then return false, 'websocket required' end
+		return ApplyRemoteFiveMConfiguration(body.data)
+	end,
+	EVENT_FIVEM_CONFIGURATION_MIGRATION = function(body, source)
+		if source ~= 'ws' then return false, 'websocket required' end
+		return CompleteFiveMConfigurationMigration(body.data)
+	end,
 	EVENT_UNIT_UPDATE = function(body)
 		return handleUnitUpdate(body)
 	end,
@@ -346,6 +351,10 @@ local PushEventHandler = {
 ---@type { [string]: function[] }
 local CustomPushEventHandlers = {}
 local warnedLegacyHttpPushEvent = false
+local WebsocketAuthenticatedEvents = {
+	EVENT_FIVEM_CONFIGURATION = true,
+	EVENT_FIVEM_CONFIGURATION_MIGRATION = true
+}
 
 RegisterNetEvent('SonoranCAD::RegisterPushEvent', function(eventName, eventHandler)
 	if not eventName or not eventHandler then return end
@@ -368,14 +377,6 @@ local function handlePushEventPayload(body, rawData, res, source)
 		return false, 'bad request'
 	end
 
-	if not body.key or type(body.key) ~= 'string' or type(Config.apiKey) ~= 'string' or body.key:upper() ~= Config.apiKey:upper() then
-		if res then
-			res.send('error')
-		end
-		debugLog(('Rejected %s push event due to invalid key.'):format(source))
-		return false, 'invalid key'
-	end
-
 	local eventType = body.type and body.type:upper() or nil
 	if eventType == nil then
 		if res then
@@ -387,13 +388,22 @@ local function handlePushEventPayload(body, rawData, res, source)
 		return false, 'missing type'
 	end
 
+	local authenticatedByWebsocket = source == 'ws' and WebsocketAuthenticatedEvents[eventType] == true
+	if not authenticatedByWebsocket and (not body.key or type(body.key) ~= 'string' or type(Config.apiKey) ~= 'string' or body.key:upper() ~= Config.apiKey:upper()) then
+		if res then
+			res.send('error')
+		end
+		debugLog(('Rejected %s push event due to invalid key.'):format(source))
+		return false, 'invalid key'
+	end
+
 	local encodedBody = rawData
 	if encodedBody == nil then
 		encodedBody = json.encode(body)
 	end
 
 	debugLog(('EVENT[%s]: %s - %s'):format(source, eventType, encodedBody))
-	if Config.enablePushEventForwarding then
+	if Config.enablePushEventForwarding and not WebsocketAuthenticatedEvents[eventType] then
 		PerformHttpRequest(Config.pushEventForwardUrl, function(statusCode, forwardRes, headers)
 			debugLog('Forward Response: ' .. tostring(forwardRes))
 		end, 'POST', encodedBody, {
@@ -404,7 +414,7 @@ local function handlePushEventPayload(body, rawData, res, source)
 	local success = true
 	local result = 'ok'
 	if PushEventHandler[eventType] then
-		local handlerOk, handlerSuccess, handlerResult = pcall(PushEventHandler[eventType], body)
+		local handlerOk, handlerSuccess, handlerResult = pcall(PushEventHandler[eventType], body, source)
 		if not handlerOk then
 			success = false
 			result = 'handler exception'

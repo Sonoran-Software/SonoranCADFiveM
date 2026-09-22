@@ -85,7 +85,7 @@ if pluginConfig.enabled and pluginConfig.requireLink ~= false then
                     "police"
                 }
             }
-            print("Forcereg: Whitelist configuration not found, using defaults. Please update your configuration.")
+            print("Forcereg: Whitelist configuration not found, using defaults. Update Force Registration in CAD > In-Game Integration > FiveM.")
         end
 
         if pluginConfig.whitelist.enabled then

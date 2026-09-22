@@ -4,7 +4,7 @@ At startup, CivReg reads the CAD database sync configuration. When character dat
 
 When both database sync and its character mapping are enabled, CivReg switches to database mode. It adds a nullable `sonoran_mugshot MEDIUMTEXT` column to the standard QBCore `players` table or ESX `users` table on every resource start. CivReg captures the portrait automatically after a QBCore or ESX character finishes spawning. Running `/civreg` only explains that no manual registration is needed, and selecting a character in CAD does not trigger a framework database write. It does not create an API character in this mode. Configure CAD DB Sync to map `sonoran_mugshot` to the character template's image field.
 
-When `frameworksupport` is enabled, supported QBCore or ESX identity values are pre-filled. If the CAD template uses custom Field Mapping IDs, update `autofillFieldIds` in `configuration/civreg_config.lua`.
+When `frameworksupport` is enabled, supported QBCore or ESX identity values are pre-filled. If the CAD template uses custom Field Mapping IDs, update CivReg's `autofillFieldIds` in **CAD > In-Game Integration > FiveM**.
 
 Image fields are clearly marked as selfie controls in API mode. Captured portraits are submitted directly to CAD as base64 PNG or JPEG data (including the `data:image/...;base64,` prefix). Database mode stores the same data URL in `sonoran_mugshot`. Each portrait is validated against `maxSelfieBytes`; the default decoded size limit is 1 MiB.
 

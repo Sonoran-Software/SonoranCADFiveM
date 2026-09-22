@@ -16,12 +16,7 @@ local function test(name, callback)
 end
 
 local function loadConfig()
-    local config
-    local env = setmetatable({
-        Config = { RegisterPluginConfig = function(_, value) config = value end }
-    }, { __index = _G })
-    assert(loadfile("sonorancad/configuration/civreg_config.dist.lua", "t", env))()
-    return config
+    return assert(loadfile(".codex/tests/fixtures/civreg_config.lua"))()
 end
 
 local function harness(options)

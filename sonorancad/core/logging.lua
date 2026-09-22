@@ -69,6 +69,8 @@ local ErrorCodes = {
     ['LOCAL_NETWORK_CONNECT_TIMEOUT'] = { code = "ERR-CORE-034", message = "The local server connection to SonoranCAD timed out. Check the server host, firewall, proxy, or upstream network connection." },
     ['CAD_RECORD_UNIQUE_CONFLICT'] = { code = "ERR-CORE-035", message = "The CAD record could not be saved because a unique field value is already used by another record." },
     ['APIKEY_CONVAR_UNINITIALIZED'] = { code = "ERR-CORE-036", message = "SonoranCAD was started without the required sonorancad.cfg setup." },
+    ['LOCAL_CONFIG_MIGRATION_REQUIRED'] = { code = "ERR-CORE-037", message = "Legacy local FiveM configuration was detected and must be migrated to the CAD game panel." },
+    ['LOCAL_CONFIG_MIGRATION_CLEANUP_FAILED'] = { code = "ERR-CORE-038", message = "SonoranCAD could not remove one or more migrated local configuration files." },
     ['SMARTSIGNS_PLAN_REQUIRED'] = { code = "ERR-SS-101", message = "Smart Signs authentication failed because the CAD community does not have access to the required Smart Signs feature or plan." },
     ['SMARTSIGNS_AUTH_FAILED'] = { code = "ERR-SS-102", message = "Smart Signs authentication failed. Check the SonoranCAD API key, community ID, and server ID configured for this resource." },
     ['SMARTSIGNS_HELPER_STARTED'] = { code = "ERR-SS-103", message = "The smartsigns_sonoran_helper resource is for Smart Signs internal update handling and should not be started directly." },

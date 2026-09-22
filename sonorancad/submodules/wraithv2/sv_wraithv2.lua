@@ -37,7 +37,7 @@ if pluginConfig.enabled then
 	end
 
 	if pluginConfig.notificationTimers == nil then
-		warnLog("UNHANDLED_WARNING", 'Notification timers are not set in the wraithv2 configuration. Using defaults. Please update your configuration using the wraithv2_config.dist.lua file located in the configuration folder.')
+		warnLog("UNHANDLED_WARNING", 'Notification timers are not set in the WraithV2 configuration. Using defaults. Update WraithV2 in CAD > In-Game Integration > FiveM.')
 		pluginConfig.notificationTimers = {
 			validReg = 20000,
 			warrant = 20000,

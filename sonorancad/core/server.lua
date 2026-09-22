@@ -614,13 +614,13 @@ checkCADSubscriptionType = function()
 	local version = exports['sonorancad']:getCadVersion()
 	if version ~= 4 and version == 3 then
 		errorLog("UNHANDLED_SERVER_ERROR", 'The live map blip feature require the Pro plan for the CAD. It will be disabled for this run.'
-						                           .. ' We recommend either upgrading your plan or disabling this feature in the config file.')
+							                           .. ' We recommend either upgrading your plan or disabling this feature in CAD > In-Game Integration > FiveM.')
 		Config.integration.SonoranCAD_integration.addLiveMapBlips = false
 		Config.modified = true
 		TriggerClientEvent(GetCurrentResourceName() .. '::ModifiedConfig', -1, Config)
 	elseif version ~= 4 and version ~= 3 and version ~= 5 and version ~= 6 then
 		errorLog("UNHANDLED_SERVER_ERROR", 'SonoranCAD integration with this script requires at least a Plus plan for the CAD. It will be'
-						                           .. ' disabled for this run. We recommend either upgrading your plan or disabling this' .. ' feature in the config file.')
+							                           .. ' disabled for this run. We recommend either upgrading your plan or disabling this' .. ' feature in CAD > In-Game Integration > FiveM.')
 		Config.integration.SonoranCAD_integration.use = false
 		Config.modified = true
 		TriggerClientEvent(GetCurrentResourceName() .. '::ModifiedConfig', -1, Config)

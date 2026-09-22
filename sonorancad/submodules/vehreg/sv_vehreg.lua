@@ -53,10 +53,10 @@ CreateThread(function()
 						statusUid = "status",
 						expiresUid = "_imtoih149",
 					}
-					warnLog("UNHANDLED_WARNING", 'Record data not found in configuration. Using default values. Please update your configuration using the vehreg_config.dist.lua file located in the configuration folder')
+					warnLog("UNHANDLED_WARNING", 'Record data not found in configuration. Using default values. Update Vehicle Registration in CAD > In-Game Integration > FiveM.')
 				end
 				if notSetConfig then
-					warnLog("UNHANDLED_WARNING", 'Record data not found in configuration. Using default values. Please update your configuration using the vehreg_config.dist.lua file located in the configuration folder')
+					warnLog("UNHANDLED_WARNING", 'Record data not found in configuration. Using default values. Update Vehicle Registration in CAD > In-Game Integration > FiveM.')
 				end
 				local replaceValues = {
 					[pluginConfig.recordData.colorUid] = primary,

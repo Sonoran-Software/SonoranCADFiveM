@@ -1,15 +1,38 @@
-# CAD-managed configuration (feature draft)
+# CAD-managed FiveM configuration
 
-This branch requires the matching `feat/5M-config` backend, database migration, frontend, and translations. Configure each server in **CAD → In-Game Integration → FiveM**, then Save before starting this resource. An unsaved server waits and retries every 60 seconds.
+This branch requires the matching CAD backend, database migration, game-panel frontend, and translations. Configure each server under **CAD > In-Game Integration > FiveM**. The resource fetches one resolved configuration document at startup and does not execute downloaded Lua.
 
-Local `configuration/config.json` now contains only `communityID`, `apiKey`, `serverId`, and `mode`. Keep `updateIgnore.json` as well. Feature configuration comes from the authenticated V2 endpoint; it is never executed as remote Lua. There is no offline cache.
+`configuration/config.json` retains only the connection bootstrap values: `communityID`, `apiKey`, `serverId`, and `mode`. `configuration/updateIgnore.json` also remains local. All core and submodule feature settings come from CAD.
 
-To preserve existing customized settings, keep the old local files temporarily, run `sonoran_config_export` in the **server console**, and import `filestore/configuration-import.json` in CAD. Review and Save. Unsupported customized Lua functions stop export and require migration into a reviewed named hook. Existing files are not deleted by the migration command, and credentials are excluded from its output.
+## Existing installations
 
-**Apply and restart** sends a server-specific push event. The resource fetches and verifies the requested saved revision before restarting itself after five seconds. Online players may lose active CAD/camera interactions. A disconnected push connection must be retried; saved settings load at the next startup regardless.
+When legacy core keys, `*_config.lua`, `*_config.dist.lua`, or `livemap_vehicle_models.json` are present, the resource:
 
-For branch testing, disable automatic updates in CAD so a future master release cannot replace this draft. No production version promotion is included. Test an actual FXServer with the matching test backend before release.
+1. Loads the CAD document and overlays every detected local value so existing behavior is preserved.
+2. Sends `POST /v2/fivem/servers/{serverId}/configuration/migrate` with `{schemaVersion: 1, values: {core, plugins}}`. The endpoint stores the imported values and marks the server as awaiting migration review.
+3. Logs `ERR-CORE-037` every 60 seconds until migration is completed in CAD.
+4. Continues serving the local overrides to server and client scripts while the files remain.
 
-The full schema/storage/API design and raw SQL are in the backend repository's `FIVEM_CONFIGURATION.md` and `SauceCAD_2_Backend/migrations/2026-09-21_fivem_configurations.sql`.
+After an administrator verifies the imported settings, the CAD migration action sends this authenticated websocket-only event:
 
-Offline checks: `python -m unittest discover -s tests -p test_remote_configuration.py` (requires Python and `lupa`).
+```json
+{
+  "type": "EVENT_FIVEM_CONFIGURATION_MIGRATION",
+  "data": {
+    "serverId": 1,
+    "revision": 4,
+    "schemaVersion": 1,
+    "templateRevision": "CATALOG_SHA256"
+  }
+}
+```
+
+Before deleting anything, the resource fetches the configuration again and requires the exact reviewed revision and catalog fingerprint. It then rewrites `config.json` to bootstrap values, removes legacy configuration files, preserves `updateIgnore.json`, and restarts after five seconds. Failed verification or filesystem operations cancel cleanup.
+
+`EVENT_FIVEM_CONFIGURATION` remains the non-migration **Apply and restart** event. It follows the same server/schema/revision/fingerprint verification and restart delay but does not delete files.
+
+There is no offline cloud cache. A new installation with no saved CAD configuration waits and retries every 60 seconds. An existing installation with local files keeps running from local overrides while upload/fetch operations retry.
+
+## Validation
+
+Offline contract tests cover startup loading, local precedence, migration upload, authenticated push handling, revision verification, cleanup gating, and hook/native-value reconstruction. Live release validation still requires an FXServer connected to the matching backend and CAD panel.
