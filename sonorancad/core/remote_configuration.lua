@@ -168,7 +168,7 @@ end
 local function startMigrationWarningLoop()
     CreateThread(function()
         while Config.localConfigurationDetected do
-            logError("LOCAL_CONFIG_MIGRATION_REQUIRED", "Local configuration files were detected. Configuration is now managed in Sonoran CAD. Open In-Game Integration > FiveM to verify and finish migration: https://sonoran.link/fivem-config")
+            logError("LOCAL_CONFIG_MIGRATION_REQUIRED", "Local configuration files were detected. Configuration is now managed in Sonoran CAD. Open In-Game Integration > FiveM to verify and finish migration: https://docs.sonoransoftware.com/cad/api-integration/websocket-api/fivem-configuration")
             Wait(60000)
         end
     end)
