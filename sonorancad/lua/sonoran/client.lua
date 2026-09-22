@@ -948,6 +948,16 @@ local function create_client(config, adapter)
   instance.getTurnCredentialsV2 = function(self, query)
     return self:_request("GET", "v2/general/turn", { query = query or {} })
   end
+  instance.getFiveMConfigurationV2 = function(self, server_id)
+    local id = self:_resolve_server_id(server_id)
+    return self:_request("GET", "v2/fivem/servers/" .. tostring(id) .. "/configuration")
+  end
+  instance.acknowledgeFiveMConfigurationV2 = function(self, server_id, revision)
+    local id = self:_resolve_server_id(server_id)
+    self:_assert_positive_integer(revision, "revision")
+    return self:_request("POST", "v2/fivem/servers/" .. tostring(id) .. "/configuration/acknowledge/" .. tostring(revision))
+  end
+
   local cad_get_servers_v2 = function(self)
     return self:_request("GET", "v2/general/servers")
   end
