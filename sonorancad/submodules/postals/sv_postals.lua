@@ -16,6 +16,20 @@ CreateThread(function()
 			local state = GetResourceState(pluginConfig.nearestPostalResourceName)
 			local shouldStop = false
 			if pluginConfig.mode and pluginConfig.mode == 'resource' then
+				local resourceName = pluginConfig.nearestPostalResourceName
+				local resourcePath = GetResourcePath(resourceName)
+				local function normalizePath(path)
+					return path and path:gsub('\\', '/'):gsub('/+', '/'):gsub('/$', '')
+				end
+				local cadPath = normalizePath(GetResourcePath(GetCurrentResourceName()))
+				local parentPath = cadPath and cadPath:match('^(.*)/[^/]+$')
+				local expectedPath = parentPath and (parentPath .. '/nearest-postal')
+				-- FiveM may resolve duplicate resource names to just one folder.
+				-- Report the selected copy; do not stop a compatible external installation.
+				if resourceName == 'nearest-postal' and resourcePath and expectedPath
+					and normalizePath(resourcePath) ~= expectedPath then
+					warnLog('POSTAL_RESOURCE_EXTERNAL_PATH', ('FiveM resolved nearest-postal to "%s"; the bundled location is "%s". Check for duplicate nearest-postal folders and keep the intended copy. A separate installation may be intentional; compatible resources will continue to work.'):format(resourcePath, expectedPath))
+				end
 				if state ~= 'started' then
 					if state == 'missing' then
 						logError('POSTAL_RESOURCE_MISSING', getErrorText('POSTAL_RESOURCE_MISSING'):format(pluginConfig.nearestPostalResourceName))
@@ -27,15 +41,18 @@ CreateThread(function()
 						shouldStop = true
 					end
 				else
-					postalFile = LoadResourceFile(pluginConfig.nearestPostalResourceName, GetResourceMetadata(pluginConfig.nearestPostalResourceName, 'postal_file'))
+					local postalFileName = GetResourceMetadata(resourceName, 'postal_file', 0)
+					if type(postalFileName) == 'string' and postalFileName:match('%S') then
+						postalFile = LoadResourceFile(resourceName, postalFileName)
+					end
 					if postalFile == nil then
-						logError('POSTAL_CUSTOM_RESOURCE_FILE_ERROR', getErrorText('POSTAL_CUSTOM_RESOURCE_FILE_ERROR'):format(pluginConfig.nearestPostalResourceName, pluginConfig.nearestPostalResourceName))
+						logError('POSTAL_CUSTOM_RESOURCE_FILE_ERROR', ('Cannot load postal data from resource "%s" at "%s" (postal_file=%s). Check this copy\'s fxmanifest.lua and postal JSON file. A duplicate or incompatible nearest-postal folder may be overriding the bundled copy; keep one intended copy and fully restart FXServer.'):format(resourceName, resourcePath or 'unknown', tostring(postalFileName)))
 					end
 				end
 			elseif pluginConfig.mode and pluginConfig.mode == 'file' then
 				postalFile = LoadResourceFile(GetCurrentResourceName(), ('submodules/postals/%s'):format(pluginConfig.customPostalCodesFile))
 				if postalFile == nil then
-					logError('CUSTOM_POSTALS_FILE_NOT_FOUND', geterrorText('CUSTOM_POSTALS_FILE_NOT_FOUND'):format(pluginConfig.customPostalCodesFile))
+					logError('CUSTOM_POSTALS_FILE_NOT_FOUND', getErrorText('CUSTOM_POSTALS_FILE_NOT_FOUND'):format(pluginConfig.customPostalCodesFile))
 					shouldStop = true
 				end
 			end
