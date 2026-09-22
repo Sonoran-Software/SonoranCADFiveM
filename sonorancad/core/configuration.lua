@@ -73,250 +73,17 @@ exports('GetPluginConfig', function(pluginName)
 end)
 
 Config.GetPluginConfig = function(pluginName)
-    local correctConfig = nil
-    if Config.plugins[pluginName] ~= nil then
-        if Config.critError then
-            Config.plugins[pluginName].enabled = false
-            Config.plugins[pluginName].disableReason = 'startup aborted'
-        elseif Config.plugins[pluginName].enabled == nil then
-            Config.plugins[pluginName].enabled = true
-        end
-        return Config.plugins[pluginName]
-    else
-        if pluginName == 'yourpluginname' then
-            return {enabled = false, disableReason = 'Template plugin'}
-        end
-        if pluginName == 'apicheck' or pluginName == 'livemap' or pluginName ==
-            'smartsigns' then
-            return {enabled = false, disableReason = 'deprecated plugin'}
-        end
-        correctConfig = LoadResourceFile(GetCurrentResourceName(),
-                                         'configuration/' .. pluginName ..
-                                             '_config.lua')
-        if not correctConfig then
-            infoLog(
-                ('Submodule %s only has the default configurations file (%s_config.dist.lua)... Attempting to rename config to: %s_config.lua'):format(
-                    pluginName, pluginName, pluginName))
-            if not CopyFile(GetResourcePath(GetCurrentResourceName()) ..
-                                '/configuration/' .. pluginName ..
-                                '_config.dist.lua',
-                            GetResourcePath(GetCurrentResourceName()) ..
-                                '/configuration/' .. pluginName .. '_config.lua') then
-                warnLog("UNHANDLED_WARNING", ('Failed to rename %s_config.dist.lua to %s_config.lua'):format(
-                        pluginName, pluginName))
-                warnLog("UNHANDLED_WARNING", ('Using default configurations for %s. Please rename %s_config.dist.lua to %s_config.lua to avoid seeing this message'):format(
-                        pluginName, pluginName, pluginName))
-                correctConfig = LoadResourceFile(GetCurrentResourceName(),
-                                                 'configuration/' .. pluginName ..
-                                                     '_config.dist.lua')
-            else
-                correctConfig = LoadResourceFile(GetCurrentResourceName(),
-                                                 'configuration/' .. pluginName ..
-                                                     '_config.lua')
-            end
-        end
-        if not correctConfig then
-            warnLog("UNHANDLED_WARNING", ('Submodule %s is missing critical configuration. Please check our submodule install guide at https://info.sonorancad.com/integration-plugins/in-game-integration/fivem-installation/submodule-configuration#activating-a-submodule for steps to properly install.'):format(
-                    pluginName))
-            Config.plugins[pluginName] = {
-                enabled = false,
-                disableReason = 'Missing configuration file'
-            }
-            return {
-                enabled = false,
-                disableReason = 'Missing configuration file'
-            }
-        else
-            local matchedConfig = correctConfig:match("local config = {.-\n}")
-            if not matchedConfig then
-                errorLog("UNHANDLED_SERVER_ERROR", "No config table found in the string.")
-                Config.plugins[pluginName] = {
-                    enabled = false,
-                    disableReason = 'Invalid config format'
-                }
-                return {
-                    enabled = false,
-                    disableReason = 'Invalid config format'
-                }
-            end
-            local configChunk = matchedConfig .. "\nreturn config"
-            local tempEnv = {}
-            setmetatable(tempEnv, { __index = _G })  -- Allow access to global functions if needed
-            local loadedPlugin, pluginError = load(configChunk, 'config', 't', tempEnv)
-            if loadedPlugin then
-                -- Execute and capture the returned config table
-                local success, res = pcall(loadedPlugin)
-                if not success then
-                    errorLog("UNHANDLED_SERVER_ERROR", ('Submodule %s failed to load due to error: %s'):format(pluginName, res))
-                    Config.plugins[pluginName] = {
-                        enabled = false,
-                        disableReason = 'Failed to load'
-                    }
-                    return {enabled = false, disableReason = 'Failed to load'}
-                end
-                if res and type(res) == "table" then
-                    -- Assign the extracted config to Config.plugins[pluginName]
-                    Config.plugins[pluginName] = res
-                else
-                    -- Handle case where config is not available
-                    errorLog("UNHANDLED_SERVER_ERROR", ('Plugin %s did not define a valid config table.'):format(
-                            pluginName))
-                    Config.plugins[pluginName] = {
-                        enabled = false,
-                        disableReason = 'Invalid or missing config'
-                    }
-                    return {
-                        enabled = false,
-                        disableReason = 'Invalid or missing config'
-                    }
-                end
-                if Config.critError then
-                    Config.plugins[pluginName].enabled = false
-                    Config.plugins[pluginName].disableReason = 'startup aborted'
-                elseif Config.plugins[pluginName].enabled == nil then
-                    Config.plugins[pluginName].enabled = true
-                elseif Config.plugins[pluginName].enabled == false then
-                    Config.plugins[pluginName].disableReason = 'Disabled'
-                end
-            else
-                errorLog("UNHANDLED_SERVER_ERROR", ('Plugin %s failed to load due to error: %s'):format(
-                             pluginName, pluginError))
-                Config.plugins[pluginName] = {
-                    enabled = false,
-                    disableReason = 'Failed to load'
-                }
-                return {enabled = false, disableReason = 'Failed to load'}
-            end
-            return Config.plugins[pluginName]
-        end
-        Config.plugins[pluginName] = {
-            enabled = false,
-            disableReason = 'disabled'
-        }
-        return {enabled = false, disableReason = 'disabled'}
-    end
+    while not Config.remoteReady and not Config.critError do Wait(50) end
+    if Config.critError then return {enabled = false, disableReason = 'Startup aborted'} end
+    return Config.plugins[pluginName] or {enabled = false, disableReason = 'Unknown module'}
 end
 
 Config.LoadPlugin = function(pluginName, cb)
-    local correctConfig = nil
-    while Config.apiVersion == -1 do Wait(1) end
-    if Config.plugins[pluginName] ~= nil then
-        if Config.critError then
-            Config.plugins[pluginName].enabled = false
-            Config.plugins[pluginName].disableReason = 'startup aborted'
-        elseif Config.plugins[pluginName].enabled == nil then
-            Config.plugins[pluginName].enabled = true
-        end
-        return cb(Config.plugins[pluginName])
-    else
-        if pluginName == 'yourpluginname' then
-            return cb({enabled = false, disableReason = 'Template plugin'})
-        end
-        correctConfig = LoadResourceFile(GetCurrentResourceName(),
-                                         'configuration/' .. pluginName ..
-                                             '_config.lua')
-        if not correctConfig then
-            infoLog(
-                ('Plugin %s only has the default configurations file (%s_config.dist.lua)... Attempting to rename config to: %s_config.lua'):format(
-                    pluginName, pluginName, pluginName))
-            if not CopyFile(GetResourcePath(GetCurrentResourceName()) ..
-                                '/configuration/' .. pluginName ..
-                                '_config.dist.lua',
-                            GetResourcePath(GetCurrentResourceName()) ..
-                                '/configuration/' .. pluginName .. '_config.lua') then
-                warnLog("UNHANDLED_WARNING", ('Failed to rename %s_config.dist.lua to %s_config.lua'):format(
-                        pluginName, pluginName))
-                warnLog("UNHANDLED_WARNING", ('Using default configurations for %s. Please rename %s_config.dist.lua to %s_config.lua to avoid seeing this message'):format(
-                        pluginName, pluginName, pluginName))
-                correctConfig = LoadResourceFile(GetCurrentResourceName(),
-                                                 'configuration/' .. pluginName ..
-                                                     '_config.dist.lua')
-            else
-                correctConfig = LoadResourceFile(GetCurrentResourceName(),
-                                                 'configuration/' .. pluginName ..
-                                                     '_config.lua')
-            end
-        end
-        if not correctConfig then
-            warnLog("UNHANDLED_WARNING", ('Plugin %s is missing critical configuration. Please check our plugin install guide at https://info.sonorancad.com/integration-submodules/integration-submodules/plugin-installation for steps to properly install.'):format(
-                    pluginName))
-            Config.plugins[pluginName] = {
-                enabled = false,
-                disableReason = 'Missing configuration file'
-            }
-            return cb({
-                enabled = false,
-                disableReason = 'Missing configuration file'
-            })
-        else
-            local matchedConfig = correctConfig:match("local config = {.-\n}")
-            if not matchedConfig then
-                errorLog("UNHANDLED_SERVER_ERROR", "No config table found in the string.")
-                Config.plugins[pluginName] = {
-                    enabled = false,
-                    disableReason = 'Invalid config format'
-                }
-                return cb({
-                    enabled = false,
-                    disableReason = 'Invalid config format'
-                })
-            end
-            local configChunk = matchedConfig .. "\nreturn config"
-            local tempEnv = {}
-            setmetatable(tempEnv, { __index = _G })  -- Allow access to global functions if needed
-            local loadedPlugin, pluginError = load(configChunk, 'config', 't', tempEnv)
-            if loadedPlugin then
-                -- Execute and capture the returned config table
-                local success, res = pcall(loadedPlugin)
-                if not success then
-                    errorLog("UNHANDLED_SERVER_ERROR", ('Plugin %s failed to load due to error: %s'):format(pluginName, res))
-                    Config.plugins[pluginName] = {
-                        enabled = false,
-                        disableReason = 'Failed to load'
-                    }
-                    return cb({enabled = false, disableReason = 'Failed to load'})
-                end
-                if res and type(res) == "table" then
-                    -- Assign the extracted config to Config.plugins[pluginName]
-                    Config.plugins[pluginName] = res
-                else
-                    -- Handle case where config is not available
-                    errorLog("UNHANDLED_SERVER_ERROR", ('Plugin %s did not define a valid config table.'):format(
-                            pluginName))
-                    Config.plugins[pluginName] = {
-                        enabled = false,
-                        disableReason = 'Invalid or missing config'
-                    }
-                    return cb({
-                        enabled = false,
-                        disableReason = 'Invalid or missing config'
-                    })
-                end
-                if Config.critError then
-                    Config.plugins[pluginName].enabled = false
-                    Config.plugins[pluginName].disableReason = 'startup aborted'
-                elseif Config.plugins[pluginName].enabled == nil then
-                    Config.plugins[pluginName].enabled = true
-                elseif Config.plugins[pluginName].enabled == false then
-                    Config.plugins[pluginName].disableReason = 'Disabled'
-                end
-            else
-                errorLog("UNHANDLED_SERVER_ERROR", ('Plugin %s failed to load due to error: %s'):format(
-                             pluginName, pluginError))
-                Config.plugins[pluginName] = {
-                    enabled = false,
-                    disableReason = 'Failed to load'
-                }
-                return cb({enabled = false, disableReason = 'Failed to load'})
-            end
-            return cb(Config.plugins[pluginName])
-        end
-        Config.plugins[pluginName] = {
-            enabled = false,
-            disableReason = 'disabled'
-        }
-        return cb({enabled = false, disableReason = 'disabled'})
+    while not Config.remoteReady or Config.apiVersion == -1 do
+        if Config.critError then return cb({enabled = false, disableReason = 'Startup aborted'}) end
+        Wait(50)
     end
+    return cb(Config.GetPluginConfig(pluginName))
 end
 
 local updateIgnorePath = GetResourcePath(GetCurrentResourceName()) .. '/configuration/updateIgnore.json'
@@ -367,49 +134,22 @@ if parsedConfig == nil then
     Config.apiSendEnabled = false
     return
 end
-for k, v in pairs(parsedConfig) do
-    local cvar = GetConvar('sonoran_' .. k, 'NONE')
-    local cvar_setter = GetConvar('sonoran_' .. k .. '_setter', 'NONE')
-    local val = nil
-    if k == 'apiKey' then
-        if cvar == 'NONE' then
-            logError('APIKEY_CONVAR_UNINITIALIZED', '`server.cfg` must use `exec @sonorancad/sonorancad.cfg`, not `ensure sonorancad`. Remove every `ensure sonorancad` line, add the exec line, and fully restart FXServer. Direct ensure may break SonoranCAD updates and third-party integrations.')
-        elseif cvar == 'protection_initialized' then
-            SetConvar('sonoran_' .. k, tostring(v))
-        end
-    end
-    if cvar ~= 'NONE' and cvar ~= 'statusLabels' and k ~= 'apiKey' then
-        if cvar_setter == 'NONE' or cvar_setter == 'server' then
-            infoLog(
-                ('Configuration: Overriding config option %s with convar. New value: %s'):format(
-                    k, cvar))
-            SetConvar('sonoran_' .. k .. '_setter', 'server')
-            cvar_setter = 'server'
-        else
-            infoLog(
-                ('Configuration: Reusing config option %s from server boot. New value: %s, reboot the server if you made a change to this value...'):format(
-                    k, cvar))
-            SetConvar('sonoran_' .. k .. '_setter', 'framework')
-            cvar_setter = 'framework'
-        end
-        if cvar == 'true' then
-            cvar = true
-        elseif cvar == 'false' then
-            cvar = false
-        end
-        Config[k] = cvar
-        val = cvar
-    else
-        Config[k] = v
-        val = v
-    end
-    if k ~= 'apiKey' then
-        SetConvar('sonoran_' .. k, tostring(val))
-        if cvar_setter == 'NONE' then
-            SetConvar('sonoran_' .. k .. '_setter', 'framework')
-        end
-    end
+-- Only connection/bootstrap values remain local. Existing feature config keys are ignored.
+for _, k in ipairs({'communityID', 'apiKey', 'serverId', 'mode'}) do
+    Config[k] = parsedConfig[k]
 end
+Config.serverId = tonumber(Config.serverId) or 1
+Config.mode = Config.mode or 'production'
+if type(Config.apiKey) ~= 'string' or Config.apiKey == '' or type(Config.communityID) ~= 'string' or Config.communityID == '' then
+    Config.critError = true
+    errorLog('CONFIG_ERROR', 'A community ID and API key are required in configuration/config.json.')
+    return
+end
+SetConvar('sonoran_apiKey', Config.apiKey)
+SetConvar('sonoran_communityID', Config.communityID)
+SetConvar('sonoran_serverId', tostring(Config.serverId))
+SetConvar('sonoran_mode', Config.mode)
+LoadRemoteFiveMConfiguration()
 
 local validNotificationSystems = {
     auto = true,
@@ -432,7 +172,7 @@ local function normalizeNotificationSystem(value)
     return normalized
 end
 
-if parsedConfig.notificationSystem == nil then
+if false then
     warnLog("UNHANDLED_WARNING", "notificationSystem is missing from config.json. Defaulting to auto. Please update your config.json from config.CHANGEME.json.")
 end
 
@@ -556,7 +296,9 @@ if Config.updateBranch == nil then Config.updateBranch = 'master' end
 
 RegisterNetEvent('SonoranCAD::core:sendClientConfig')
 AddEventHandler('SonoranCAD::core:sendClientConfig', function()
+    if not Config.remoteReady or Config.apiVersion == -1 then return end
     local config = {
+        plugins = Config.remotePluginValues,
         communityID = Config.communityID,
         postTime = Config.postTime,
         serverId = tonumber(Config.serverId),

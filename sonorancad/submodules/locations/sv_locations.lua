@@ -18,22 +18,8 @@ CreateThread(function() Config.LoadPlugin("locations", function(pluginConfig)
         local CoordinateThreshold = 2.0
         local HeadingThreshold = 10.0
         local vehicleModelConfig = {}
-        local vehicleModelConfigPath = "configuration/livemap_vehicle_models.json"
-
         local function loadVehicleModelConfig()
-            local raw = LoadResourceFile(GetCurrentResourceName(), vehicleModelConfigPath)
-            if not raw or raw == "" then
-                warnLog("UNHANDLED_WARNING", ("Livemap vehicle model config missing: %s"):format(vehicleModelConfigPath))
-                vehicleModelConfig = {}
-                return
-            end
-            local ok, data = pcall(json.decode, raw)
-            if not ok or type(data) ~= "table" then
-                warnLog("UNHANDLED_WARNING", ("Livemap vehicle model config invalid: %s"):format(vehicleModelConfigPath))
-                vehicleModelConfig = {}
-                return
-            end
-            vehicleModelConfig = data
+            vehicleModelConfig = pluginConfig.vehicleModels or {}
         end
 
         local function cloneTable(src)

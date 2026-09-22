@@ -16,76 +16,9 @@ local function LoadVersionFile()
     end
 end
 
-function CheckForPluginUpdate(name)
-    local check_url = 'https://raw.githubusercontent.com/Sonoran-Software/SonoranCADFiveM/refs/heads/master/sonorancad/version.json'
-    local plugin = Config.plugins[name]
-    if plugin == nil then
-        errorLog("UNHANDLED_SERVER_ERROR", ("Submodule %s not found."):format(name))
-        return
-    end
-    PerformHttpRequestS(check_url, function(code, data, headers)
-        if code == 200 then
-            local remote = json.decode(data)
-            if remote == nil then
-                if plugin.enabled then
-                    warnLog("UNHANDLED_WARNING", ("Failed to get a valid response for %s. Skipping."):format(name))
-                end
-                debugLog(("Raw output for %s request to %s: %s"):format(name, check_url, data))
-            elseif remote.submoduleConfigs[name] == nil then
-                if plugin.enabled then
-                    warnLog("UNHANDLED_WARNING", ("Failed to check submodule updates for %s: submodule was not found in the updater manifest... if this is a custom submodule you can ignore this warning"):format(name))
-                else
-                    debugLog(("Disabled submodule was not found in remote updater manifest: %s"):format(name))
-                end
-            elseif (remote.submoduleConfigs[name].version == nil) then
-                warnLog("UNHANDLED_WARNING", ("Submodule was found, but no version was found in remote updater manifest for plugin %s."):format(name))
-            else
-                local currentVersion = plugin.configVersion or plugin.pluginVersion or nil
-                if currentVersion == nil then
-                    errorLog("UNHANDLED_SERVER_ERROR", ("No current version was found in the config for submodule %s. This warning could be ignored for custom submodules."):format(name))
-                    return
-                end
-
-                local configCompare = compareVersions(remote.submoduleConfigs[name].version, currentVersion)
-                if configCompare.result and not Config.debugMode then
-                    if plugin.enabled then
-                        errorLog("PLUGIN_CONFIG_OUTDATED", getErrorText("PLUGIN_CONFIG_OUTDATED"):format(
-                            name,
-                            currentVersion,
-                            remote.submoduleConfigs[name].version,
-                            name
-                        ) .. " Guide: https://sonoran.link/config-update")
-                        Config.plugins[name].enabled = false
-                        Config.plugins[name].disableReason = ("outdated config file (local %s, required %s)"):format(
-                            currentVersion,
-                            remote.submoduleConfigs[name].version
-                        )
-                    end
-                else
-                    debugLog(("Submodule %s has the same configuration version."):format(name))
-                    local distConfig = LoadResourceFile(GetCurrentResourceName(), ("configuration/%s_config.dist.lua"):format(name))
-                    local normalConfig = LoadResourceFile(GetCurrentResourceName(), ("configuration/%s_config.lua"):format(name))
-                    if distConfig and normalConfig then
-                        local filePath = ("%s/configuration/config-backup"):format(GetResourcePath(GetCurrentResourceName()))
-                        exports['sonorancad']:CreateFolderIfNotExisting(filePath)
-                        local backupFile = io.open(("%s/configuration/config-backup/%s_config.lua"):format(GetResourcePath(GetCurrentResourceName()), name), "w")
-                        if backupFile == nil then
-                            errorLog("UNHANDLED_SERVER_ERROR", ("Unable to open config backup file for sub module %s."):format(name))
-                            return
-                        end
-
-                        backupFile:write(distConfig)
-                        backupFile:close()
-                        os.remove(("%s/configuration/%s_config.dist.lua"):format(GetResourcePath(GetCurrentResourceName()), name))
-                        debugLog(("Submodule %s configuration file is up to date. Backup saved."):format(name))
-                    end
-                end
-            end
-        elseif plugin.enabled then
-            warnLog("UNHANDLED_WARNING", ("Failed to check submodule config updates for %s: %s %s"):format(name, code, data))
-        end
-    end, "GET")
-end
+-- Module configuration versions are supplied by the backend catalog.
+-- Local configuration-file update/backup checks are no longer applicable.
+function CheckForPluginUpdate(name) end
 
 CreateThread(function()
     Wait(5000)
