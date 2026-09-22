@@ -66,6 +66,9 @@ local function handleUnitUpdate(body)
 end
 
 local PushEventHandler = {
+    EVENT_FIVEM_CONFIGURATION = function(body)
+        return ApplyRemoteFiveMConfiguration(body.data)
+    end,
 	EVENT_UNIT_UPDATE = function(body)
 		return handleUnitUpdate(body)
 	end,

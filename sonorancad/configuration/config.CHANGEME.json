@@ -1,24 +1,6 @@
 {
     "communityID": "",
     "apiKey": "",
-    "mode": "production",
-    "postTime": 5000,
     "serverId": 1,
-    "linkCommand": "link",
-    "linkPollIntervalMs": 10000,
-    "linkPopupTitleText": "Press the button to link your CAD account to this FiveM server",
-    "linkButtonText": "Link CAD",
-    "primaryIdentifier": "license",
-    "apiSendEnabled": true,
-    "debugMode": false,
-    "notificationSystem": "auto",
-    "updateBranch": "master",
-    "statusLabels": ["UNAVAILABLE", "BUSY", "AVAILABLE", "ENROUTE", "ON_SCENE"],
-    "allowAutoUpdate": true,
-    "autoUpdateUrl": "https://raw.githubusercontent.com/Sonoran-Software/SonoranCADFiveM/{branch}/sonorancad/version.json",
-    "allowUpdateWithPlayers": false,
-    "noUnitTimer": false,
-    "enablePushEventForwarding": false,
-    "pushEventForwardUrl": "https://host",
-    "disableOverride": false
+    "mode": "production"
 }

@@ -1,4 +1,4 @@
-Plugins = {}
+Plugins = Plugins or {}
 
 ApiUrls = {
     production = "https://api.sonorancad.com/",
@@ -62,7 +62,16 @@ CreateThread(function()
             warnLog("UNHANDLED_WARNING", ("Failed to clear screenshots folder on startup: %s"):format(tostring(clear_err)))
         end
 
+        while not Config.remoteReady do
+            if Config.critError then return end
+            Wait(100)
+        end
         local versionResponse = CadApiGetVersion()
+        while not versionResponse.success do
+            warnLog('UNHANDLED_WARNING', 'CAD version check unavailable; retrying in 60 seconds.')
+            Wait(60000)
+            versionResponse = CadApiGetVersion()
+        end
         if not versionResponse.success then
             CadApiLogFailure("GET_VERSION", versionResponse, {})
             logError("API_ERROR")
@@ -72,6 +81,7 @@ CreateThread(function()
 
         local result = tostring(versionResponse.data or "")
         Config.apiVersion = tonumber(string.sub(result, 1, 1)) or -1
+        AcknowledgeFiveMConfiguration()
         debugLog(("Set version %s from response %s"):format(Config.apiVersion, result))
         infoLog(("Loaded community ID %s with API URL: %s"):format(Config.communityID, Config.apiUrl))
 
