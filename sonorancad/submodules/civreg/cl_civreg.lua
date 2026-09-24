@@ -398,16 +398,25 @@ CreateThread(function()
             local components = {}
             local props = {}
             local appearanceRestored = false
+            local appearanceChangedDuringCapture = false
             local function restoreAppearance()
                 -- Do not reapply this snapshot after conversion; the player's outfit may change meanwhile.
                 if appearanceRestored then
-                    return true
+                    return not appearanceChangedDuringCapture
                 end
 
                 local restored = true
                 local identityStable = ped == PlayerPedId() and DoesEntityExist(ped) and
                     getPedAppearanceFingerprint(ped, true) == identityFingerprint
-                if ped == PlayerPedId() and DoesEntityExist(ped) then
+                if not identityStable then
+                    appearanceChangedDuringCapture = true
+                    appearanceRestored = true
+                    portraitDebug(("ped or appearance changed during capture; original ped %s, current ped %s; skipped stale gear restoration"):format(
+                        tostring(ped), tostring(PlayerPedId())))
+                    return false
+                end
+
+                if DoesEntityExist(ped) then
                     for _, component in ipairs(HIDDEN_PORTRAIT_COMPONENTS) do
                         local value = components[component]
                         if value and GetPedDrawableVariation(ped, component) == 0 and
@@ -449,11 +458,7 @@ CreateThread(function()
                 end
 
                 appearanceRestored = restored
-                if not identityStable then
-                    portraitDebug(("ped or appearance changed during capture; original ped %s, current ped %s"):format(
-                        tostring(ped), tostring(PlayerPedId())))
-                end
-                return restored and identityStable
+                return restored
             end
 
             local ok, result = pcall(function()
