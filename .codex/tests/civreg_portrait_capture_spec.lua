@@ -84,9 +84,23 @@ local function harness(options)
         h.props[prop] = { drawable = -1, texture = 0 }
     end
     env.SetPedPropIndex = function(_, prop, drawable, texture)
+        if options.propRestoreFailsOnce and prop == 0 and not h.propRestoreFailedOnce then
+            h.propRestoreFailedOnce = true
+            return
+        end
         h.props[prop] = { drawable = drawable, texture = texture }
     end
     env.GetPedFaceFeature = function() return 0 end
+    env.Citizen = {
+        PointerValueIntInitialized = function(value) return value end,
+        PointerValueFloatInitialized = function(value) return value end,
+        InvokeNative = function() return true, 0, 0, 0, 0, 0, 0, 0.0, 0.0, 0.0 end
+    }
+    env.GetPedHeadOverlayData = function() return true, 255, 0, 0, 0, 0.0 end
+    env.GetPedEyeColor = function() return 0 end
+    env.GetPedHairColor = function() return 0 end
+    env.GetPedHairHighlightColor = function() return 0 end
+    env.debugLog = function(message) h.lastDebug = message end
     env.GetBase64 = function(_, onHeadshotReady)
         h.duringCapture = {
             mask = h.components[1].drawable,
@@ -98,6 +112,12 @@ local function harness(options)
         }
         if options.captureError then
             error("fixture capture failure")
+        end
+        if options.appearanceChangeDuringHeadshot then
+            h.components[2] = { drawable = 15, texture = 1, palette = 0 }
+        end
+        if options.propChangeDuringHeadshot then
+            h.props[0] = { drawable = 23, texture = 9 }
         end
         equal(type(onHeadshotReady), "function", "capture must provide a headshot-ready callback")
         h.restoredBeforeConversion = onHeadshotReady()
@@ -186,6 +206,27 @@ test("gear is restored before base64 conversion without overwriting later outfit
     equal(h.components[1].drawable, 21, "later mask update must be preserved")
     equal(h.components[7].drawable, 22, "later accessory update must be preserved")
     equal(h.props[0].drawable, 23, "later hat update must be preserved")
+end)
+
+test("a prop native that does not apply is retried and read back", function()
+    local h = harness({ propRestoreFailsOnce = true })
+    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-4" })
+    equal(h.propRestoreFailedOnce, true)
+    equal(h.props[0].drawable, 8)
+    equal(h.latent.args[2], "data:image/png;base64,fixture")
+end)
+
+test("an outfit prop applied during capture is preserved", function()
+    local h = harness({ propChangeDuringHeadshot = true })
+    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-5" })
+    equal(h.props[0].drawable, 23)
+end)
+
+test("an appearance change during the headshot rejects the portrait", function()
+    local h = harness({ appearanceChangeDuringHeadshot = true })
+    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-6" })
+    equal(h.latent.args[2], nil)
+    equal(h.props[0].drawable, 8, "hidden gear must still be restored")
 end)
 
 test("headshot helper restores before conversion and cleans up restoration failures", function()

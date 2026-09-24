@@ -89,7 +89,26 @@ local function harness(framework, options)
         if options.qbAppearanceReadyAt and not h.qbAppearanceReady and
             h.now >= options.qbAppearanceReadyAt then
             h.qbAppearanceReady = true
-            h.events["qb-clothing:client:loadPlayerClothing"]()
+            local skinData = {}
+            if options.qbExpectedHat then
+                skinData.hat = { item = options.qbExpectedHat, texture = 2 }
+            end
+            if options.qbExpectedGlasses then
+                skinData.glass = { item = options.qbExpectedGlasses, texture = 1 }
+            end
+            h.events["qb-clothing:client:loadPlayerClothing"](skinData, 99)
+        end
+        if options.qbHatAppliedAt and h.now >= options.qbHatAppliedAt then
+            h.props[0] = options.qbExpectedHat
+            h.propTextures[0] = 2
+        end
+        if options.qbGlassesAppliedAt and h.now >= options.qbGlassesAppliedAt then
+            h.props[1] = options.qbExpectedGlasses
+            h.propTextures[1] = 1
+        end
+        if options.qbPreviewAt and not h.qbPreviewSent and h.now >= options.qbPreviewAt then
+            h.qbPreviewSent = true
+            h.events["qb-clothing:client:loadPlayerClothing"]({}, 123)
         end
         if options.appearanceChangeAt and not h.appearanceChanged and
             h.now >= options.appearanceChangeAt then
@@ -224,6 +243,9 @@ local function harness(framework, options)
     env.TriggerServerEvent = function(name)
         h.serverEvents[#h.serverEvents + 1] = name
     end
+    env.debugLog = function(message)
+        h.lastDebug = message
+    end
 
     assert(loadfile("sonorancad/submodules/civreg/cl_civreg.lua", "t", env))()
     return h
@@ -287,6 +309,38 @@ test("QBCore fails closed when qb-clothing never reports an applied appearance",
     equal(h.now, 30000)
 end)
 
+test("QBCore ignores a character-preview clothing signal", function()
+    local h = harness("qbcore", { qbClothing = true, qbPreviewAt = 1000 })
+    h.events["QBCore:Client:OnPlayerLoaded"]()
+    equal(#h.serverEvents, 0)
+    equal(h.now, 30000)
+end)
+
+test("QBCore waits for saved hat and glasses before capture", function()
+    local h = harness("qbcore", {
+        qbClothing = true,
+        qbAppearanceReadyAt = 1000,
+        qbExpectedHat = 8,
+        qbExpectedGlasses = 6,
+        qbHatAppliedAt = 2000,
+        qbGlassesAppliedAt = 2500
+    })
+    h.events["QBCore:Client:OnPlayerLoaded"]()
+    equal(#h.serverEvents, 1)
+    equal(h.now, 5500)
+end)
+
+test("QBCore rejects a portrait when the saved hat never appears", function()
+    local h = harness("qbcore", {
+        qbClothing = true,
+        qbAppearanceReadyAt = 1000,
+        qbExpectedHat = 8
+    })
+    h.events["QBCore:Client:OnPlayerLoaded"]()
+    equal(#h.serverEvents, 0)
+    equal(h.now, 30000)
+end)
+
 test("QBCore waits for an alternate appearance provider to replace the placeholder", function()
     local h = harness("qbcore", {
         illenium = true,
@@ -317,34 +371,34 @@ test("QBCore detects alternate-provider changes to tattoo identities only", func
     equal(h.now, 4000)
 end)
 
-test("QBCore ignores alternate-provider tattoo application order changes", function()
+test("QBCore does not treat tattoo application order as loaded skin", function()
     local h = harness("qbcore", {
         fivemAppearance = true,
         tattooOrderChangeAt = 1000
     })
     h.events["QBCore:Client:OnPlayerLoaded"]()
-    equal(#h.serverEvents, 1)
-    equal(h.now, 18000)
+    equal(#h.serverEvents, 0)
+    equal(h.now, 30000)
 end)
 
-test("QBCore tolerates an unavailable alternate-provider appearance export", function()
+test("QBCore does not capture a placeholder when provider appearance export fails", function()
     local h = harness("qbcore", {
         illenium = true,
         appearanceExportFails = true
     })
     h.events["QBCore:Client:OnPlayerLoaded"]()
-    equal(#h.serverEvents, 1)
-    equal(h.now, 18000)
+    equal(#h.serverEvents, 0)
+    equal(h.now, 30000)
 end)
 
-test("QBCore accepts a stable unchanged alternate-provider appearance after a grace period", function()
+test("QBCore fails closed when an alternate provider never applies an appearance", function()
     local h = harness("qbcore", { illenium = true })
     h.events["QBCore:Client:OnPlayerLoaded"]()
-    equal(#h.serverEvents, 1)
-    equal(h.now, 18000)
+    equal(#h.serverEvents, 0)
+    equal(h.now, 30000)
 end)
 
-test("QBCore restarts stability when alternate-provider appearance changes during the grace fallback", function()
+test("QBCore settles after a late alternate-provider appearance change", function()
     local h = harness("qbcore", {
         fivemAppearance = true,
         appearanceChangeAt = 16000

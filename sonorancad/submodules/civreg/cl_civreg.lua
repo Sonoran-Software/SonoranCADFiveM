@@ -39,9 +39,16 @@ CreateThread(function()
         local frameworkSelectionGeneration = 0
         local FRAMEWORK_SPAWN_TIMEOUT_MS = 30 * 1000
         local FRAMEWORK_CAPTURE_SETTLE_MS = 3 * 1000
-        local FRAMEWORK_UNCHANGED_APPEARANCE_GRACE_MS = 15 * 1000
         local FRAMEWORK_READY_POLL_MS = 250
         local qbAppearanceReadyAt = nil
+        local qbAppearanceReadyPed = nil
+        local qbExpectedProps = nil
+
+        local function portraitDebug(message)
+            if type(debugLog) == "function" then
+                debugLog("[civreg portrait] " .. message)
+            end
+        end
 
         local function getQBCorePlayerData()
             local loaded, playerData = pcall(function()
@@ -113,20 +120,24 @@ CreateThread(function()
             return nil
         end
 
-        local function getPedAppearanceFingerprint(ped)
+        local function getPedAppearanceFingerprint(ped, ignoreCoverings)
             local parts = { tostring(ped), tostring(GetEntityModel(ped)) }
             for component = 0, 11 do
-                parts[#parts + 1] = table.concat({
-                    GetPedDrawableVariation(ped, component),
-                    GetPedTextureVariation(ped, component),
-                    GetPedPaletteVariation(ped, component)
-                }, ":")
+                if not ignoreCoverings or (component ~= 1 and component ~= 7) then
+                    parts[#parts + 1] = table.concat({
+                        GetPedDrawableVariation(ped, component),
+                        GetPedTextureVariation(ped, component),
+                        GetPedPaletteVariation(ped, component)
+                    }, ":")
+                end
             end
             for prop = 0, 7 do
-                parts[#parts + 1] = table.concat({
-                    GetPedPropIndex(ped, prop),
-                    GetPedPropTextureIndex(ped, prop)
-                }, ":")
+                if not ignoreCoverings or prop > 2 then
+                    parts[#parts + 1] = table.concat({
+                        GetPedPropIndex(ped, prop),
+                        GetPedPropTextureIndex(ped, prop)
+                    }, ":")
+                end
             end
             for feature = 0, 19 do
                 parts[#parts + 1] = string.format("%.4f", GetPedFaceFeature(ped, feature))
@@ -170,6 +181,19 @@ CreateThread(function()
                 IsEntityVisible(ped) and HasCollisionLoadedAroundEntity(ped) and IsScreenFadedIn()
         end
 
+        local function qbSkinPropsApplied(ped)
+            if not qbExpectedProps then
+                return true
+            end
+            for prop, expected in pairs(qbExpectedProps) do
+                if GetPedPropIndex(ped, prop) ~= expected.drawable or
+                    GetPedPropTextureIndex(ped, prop) ~= expected.texture then
+                    return false
+                end
+            end
+            return true
+        end
+
         local function captureFrameworkCharacterWhenSpawned(options)
             options = options or {}
             frameworkSelectionGeneration = frameworkSelectionGeneration + 1
@@ -179,8 +203,9 @@ CreateThread(function()
                 local expectedCharacterId = options.characterId
                 local stableFingerprint = nil
                 local stableSince = nil
-                local unchangedAppearanceReadySince = nil
                 local appearanceChanged = false
+                local lastCharacterReady = false
+                local lastAppearanceReady = false
                 while generation == frameworkSelectionGeneration and GetGameTimer() < timeoutAt do
                     local ped = PlayerPedId()
                     local characterReady = true
@@ -195,23 +220,21 @@ CreateThread(function()
                     end
 
                     local appearanceReady = not options.qbAppearanceReadyRequired or
-                        (qbAppearanceReadyAt and qbAppearanceReadyAt >= options.startedAt)
+                        (qbAppearanceReadyAt and qbAppearanceReadyAt >= options.startedAt and
+                            qbAppearanceReadyPed == ped and qbSkinPropsApplied(ped))
+                    lastCharacterReady = characterReady
+                    lastAppearanceReady = appearanceReady
                     local ready = characterReady and appearanceReady and frameworkCharacterIsFullySpawned()
                     local fingerprint = ready and getPedAppearanceFingerprint(ped) or nil
                     if ready and options.initialFingerprint and not options.allowUnchangedAppearance and
                         not appearanceChanged then
                         if fingerprint ~= options.initialFingerprint then
                             appearanceChanged = true
-                            unchangedAppearanceReadySince = nil
                         else
-                            unchangedAppearanceReadySince = unchangedAppearanceReadySince or GetGameTimer()
-                            if GetGameTimer() - unchangedAppearanceReadySince <
-                                FRAMEWORK_UNCHANGED_APPEARANCE_GRACE_MS then
-                                ready = false
-                            end
+                            -- A timer cannot prove that an asynchronous appearance provider applied
+                            -- the selected skin. Capture only after a visible change on fresh login.
+                            ready = false
                         end
-                    elseif not ready then
-                        unchangedAppearanceReadySince = nil
                     end
 
                     if ready then
@@ -219,6 +242,8 @@ CreateThread(function()
                             stableFingerprint = fingerprint
                             stableSince = GetGameTimer()
                         elseif stableSince and GetGameTimer() - stableSince >= FRAMEWORK_CAPTURE_SETTLE_MS then
+                            portraitDebug(("appearance settled for character %s, ped %s, model %s; requesting capture"):format(
+                                tostring(expectedCharacterId), tostring(ped), tostring(GetEntityModel(ped))))
                             TriggerServerEvent("SonoranCAD::civreg::FrameworkCharacterSelected")
                             return
                         end
@@ -228,15 +253,43 @@ CreateThread(function()
                     end
                     Wait(FRAMEWORK_READY_POLL_MS)
                 end
+                if generation == frameworkSelectionGeneration then
+                    portraitDebug(("spawn readiness timed out for character %s (character=%s, clothing=%s, signaledPed=%s, propsApplied=%s, ped=%s, changed=%s)"):format(
+                        tostring(expectedCharacterId), tostring(lastCharacterReady), tostring(lastAppearanceReady),
+                        tostring(qbAppearanceReadyPed),
+                        tostring(DoesEntityExist(PlayerPedId()) and qbSkinPropsApplied(PlayerPedId())),
+                        tostring(PlayerPedId()), tostring(appearanceChanged)))
+                end
             end)
         end
 
         if useQBCore then
-            RegisterNetEvent("qb-clothing:client:loadPlayerClothing", function()
+            RegisterNetEvent("qb-clothing:client:loadPlayerClothing", function(skinData, targetPed)
+                if targetPed and targetPed ~= PlayerPedId() then
+                    portraitDebug(("ignored qb-clothing preview ped %s; player ped is %s"):format(
+                        tostring(targetPed), tostring(PlayerPedId())))
+                    return
+                end
+                if type(skinData) ~= "table" then
+                    portraitDebug("ignored qb-clothing signal without skin data")
+                    return
+                end
                 qbAppearanceReadyAt = GetGameTimer()
+                qbAppearanceReadyPed = PlayerPedId()
+                qbExpectedProps = {}
+                for prop, key in pairs({ [0] = "hat", [1] = "glass", [2] = "ear" }) do
+                    local value = skinData[key]
+                    if type(value) == "table" and type(value.item) == "number" and value.item > 0 then
+                        qbExpectedProps[prop] = { drawable = value.item, texture = value.texture or 0 }
+                    end
+                end
+                portraitDebug(("qb-clothing signaled player ped %s"):format(tostring(qbAppearanceReadyPed)))
             end)
             AddEventHandler("qb-clothing:client:onMenuClose", function()
                 qbAppearanceReadyAt = GetGameTimer()
+                qbAppearanceReadyPed = PlayerPedId()
+                qbExpectedProps = nil
+                portraitDebug(("qb-clothing menu closed on player ped %s"):format(tostring(qbAppearanceReadyPed)))
             end)
 
             RegisterNetEvent("QBCore:Client:OnPlayerLoaded", function()
@@ -246,6 +299,12 @@ CreateThread(function()
                 local qbClothingStarted = GetResourceState("qb-clothing") == "started"
                 local alternateAppearanceStarted = GetResourceState("illenium-appearance") == "started" or
                     GetResourceState("fivem-appearance") == "started"
+                qbAppearanceReadyAt = nil
+                qbAppearanceReadyPed = nil
+                qbExpectedProps = nil
+                portraitDebug(("QB player loaded: character %s, ped %s, model %s, qb-clothing=%s, alternate=%s"):format(
+                    tostring(type(playerData) == "table" and playerData.citizenid), tostring(ped),
+                    tostring(GetEntityModel(ped)), tostring(qbClothingStarted), tostring(alternateAppearanceStarted)))
                 captureFrameworkCharacterWhenSpawned({
                     startedAt = startedAt,
                     characterId = type(playerData) == "table" and playerData.citizenid or nil,
@@ -257,6 +316,8 @@ CreateThread(function()
             RegisterNetEvent("QBCore:Client:OnPlayerUnload", function()
                 frameworkSelectionGeneration = frameworkSelectionGeneration + 1
                 qbAppearanceReadyAt = nil
+                qbAppearanceReadyPed = nil
+                qbExpectedProps = nil
             end)
 
             local playerData = getQBCorePlayerData()
@@ -327,6 +388,12 @@ CreateThread(function()
                 return { success = false, error = "Could not find your character for the portrait." }
             end
 
+            local fingerprintOk, identityFingerprint = pcall(getPedAppearanceFingerprint, ped, true)
+            if not fingerprintOk then
+                portraitDebug("could not read ped appearance before capture")
+                return { success = false, error = "Could not read your character appearance." }
+            end
+
             portraitCaptureActive = true
             local components = {}
             local props = {}
@@ -338,10 +405,13 @@ CreateThread(function()
                 end
 
                 local restored = true
-                if DoesEntityExist(ped) then
+                local identityStable = ped == PlayerPedId() and DoesEntityExist(ped) and
+                    getPedAppearanceFingerprint(ped, true) == identityFingerprint
+                if ped == PlayerPedId() and DoesEntityExist(ped) then
                     for _, component in ipairs(HIDDEN_PORTRAIT_COMPONENTS) do
                         local value = components[component]
-                        if value then
+                        if value and GetPedDrawableVariation(ped, component) == 0 and
+                            GetPedTextureVariation(ped, component) == 0 then
                             local restoredComponent = pcall(SetPedComponentVariation, ped, component,
                                 value.drawable, value.texture, value.palette)
                             restored = restored and restoredComponent
@@ -349,20 +419,41 @@ CreateThread(function()
                     end
                     for _, prop in ipairs(HIDDEN_PORTRAIT_PROPS) do
                         local value = props[prop]
-                        if value then
+                        if value and GetPedPropIndex(ped, prop) == -1 then
                             local restoredProp
                             if value.drawable and value.drawable >= 0 then
-                                restoredProp = pcall(SetPedPropIndex, ped, prop, value.drawable, value.texture, true)
+                                for _ = 1, 3 do
+                                    restoredProp = pcall(SetPedPropIndex, ped, prop, value.drawable,
+                                        value.texture, true)
+                                    if restoredProp and GetPedPropIndex(ped, prop) == value.drawable and
+                                        GetPedPropTextureIndex(ped, prop) == value.texture then
+                                        break
+                                    end
+                                    Wait(0)
+                                end
+                                restoredProp = restoredProp and GetPedPropIndex(ped, prop) == value.drawable and
+                                    GetPedPropTextureIndex(ped, prop) == value.texture
                             else
                                 restoredProp = pcall(ClearPedProp, ped, prop)
+                            end
+                            if not restoredProp then
+                                portraitDebug(("could not restore prop %s (drawable %s, texture %s); now %s/%s"):format(
+                                    tostring(prop), tostring(value.drawable), tostring(value.texture),
+                                    tostring(GetPedPropIndex(ped, prop)), tostring(GetPedPropTextureIndex(ped, prop))))
                             end
                             restored = restored and restoredProp
                         end
                     end
+                else
+                    restored = false
                 end
 
                 appearanceRestored = restored
-                return restored
+                if not identityStable then
+                    portraitDebug(("ped or appearance changed during capture; original ped %s, current ped %s"):format(
+                        tostring(ped), tostring(PlayerPedId())))
+                end
+                return restored and identityStable
             end
 
             local ok, result = pcall(function()
@@ -382,6 +473,10 @@ CreateThread(function()
                     ClearPedProp(ped, prop)
                 end
 
+                portraitDebug(("capturing ped %s, model %s, hat=%s, glasses=%s, ears=%s"):format(
+                    tostring(ped), tostring(GetEntityModel(ped)), tostring(props[0].drawable),
+                    tostring(props[1].drawable), tostring(props[2].drawable)))
+
                 Wait(0)
                 Wait(0)
                 return GetBase64(ped, restoreAppearance)
@@ -390,7 +485,10 @@ CreateThread(function()
             local restored = restoreAppearance()
             portraitCaptureActive = false
 
-            if not ok or not restored then
+            if not ok or not restored or ped ~= PlayerPedId() or
+                getPedAppearanceFingerprint(ped, true) ~= identityFingerprint then
+                portraitDebug(("portrait capture failed: helper=%s, restored=%s, error=%s"):format(
+                    tostring(ok), tostring(restored), tostring(ok and type(result) == "table" and result.error or result)))
                 return { success = false, error = "Could not capture your character portrait." }
             end
             return type(result) == "table" and result or
