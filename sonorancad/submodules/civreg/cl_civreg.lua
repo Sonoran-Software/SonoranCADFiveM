@@ -39,6 +39,144 @@ CreateThread(function()
         local frameworkSelectionGeneration = 0
         local FRAMEWORK_SPAWN_TIMEOUT_MS = 30 * 1000
         local FRAMEWORK_CAPTURE_SETTLE_MS = 3 * 1000
+        local FRAMEWORK_READY_POLL_MS = 250
+        local qbAppearanceReadyAt = nil
+        local qbAppearanceReadyPed = nil
+        local qbExpectedProps = nil
+
+        local function portraitDebug(message)
+            if type(debugLog) == "function" then
+                debugLog("[civreg portrait] " .. message)
+            end
+        end
+
+        local function getQBCorePlayerData()
+            local loaded, playerData = pcall(function()
+                local qbCore = exports["qb-core"]:GetCoreObject()
+                return qbCore and qbCore.Functions and qbCore.Functions.GetPlayerData()
+            end)
+            if loaded and type(playerData) == "table" then
+                return playerData
+            end
+            return nil
+        end
+
+        local function serializeFingerprintValue(value, seen)
+            local valueType = type(value)
+            if valueType ~= "table" then
+                local serialized = tostring(value)
+                return valueType .. ":" .. #serialized .. ":" .. serialized
+            end
+
+            seen = seen or {}
+            if seen[value] then
+                return "table:cycle"
+            end
+            seen[value] = true
+
+            local count = 0
+            local highestIndex = 0
+            local isArray = true
+            for key in pairs(value) do
+                count = count + 1
+                if type(key) ~= "number" or key < 1 or key % 1 ~= 0 then
+                    isArray = false
+                elseif key > highestIndex then
+                    highestIndex = key
+                end
+            end
+            isArray = isArray and highestIndex == count
+
+            local parts = {}
+            if isArray then
+                for _, item in ipairs(value) do
+                    parts[#parts + 1] = serializeFingerprintValue(item, seen)
+                end
+                -- Tattoo order is not meaningful and can vary between provider loads.
+                table.sort(parts)
+            else
+                for key, item in pairs(value) do
+                    parts[#parts + 1] = serializeFingerprintValue(key, seen) .. "=" ..
+                        serializeFingerprintValue(item, seen)
+                end
+                table.sort(parts)
+            end
+
+            seen[value] = nil
+            return "table:{" .. table.concat(parts, ",") .. "}"
+        end
+
+        local function getProviderTattooFingerprint(ped)
+            for _, resourceName in ipairs({ "illenium-appearance", "fivem-appearance" }) do
+                if GetResourceState(resourceName) == "started" then
+                    local ok, appearance = pcall(function()
+                        return exports[resourceName]:getPedAppearance(ped)
+                    end)
+                    if ok and type(appearance) == "table" and type(appearance.tattoos) == "table" then
+                        return serializeFingerprintValue(appearance.tattoos)
+                    end
+                end
+            end
+            return nil
+        end
+
+        local function getPedAppearanceFingerprint(ped, ignoreCoverings, ignorePedHandle, skipProviderTattoo)
+            local parts = { tostring(GetEntityModel(ped)) }
+            if not ignorePedHandle then
+                parts[#parts + 1] = tostring(ped)
+            end
+            for component = 0, 11 do
+                if not ignoreCoverings or (component ~= 1 and component ~= 7) then
+                    parts[#parts + 1] = table.concat({
+                        GetPedDrawableVariation(ped, component),
+                        GetPedTextureVariation(ped, component),
+                        GetPedPaletteVariation(ped, component)
+                    }, ":")
+                end
+            end
+            for prop = 0, 7 do
+                if not ignoreCoverings or prop > 2 then
+                    parts[#parts + 1] = table.concat({
+                        GetPedPropIndex(ped, prop),
+                        GetPedPropTextureIndex(ped, prop)
+                    }, ":")
+                end
+            end
+            for feature = 0, 19 do
+                parts[#parts + 1] = string.format("%.4f", GetPedFaceFeature(ped, feature))
+            end
+
+            local _, shapeFirst, shapeSecond, shapeThird, skinFirst, skinSecond, skinThird,
+                shapeMix, skinMix, thirdMix = Citizen.InvokeNative(0x2746BD9D88C5C5D0, ped,
+                    Citizen.PointerValueIntInitialized(0), Citizen.PointerValueIntInitialized(0),
+                    Citizen.PointerValueIntInitialized(0), Citizen.PointerValueIntInitialized(0),
+                    Citizen.PointerValueIntInitialized(0), Citizen.PointerValueIntInitialized(0),
+                    Citizen.PointerValueFloatInitialized(0), Citizen.PointerValueFloatInitialized(0),
+                    Citizen.PointerValueFloatInitialized(0))
+            parts[#parts + 1] = table.concat({
+                shapeFirst, shapeSecond, shapeThird, skinFirst, skinSecond, skinThird,
+                string.format("%.4f", shapeMix), string.format("%.4f", skinMix),
+                string.format("%.4f", thirdMix or 0)
+            }, ":")
+
+            for overlay = 0, 12 do
+                local success, value, colorType, firstColor, secondColor, opacity =
+                    GetPedHeadOverlayData(ped, overlay)
+                parts[#parts + 1] = table.concat({
+                    tostring(success), value, colorType, firstColor, secondColor,
+                    string.format("%.4f", opacity)
+                }, ":")
+            end
+            parts[#parts + 1] = table.concat({
+                GetPedEyeColor(ped), GetPedHairColor(ped), GetPedHairHighlightColor(ped)
+            }, ":")
+
+            local tattooFingerprint = not skipProviderTattoo and getProviderTattooFingerprint(ped)
+            if tattooFingerprint then
+                parts[#parts + 1] = tattooFingerprint
+            end
+            return table.concat(parts, "|")
+        end
 
         local function frameworkCharacterIsFullySpawned()
             local ped = PlayerPedId()
@@ -46,37 +184,158 @@ CreateThread(function()
                 IsEntityVisible(ped) and HasCollisionLoadedAroundEntity(ped) and IsScreenFadedIn()
         end
 
-        local function captureFrameworkCharacterWhenSpawned()
+        local function qbSkinPropsApplied(ped)
+            if not qbExpectedProps then
+                return true
+            end
+            for prop, expected in pairs(qbExpectedProps) do
+                if GetPedPropIndex(ped, prop) ~= expected.drawable or
+                    GetPedPropTextureIndex(ped, prop) ~= expected.texture then
+                    return false
+                end
+            end
+            return true
+        end
+
+        local function captureFrameworkCharacterWhenSpawned(options)
+            options = options or {}
             frameworkSelectionGeneration = frameworkSelectionGeneration + 1
             local generation = frameworkSelectionGeneration
             CreateThread(function()
                 local timeoutAt = GetGameTimer() + FRAMEWORK_SPAWN_TIMEOUT_MS
+                local expectedCharacterId = options.characterId
+                local stableFingerprint = nil
+                local stableSince = nil
+                local appearanceChanged = false
+                local lastCharacterReady = false
+                local lastAppearanceReady = false
                 while generation == frameworkSelectionGeneration and GetGameTimer() < timeoutAt do
-                    if frameworkCharacterIsFullySpawned() then
-                        Wait(FRAMEWORK_CAPTURE_SETTLE_MS)
-                        if generation == frameworkSelectionGeneration and frameworkCharacterIsFullySpawned() then
+                    local ped = PlayerPedId()
+                    local characterReady = true
+                    if useQBCore then
+                        local playerData = getQBCorePlayerData()
+                        local characterId = type(playerData) == "table" and playerData.citizenid or nil
+                        characterReady = type(characterId) == "string" and characterId ~= ""
+                        if characterReady and not expectedCharacterId then
+                            expectedCharacterId = characterId
+                        end
+                        characterReady = characterReady and characterId == expectedCharacterId
+                    end
+
+                    local appearanceReady = not options.qbAppearanceReadyRequired or
+                        (qbAppearanceReadyAt and qbAppearanceReadyAt >= options.startedAt and
+                            qbAppearanceReadyPed == ped and qbSkinPropsApplied(ped))
+                    lastCharacterReady = characterReady
+                    lastAppearanceReady = appearanceReady
+                    local ready = characterReady and appearanceReady and frameworkCharacterIsFullySpawned()
+                    local coreFingerprint = ready and getPedAppearanceFingerprint(ped, false, false, true) or nil
+                    local tattooFingerprint = ready and getProviderTattooFingerprint(ped) or nil
+                    local fingerprint = ready and coreFingerprint .. "|tattoos:" ..
+                        (tattooFingerprint or "unavailable") or nil
+                    if ready and options.initialCoreFingerprint and not options.allowUnchangedAppearance and
+                        not appearanceChanged then
+                        if coreFingerprint ~= options.initialCoreFingerprint or
+                            (options.initialTattooFingerprint and tattooFingerprint and
+                                tattooFingerprint ~= options.initialTattooFingerprint) then
+                            appearanceChanged = true
+                        else
+                            -- A timer cannot prove that an asynchronous appearance provider applied
+                            -- the selected skin. Capture only after a visible change on fresh login.
+                            ready = false
+                        end
+                    end
+
+                    if ready then
+                        if fingerprint ~= stableFingerprint then
+                            stableFingerprint = fingerprint
+                            stableSince = GetGameTimer()
+                        elseif stableSince and GetGameTimer() - stableSince >= FRAMEWORK_CAPTURE_SETTLE_MS then
+                            portraitDebug(("appearance settled for character %s, ped %s, model %s; requesting capture"):format(
+                                tostring(expectedCharacterId), tostring(ped), tostring(GetEntityModel(ped))))
                             TriggerServerEvent("SonoranCAD::civreg::FrameworkCharacterSelected")
                             return
                         end
                     else
-                        Wait(250)
+                        stableFingerprint = nil
+                        stableSince = nil
                     end
+                    Wait(FRAMEWORK_READY_POLL_MS)
+                end
+                if generation == frameworkSelectionGeneration then
+                    portraitDebug(("spawn readiness timed out for character %s (character=%s, clothing=%s, signaledPed=%s, propsApplied=%s, ped=%s, changed=%s)"):format(
+                        tostring(expectedCharacterId), tostring(lastCharacterReady), tostring(lastAppearanceReady),
+                        tostring(qbAppearanceReadyPed),
+                        tostring(DoesEntityExist(PlayerPedId()) and qbSkinPropsApplied(PlayerPedId())),
+                        tostring(PlayerPedId()), tostring(appearanceChanged)))
                 end
             end)
         end
 
         if useQBCore then
-            RegisterNetEvent("QBCore:Client:OnPlayerLoaded", function()
-                captureFrameworkCharacterWhenSpawned()
+            RegisterNetEvent("qb-clothing:client:loadPlayerClothing", function(skinData, targetPed)
+                if targetPed and targetPed ~= PlayerPedId() then
+                    portraitDebug(("ignored qb-clothing preview ped %s; player ped is %s"):format(
+                        tostring(targetPed), tostring(PlayerPedId())))
+                    return
+                end
+                if type(skinData) ~= "table" then
+                    portraitDebug("ignored qb-clothing signal without skin data")
+                    return
+                end
+                qbAppearanceReadyAt = GetGameTimer()
+                qbAppearanceReadyPed = PlayerPedId()
+                qbExpectedProps = {}
+                for prop, key in pairs({ [0] = "hat", [1] = "glass", [2] = "ear" }) do
+                    local value = skinData[key]
+                    if type(value) == "table" and type(value.item) == "number" and value.item > 0 then
+                        qbExpectedProps[prop] = { drawable = value.item, texture = value.texture or 0 }
+                    end
+                end
+                portraitDebug(("qb-clothing signaled player ped %s"):format(tostring(qbAppearanceReadyPed)))
+            end)
+            AddEventHandler("qb-clothing:client:onMenuClose", function()
+                qbAppearanceReadyAt = GetGameTimer()
+                qbAppearanceReadyPed = PlayerPedId()
+                qbExpectedProps = nil
+                portraitDebug(("qb-clothing menu closed on player ped %s"):format(tostring(qbAppearanceReadyPed)))
             end)
 
-            local loaded, playerData = pcall(function()
-                local qbCore = exports["qb-core"]:GetCoreObject()
-                return qbCore and qbCore.Functions and qbCore.Functions.GetPlayerData()
+            RegisterNetEvent("QBCore:Client:OnPlayerLoaded", function()
+                local startedAt = GetGameTimer()
+                local playerData = getQBCorePlayerData()
+                local ped = PlayerPedId()
+                local qbClothingStarted = GetResourceState("qb-clothing") == "started"
+                local alternateAppearanceStarted = GetResourceState("illenium-appearance") == "started" or
+                    GetResourceState("fivem-appearance") == "started"
+                qbAppearanceReadyAt = nil
+                qbAppearanceReadyPed = nil
+                qbExpectedProps = nil
+                portraitDebug(("QB player loaded: character %s, ped %s, model %s, qb-clothing=%s, alternate=%s"):format(
+                    tostring(type(playerData) == "table" and playerData.citizenid), tostring(ped),
+                    tostring(GetEntityModel(ped)), tostring(qbClothingStarted), tostring(alternateAppearanceStarted)))
+                captureFrameworkCharacterWhenSpawned({
+                    startedAt = startedAt,
+                    characterId = type(playerData) == "table" and playerData.citizenid or nil,
+                    qbAppearanceReadyRequired = qbClothingStarted,
+                    initialCoreFingerprint = getPedAppearanceFingerprint(ped, false, false, true),
+                    initialTattooFingerprint = getProviderTattooFingerprint(ped),
+                    allowUnchangedAppearance = not alternateAppearanceStarted
+                })
             end)
-            if loaded and type(playerData) == "table" and
+            RegisterNetEvent("QBCore:Client:OnPlayerUnload", function()
+                frameworkSelectionGeneration = frameworkSelectionGeneration + 1
+                qbAppearanceReadyAt = nil
+                qbAppearanceReadyPed = nil
+                qbExpectedProps = nil
+            end)
+
+            local playerData = getQBCorePlayerData()
+            if type(playerData) == "table" and
                 type(playerData.citizenid) == "string" and playerData.citizenid ~= "" then
-                captureFrameworkCharacterWhenSpawned()
+                captureFrameworkCharacterWhenSpawned({
+                    characterId = playerData.citizenid,
+                    allowUnchangedAppearance = true
+                })
             end
         elseif esxStarted then
             local selectedEsxCharacterPending = false
@@ -124,14 +383,99 @@ CreateThread(function()
             end
         end)
 
+        local portraitCaptureActive = false
+        local HIDDEN_PORTRAIT_COMPONENTS = { 1, 7 }
+        local HIDDEN_PORTRAIT_PROPS = { 0, 1, 2 }
+
+        local activePortraitClone = nil
+
+        local function releasePortraitClone()
+            local clone = activePortraitClone
+            activePortraitClone = nil
+            if clone and DoesEntityExist(clone) then
+                local deleted = pcall(DeleteEntity, clone)
+                if not deleted or DoesEntityExist(clone) then
+                    portraitDebug(("could not delete portrait clone %s"):format(tostring(clone)))
+                end
+            end
+        end
+
+        local function captureUncoveredPortrait()
+            if portraitCaptureActive then
+                return { success = false, error = "Another character portrait capture is already active." }
+            end
+
+            local ped = PlayerPedId()
+            if not DoesEntityExist(ped) then
+                return { success = false, error = "Could not find your character for the portrait." }
+            end
+
+            portraitCaptureActive = true
+            local ok, result = pcall(function()
+                local originalFingerprint = getPedAppearanceFingerprint(ped, false, true)
+                local clone = ClonePed(ped, false, false, true)
+                if not clone or clone == 0 or not DoesEntityExist(clone) then
+                    return { success = false, error = "Could not prepare your character portrait." }
+                end
+                activePortraitClone = clone
+
+                -- Verify that the clone contains the selected skin before using it.
+                if getPedAppearanceFingerprint(clone, false, true) ~= originalFingerprint then
+                    portraitDebug(("clone appearance did not match player ped %s"):format(tostring(ped)))
+                    return { success = false, error = "Could not copy your character appearance." }
+                end
+
+                local originalHat = GetPedPropIndex(clone, 0)
+                local originalGlasses = GetPedPropIndex(clone, 1)
+                for _, component in ipairs(HIDDEN_PORTRAIT_COMPONENTS) do
+                    SetPedComponentVariation(clone, component, 0, 0, 0)
+                end
+                for _, prop in ipairs(HIDDEN_PORTRAIT_PROPS) do
+                    ClearPedProp(clone, prop)
+                end
+
+                -- Keep the local clone out of view while retaining an active ped for the headshot native.
+                FreezeEntityPosition(clone, true)
+                SetEntityCollision(clone, false, false)
+                local coords = GetEntityCoords(ped)
+                SetEntityCoordsNoOffset(clone, coords.x, coords.y, coords.z - 100.0, false, false, false)
+
+                portraitDebug(("capturing clone %s of ped %s, model %s, hat=%s, glasses=%s"):format(
+                    tostring(clone), tostring(ped), tostring(GetEntityModel(ped)),
+                    tostring(originalHat), tostring(originalGlasses)))
+
+                Wait(0)
+                Wait(0)
+                if ped ~= PlayerPedId() or not DoesEntityExist(ped) or
+                    getPedAppearanceFingerprint(ped, false, true) ~= originalFingerprint then
+                    return { success = false, error = "Your character appearance changed during capture." }
+                end
+
+                local image = GetBase64(clone)
+                if ped ~= PlayerPedId() or not DoesEntityExist(ped) or
+                    getPedAppearanceFingerprint(ped, false, true) ~= originalFingerprint then
+                    return { success = false, error = "Your character appearance changed during capture." }
+                end
+                return image
+            end)
+
+            releasePortraitClone()
+            portraitCaptureActive = false
+            if not ok then
+                portraitDebug(("portrait capture failed: %s"):format(tostring(result)))
+                return { success = false, error = "Could not capture your character portrait." }
+            end
+            return type(result) == "table" and result or
+                { success = false, error = "Could not capture your character portrait." }
+        end
         RegisterNUICallback("civregClose", function(_, cb)
             closeUi()
             cb({ ok = true })
         end)
 
         RegisterNUICallback("civregTakeSelfie", function(_, cb)
-            local ok, result = pcall(GetBase64, PlayerPedId())
-            if not ok or type(result) ~= "table" or not result.success or
+            local result = captureUncoveredPortrait()
+            if type(result) ~= "table" or not result.success or
                 type(result.base64) ~= "string" or result.base64 == "" then
                 cb({
                     ok = false,
@@ -157,10 +501,10 @@ CreateThread(function()
                 return
             end
             databaseSyncCaptureActive = true
-            local ok, result = pcall(GetBase64, PlayerPedId())
+            local result = captureUncoveredPortrait()
             databaseSyncCaptureActive = false
 
-            local image = ok and type(result) == "table" and result.success and result.base64 or nil
+            local image = type(result) == "table" and result.success and result.base64 or nil
             local captureError = type(result) == "table" and result.error or
                 "Could not capture your character portrait."
             TriggerLatentServerEvent("SonoranCAD::civreg::DatabaseSyncMugshot", 200000,
@@ -179,8 +523,11 @@ CreateThread(function()
         end)
 
         AddEventHandler("onClientResourceStop", function(resourceName)
-            if resourceName == GetCurrentResourceName() and uiOpen then
-                setUiOpen(false)
+            if resourceName == GetCurrentResourceName() then
+                releasePortraitClone()
+                if uiOpen then
+                    setUiOpen(false)
+                end
             end
         end)
     end)

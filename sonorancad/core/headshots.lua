@@ -39,10 +39,19 @@ function GetHeadshot(ped)
     end
 end
 
-function GetBase64(ped)
+function GetBase64(ped, onHeadshotReady)
     if not ped then ped = PlayerPedId() end
     local headshot = GetHeadshot(ped)
     if type(headshot) == "table" and headshot.success then
+        -- The texture is ready; let callers restore the live ped before NUI conversion can wait.
+        if type(onHeadshotReady) == "function" then
+            local callbackOk, callbackResult = pcall(onHeadshotReady)
+            if not callbackOk or callbackResult == false then
+                UnregisterPedheadshot(headshot.handle)
+                return {success=false, error="Could not restore character appearance."}
+            end
+        end
+
         local requestId = GenerateId()
         requests[requestId] = nil
         SendNUIMessage({
