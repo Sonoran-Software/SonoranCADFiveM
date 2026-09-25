@@ -223,6 +223,10 @@ test("a prop reapplied before headshot readiness is preserved and rejects the po
     local h = harness({ propChangeDuringHeadshot = true })
     h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-5" })
     equal(h.props[0].drawable, 23)
+    equal(h.props[1].drawable, 6, "unaffected glasses must be restored")
+    equal(h.props[2].drawable, 4, "unaffected ear prop must be restored")
+    equal(h.components[1].drawable, 12, "unaffected mask must be restored")
+    equal(h.components[7].drawable, 5, "unaffected accessory must be restored")
     equal(h.latent.args[2], nil)
 end)
 
@@ -230,6 +234,9 @@ test("a mask reapplied before headshot readiness is preserved and rejects the po
     local h = harness({ maskChangeDuringHeadshot = true })
     h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-7" })
     equal(h.components[1].drawable, 21)
+    equal(h.components[7].drawable, 5, "unaffected accessory must be restored")
+    equal(h.props[0].drawable, 8, "unaffected hat must be restored")
+    equal(h.props[1].drawable, 6, "unaffected glasses must be restored")
     equal(h.latent.args[2], nil)
 end)
 

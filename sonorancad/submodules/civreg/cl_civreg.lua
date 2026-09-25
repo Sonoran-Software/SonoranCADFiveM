@@ -417,24 +417,20 @@ CreateThread(function()
                 end
 
                 -- A clothing provider may replace a hidden slot while the headshot loads.
-                -- Keep its newer value, but reject the possibly covered image.
+                -- Keep its newer value, restore other hidden slots, and reject the covered image.
                 for _, component in ipairs(HIDDEN_PORTRAIT_COMPONENTS) do
                     if components[component] and (GetPedDrawableVariation(ped, component) ~= 0 or
                         GetPedTextureVariation(ped, component) ~= 0 or
                         GetPedPaletteVariation(ped, component) ~= 0) then
                         appearanceChangedDuringCapture = true
-                        appearanceRestored = true
                         portraitDebug(("covering component %s changed before headshot was ready"):format(
                             tostring(component)))
-                        return false
                     end
                 end
                 for _, prop in ipairs(HIDDEN_PORTRAIT_PROPS) do
                     if props[prop] and GetPedPropIndex(ped, prop) ~= -1 then
                         appearanceChangedDuringCapture = true
-                        appearanceRestored = true
                         portraitDebug(("covering prop %s changed before headshot was ready"):format(tostring(prop)))
-                        return false
                     end
                 end
 
@@ -480,7 +476,7 @@ CreateThread(function()
                 end
 
                 appearanceRestored = restored
-                return restored
+                return restored and not appearanceChangedDuringCapture
             end
 
             local ok, result = pcall(function()
