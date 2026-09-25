@@ -215,12 +215,18 @@ local function harness(framework, options)
         ["illenium-appearance"] = {
             getPedAppearance = function()
                 if options.appearanceExportFails then error("appearance export unavailable") end
+                if options.appearanceExportReadyAt and h.now < options.appearanceExportReadyAt then
+                    error("appearance export not ready")
+                end
                 return { tattoos = h.tattoos }
             end
         },
         ["fivem-appearance"] = {
             getPedAppearance = function()
                 if options.appearanceExportFails then error("appearance export unavailable") end
+                if options.appearanceExportReadyAt and h.now < options.appearanceExportReadyAt then
+                    error("appearance export not ready")
+                end
                 return { tattoos = h.tattoos }
             end
         }
@@ -385,6 +391,16 @@ test("QBCore does not capture a placeholder when provider appearance export fail
     local h = harness("qbcore", {
         illenium = true,
         appearanceExportFails = true
+    })
+    h.events["QBCore:Client:OnPlayerLoaded"]()
+    equal(#h.serverEvents, 0)
+    equal(h.now, 30000)
+end)
+
+test("tattoo export becoming available does not count as skin application", function()
+    local h = harness("qbcore", {
+        illenium = true,
+        appearanceExportReadyAt = 1000
     })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 0)

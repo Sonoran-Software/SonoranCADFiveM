@@ -120,7 +120,7 @@ CreateThread(function()
             return nil
         end
 
-        local function getPedAppearanceFingerprint(ped, ignoreCoverings, ignorePedHandle)
+        local function getPedAppearanceFingerprint(ped, ignoreCoverings, ignorePedHandle, skipProviderTattoo)
             local parts = { tostring(GetEntityModel(ped)) }
             if not ignorePedHandle then
                 parts[#parts + 1] = tostring(ped)
@@ -171,7 +171,7 @@ CreateThread(function()
                 GetPedEyeColor(ped), GetPedHairColor(ped), GetPedHairHighlightColor(ped)
             }, ":")
 
-            local tattooFingerprint = getProviderTattooFingerprint(ped)
+            local tattooFingerprint = not skipProviderTattoo and getProviderTattooFingerprint(ped)
             if tattooFingerprint then
                 parts[#parts + 1] = tattooFingerprint
             end
@@ -228,10 +228,15 @@ CreateThread(function()
                     lastCharacterReady = characterReady
                     lastAppearanceReady = appearanceReady
                     local ready = characterReady and appearanceReady and frameworkCharacterIsFullySpawned()
-                    local fingerprint = ready and getPedAppearanceFingerprint(ped) or nil
-                    if ready and options.initialFingerprint and not options.allowUnchangedAppearance and
+                    local coreFingerprint = ready and getPedAppearanceFingerprint(ped, false, false, true) or nil
+                    local tattooFingerprint = ready and getProviderTattooFingerprint(ped) or nil
+                    local fingerprint = ready and coreFingerprint .. "|tattoos:" ..
+                        (tattooFingerprint or "unavailable") or nil
+                    if ready and options.initialCoreFingerprint and not options.allowUnchangedAppearance and
                         not appearanceChanged then
-                        if fingerprint ~= options.initialFingerprint then
+                        if coreFingerprint ~= options.initialCoreFingerprint or
+                            (options.initialTattooFingerprint and tattooFingerprint and
+                                tattooFingerprint ~= options.initialTattooFingerprint) then
                             appearanceChanged = true
                         else
                             -- A timer cannot prove that an asynchronous appearance provider applied
@@ -312,7 +317,8 @@ CreateThread(function()
                     startedAt = startedAt,
                     characterId = type(playerData) == "table" and playerData.citizenid or nil,
                     qbAppearanceReadyRequired = qbClothingStarted,
-                    initialFingerprint = getPedAppearanceFingerprint(ped),
+                    initialCoreFingerprint = getPedAppearanceFingerprint(ped, false, false, true),
+                    initialTattooFingerprint = getProviderTattooFingerprint(ped),
                     allowUnchangedAppearance = not alternateAppearanceStarted
                 })
             end)
