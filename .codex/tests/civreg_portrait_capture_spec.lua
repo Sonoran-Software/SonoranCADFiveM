@@ -119,6 +119,9 @@ local function harness(options)
         if options.propChangeDuringHeadshot then
             h.props[0] = { drawable = 23, texture = 9 }
         end
+        if options.maskChangeDuringHeadshot then
+            h.components[1] = { drawable = 21, texture = 7, palette = 3 }
+        end
         equal(type(onHeadshotReady), "function", "capture must provide a headshot-ready callback")
         h.restoredBeforeConversion = onHeadshotReady()
         h.beforeConversion = {
@@ -216,10 +219,18 @@ test("a prop native that does not apply is retried and read back", function()
     equal(h.latent.args[2], "data:image/png;base64,fixture")
 end)
 
-test("an outfit prop applied during capture is preserved", function()
+test("a prop reapplied before headshot readiness is preserved and rejects the portrait", function()
     local h = harness({ propChangeDuringHeadshot = true })
     h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-5" })
     equal(h.props[0].drawable, 23)
+    equal(h.latent.args[2], nil)
+end)
+
+test("a mask reapplied before headshot readiness is preserved and rejects the portrait", function()
+    local h = harness({ maskChangeDuringHeadshot = true })
+    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-7" })
+    equal(h.components[1].drawable, 21)
+    equal(h.latent.args[2], nil)
 end)
 
 test("an outfit change during the headshot rejects the portrait without stale gear", function()
