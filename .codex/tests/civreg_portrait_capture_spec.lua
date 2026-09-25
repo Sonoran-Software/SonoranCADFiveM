@@ -28,8 +28,20 @@ local function harness(options)
             [0] = { drawable = 8, texture = 2 },
             [1] = { drawable = 6, texture = 1 },
             [2] = { drawable = 4, texture = 3 }
-        }
+        },
+        liveMutations = 0
     }
+    local function copySlots(slots)
+        local copy = {}
+        for key, value in pairs(slots) do
+            copy[key] = { drawable = value.drawable, texture = value.texture, palette = value.palette }
+        end
+        return copy
+    end
+    local function stateFor(ped)
+        return ped == 199 and h.clone or h
+    end
+
     local env = setmetatable({}, { __index = _G })
     env.Config = {
         LoadPlugin = function(_, callback)
@@ -56,39 +68,57 @@ local function harness(options)
     }
     env.PlayerId = function() return 1 end
     env.PlayerPedId = function() return 99 end
-    env.DoesEntityExist = function() return true end
-    env.NetworkIsPlayerActive = function() return true end
-    env.IsEntityVisible = function() return true end
-    env.HasCollisionLoadedAroundEntity = function() return true end
-    env.IsScreenFadedIn = function() return true end
-    env.GetEntityModel = function() return 1885233650 end
-    env.GetPedDrawableVariation = function(_, component)
-        return h.components[component] and h.components[component].drawable or 0
+    env.DoesEntityExist = function(ped) return ped == 99 or (ped == 199 and h.clone and not h.cloneDeleted) end
+    env.GetEntityModel = function(ped) return ped == 199 and options.cloneModel or 1885233650 end
+    env.GetEntityCoords = function() return { x = 10.0, y = 20.0, z = 30.0 } end
+    env.SetEntityCoordsNoOffset = function(ped, x, y, z)
+        h.cloneMoved = { ped = ped, x = x, y = y, z = z }
     end
-    env.GetPedTextureVariation = function(_, component)
-        return h.components[component] and h.components[component].texture or 0
+    env.FreezeEntityPosition = function(ped, frozen) h.cloneFrozen = ped == 199 and frozen end
+    env.SetEntityCollision = function(ped, collision) h.cloneCollisionDisabled = ped == 199 and not collision end
+    env.ClonePed = function(ped, isNetwork, scriptHost, copyHeadBlend)
+        equal(ped, 99)
+        equal(isNetwork, false)
+        equal(scriptHost, false)
+        equal(copyHeadBlend, true)
+        if options.cloneFailure then return 0 end
+        h.clone = { components = copySlots(h.components), props = copySlots(h.props) }
+        if options.cloneMismatch then h.clone.components[2].drawable = 15 end
+        return 199
     end
-    env.GetPedPaletteVariation = function(_, component)
-        return h.components[component] and h.components[component].palette or 0
+    env.DeleteEntity = function(ped)
+        equal(ped, 199)
+        h.cloneDeleted = true
     end
-    env.SetPedComponentVariation = function(_, component, drawable, texture, palette)
-        h.components[component] = { drawable = drawable, texture = texture, palette = palette }
+    env.GetPedDrawableVariation = function(ped, component)
+        local value = stateFor(ped).components[component]
+        return value and value.drawable or 0
     end
-    env.GetPedPropIndex = function(_, prop)
-        return h.props[prop] and h.props[prop].drawable or -1
+    env.GetPedTextureVariation = function(ped, component)
+        local value = stateFor(ped).components[component]
+        return value and value.texture or 0
     end
-    env.GetPedPropTextureIndex = function(_, prop)
-        return h.props[prop] and h.props[prop].texture or 0
+    env.GetPedPaletteVariation = function(ped, component)
+        local value = stateFor(ped).components[component]
+        return value and value.palette or 0
     end
-    env.ClearPedProp = function(_, prop)
-        h.props[prop] = { drawable = -1, texture = 0 }
+    env.SetPedComponentVariation = function(ped, component, drawable, texture, palette)
+        if ped == 99 then h.liveMutations = h.liveMutations + 1 end
+        stateFor(ped).components[component] = {
+            drawable = drawable, texture = texture, palette = palette
+        }
     end
-    env.SetPedPropIndex = function(_, prop, drawable, texture)
-        if options.propRestoreFailsOnce and prop == 0 and not h.propRestoreFailedOnce then
-            h.propRestoreFailedOnce = true
-            return
-        end
-        h.props[prop] = { drawable = drawable, texture = texture }
+    env.GetPedPropIndex = function(ped, prop)
+        local value = stateFor(ped).props[prop]
+        return value and value.drawable or -1
+    end
+    env.GetPedPropTextureIndex = function(ped, prop)
+        local value = stateFor(ped).props[prop]
+        return value and value.texture or 0
+    end
+    env.ClearPedProp = function(ped, prop)
+        if ped == 99 then h.liveMutations = h.liveMutations + 1 end
+        stateFor(ped).props[prop] = { drawable = -1, texture = 0 }
     end
     env.GetPedFaceFeature = function() return 0 end
     env.Citizen = {
@@ -100,39 +130,24 @@ local function harness(options)
     env.GetPedEyeColor = function() return 0 end
     env.GetPedHairColor = function() return 0 end
     env.GetPedHairHighlightColor = function() return 0 end
-    env.debugLog = function(message) h.lastDebug = message end
-    env.GetBase64 = function(_, onHeadshotReady)
+    env.GetBase64 = function(ped)
+        equal(ped, 199, "headshot must use the clone")
         h.duringCapture = {
-            mask = h.components[1].drawable,
-            hair = h.components[2].drawable,
-            accessory = h.components[7].drawable,
-            hat = h.props[0].drawable,
-            glasses = h.props[1].drawable,
-            ears = h.props[2].drawable
+            mask = h.clone.components[1].drawable,
+            hair = h.clone.components[2].drawable,
+            accessory = h.clone.components[7].drawable,
+            hat = h.clone.props[0].drawable,
+            glasses = h.clone.props[1].drawable,
+            ears = h.clone.props[2].drawable,
+            liveHat = h.props[0].drawable,
+            liveGlasses = h.props[1].drawable
         }
-        if options.captureError then
-            error("fixture capture failure")
+        if options.captureError then error("fixture capture failure") end
+        if options.liveHatChangeDuringCapture then
+            h.props[0] = { drawable = options.liveHatChangeDuringCapture, texture = 9 }
         end
-        if options.appearanceChangeDuringHeadshot then
-            h.components[2] = { drawable = 15, texture = 1, palette = 0 }
-        end
-        if options.propChangeDuringHeadshot then
-            h.props[0] = { drawable = 23, texture = 9 }
-        end
-        if options.maskChangeDuringHeadshot then
-            h.components[1] = { drawable = 21, texture = 7, palette = 3 }
-        end
-        equal(type(onHeadshotReady), "function", "capture must provide a headshot-ready callback")
-        h.restoredBeforeConversion = onHeadshotReady()
-        h.beforeConversion = {
-            mask = h.components[1].drawable,
-            accessory = h.components[7].drawable,
-            hat = h.props[0].drawable
-        }
-        if options.outfitUpdateDuringConversion then
-            h.components[1] = { drawable = 21, texture = 7, palette = 3 }
-            h.components[7] = { drawable = 22, texture = 8, palette = 4 }
-            h.props[0] = { drawable = 23, texture = 9 }
+        if options.liveMaskChangeDuringCapture then
+            h.components[1] = { drawable = options.liveMaskChangeDuringCapture, texture = 0, palette = 0 }
         end
         return { success = true, base64 = "data:image/png;base64,fixture" }
     end
@@ -150,104 +165,92 @@ local function harness(options)
     env.TriggerLatentServerEvent = function(name, bandwidth, ...)
         h.latent = { name = name, bandwidth = bandwidth, args = { ... } }
     end
+    env.debugLog = function(message) h.lastDebug = message end
 
     assert(loadfile("sonorancad/submodules/civreg/cl_civreg.lua", "t", env))()
     return h
 end
 
-local function assertHiddenAndRestored(h)
-    equal(h.duringCapture.mask, 0, "mask must be hidden")
-    equal(h.duringCapture.hair, 9, "hair must be preserved")
-    equal(h.duringCapture.accessory, 0, "neck accessory must be hidden")
-    equal(h.duringCapture.hat, -1, "hat must be hidden")
-    equal(h.duringCapture.glasses, -1, "glasses must be hidden")
-    equal(h.duringCapture.ears, -1, "ear prop must be hidden")
-    equal(h.components[1].drawable, 12, "mask must be restored")
-    equal(h.components[1].texture, 3, "mask texture must be restored")
-    equal(h.components[1].palette, 2, "mask palette must be restored")
-    equal(h.components[2].drawable, 9, "hair must remain unchanged")
-    equal(h.components[7].drawable, 5, "neck accessory must be restored")
-    equal(h.props[0].drawable, 8, "hat must be restored")
-    equal(h.props[1].drawable, 6, "glasses must be restored")
-    equal(h.props[2].drawable, 4, "ear prop must be restored")
+local function assertCloneCapture(h)
+    equal(h.duringCapture.mask, 0, "clone mask must be hidden")
+    equal(h.duringCapture.hair, 9, "clone hair must be preserved")
+    equal(h.duringCapture.accessory, 0, "clone accessory must be hidden")
+    equal(h.duringCapture.hat, -1, "clone hat must be hidden")
+    equal(h.duringCapture.glasses, -1, "clone glasses must be hidden")
+    equal(h.duringCapture.ears, -1, "clone ear prop must be hidden")
+    equal(h.duringCapture.liveHat, 8, "player hat must stay equipped")
+    equal(h.duringCapture.liveGlasses, 6, "player glasses must stay equipped")
+    equal(h.components[1].drawable, 12, "player mask must stay equipped")
+    equal(h.props[0].drawable, 8, "player hat must stay equipped")
+    equal(h.props[1].drawable, 6, "player glasses must stay equipped")
+    equal(h.liveMutations, 0, "capture must not change the player ped")
+    equal(h.cloneDeleted, true, "clone must be deleted")
+    equal(h.cloneMoved.z, -70.0, "clone must be moved out of view")
+    equal(h.cloneFrozen, true)
+    equal(h.cloneCollisionDisabled, true)
 end
 
-test("database portraits hide face coverings and restore the exact appearance", function()
+test("database portrait captures an uncovered clone without changing player gear", function()
     local h = harness()
     h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-1" })
-    assertHiddenAndRestored(h)
+    assertCloneCapture(h)
     equal(h.latent.name, "SonoranCAD::civreg::DatabaseSyncMugshot")
     equal(h.latent.args[1], "token-1")
     equal(h.latent.args[2], "data:image/png;base64,fixture")
 end)
 
-test("manual portraits use the same temporary face-covering removal", function()
+test("manual portrait uses the same uncovered clone", function()
     local h = harness()
     local response
     h.nuiCallbacks.civregTakeSelfie({}, function(value) response = value end)
-    assertHiddenAndRestored(h)
+    assertCloneCapture(h)
     equal(response.ok, true)
     equal(response.image, "data:image/png;base64,fixture")
 end)
 
-test("capture failures still restore the exact appearance", function()
+test("capture errors delete the clone and leave player gear intact", function()
     local h = harness({ captureError = true })
     h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-2" })
-    assertHiddenAndRestored(h)
-    equal(h.latent.args[1], "token-2")
+    assertCloneCapture(h)
     equal(h.latent.args[2], nil)
-    equal(h.latent.args[3], "Could not capture your character portrait.")
 end)
 
-test("gear is restored before base64 conversion without overwriting later outfit updates", function()
-    local h = harness({ outfitUpdateDuringConversion = true })
+test("a live hat removal during capture is preserved and rejects the stale image", function()
+    local h = harness({ liveHatChangeDuringCapture = -1 })
     h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-3" })
-    equal(h.restoredBeforeConversion, true)
-    equal(h.beforeConversion.mask, 12, "mask must be restored before conversion")
-    equal(h.beforeConversion.accessory, 5, "accessory must be restored before conversion")
-    equal(h.beforeConversion.hat, 8, "hat must be restored before conversion")
-    equal(h.components[1].drawable, 21, "later mask update must be preserved")
-    equal(h.components[7].drawable, 22, "later accessory update must be preserved")
-    equal(h.props[0].drawable, 23, "later hat update must be preserved")
+    equal(h.props[0].drawable, -1)
+    equal(h.props[1].drawable, 6)
+    equal(h.liveMutations, 0)
+    equal(h.cloneDeleted, true)
+    equal(h.latent.args[2], nil)
 end)
 
-test("a prop native that does not apply is retried and read back", function()
-    local h = harness({ propRestoreFailsOnce = true })
+test("a live mask removal during capture is preserved and rejects the stale image", function()
+    local h = harness({ liveMaskChangeDuringCapture = 0 })
     h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-4" })
-    equal(h.propRestoreFailedOnce, true)
+    equal(h.components[1].drawable, 0)
     equal(h.props[0].drawable, 8)
-    equal(h.latent.args[2], "data:image/png;base64,fixture")
+    equal(h.liveMutations, 0)
+    equal(h.cloneDeleted, true)
+    equal(h.latent.args[2], nil)
 end)
 
-test("a prop reapplied before headshot readiness is preserved and rejects the portrait", function()
-    local h = harness({ propChangeDuringHeadshot = true })
+test("a clone with mismatched appearance is rejected before headshot capture", function()
+    local h = harness({ cloneMismatch = true })
     h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-5" })
-    equal(h.props[0].drawable, 23)
-    equal(h.props[1].drawable, 6, "unaffected glasses must be restored")
-    equal(h.props[2].drawable, 4, "unaffected ear prop must be restored")
-    equal(h.components[1].drawable, 12, "unaffected mask must be restored")
-    equal(h.components[7].drawable, 5, "unaffected accessory must be restored")
+    equal(h.duringCapture, nil)
     equal(h.latent.args[2], nil)
+    equal(h.cloneDeleted, true)
+    equal(h.liveMutations, 0)
 end)
 
-test("a mask reapplied before headshot readiness is preserved and rejects the portrait", function()
-    local h = harness({ maskChangeDuringHeadshot = true })
-    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-7" })
-    equal(h.components[1].drawable, 21)
-    equal(h.components[7].drawable, 5, "unaffected accessory must be restored")
-    equal(h.props[0].drawable, 8, "unaffected hat must be restored")
-    equal(h.props[1].drawable, 6, "unaffected glasses must be restored")
-    equal(h.latent.args[2], nil)
-end)
-
-test("an outfit change during the headshot rejects the portrait without stale gear", function()
-    local h = harness({ appearanceChangeDuringHeadshot = true })
+test("clone creation failure leaves the player unchanged", function()
+    local h = harness({ cloneFailure = true })
     h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-6" })
+    equal(h.duringCapture, nil)
     equal(h.latent.args[2], nil)
-    equal(h.props[0].drawable, -1, "old hat must not be restored over the new outfit")
-    equal(h.components[1].drawable, 0, "old mask must not be restored over the new outfit")
+    equal(h.liveMutations, 0)
 end)
-
 test("headshot helper restores before conversion and cleans up restoration failures", function()
     local order = {}
     local now = 0

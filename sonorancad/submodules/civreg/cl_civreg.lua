@@ -120,8 +120,11 @@ CreateThread(function()
             return nil
         end
 
-        local function getPedAppearanceFingerprint(ped, ignoreCoverings)
-            local parts = { tostring(ped), tostring(GetEntityModel(ped)) }
+        local function getPedAppearanceFingerprint(ped, ignoreCoverings, ignorePedHandle)
+            local parts = { tostring(GetEntityModel(ped)) }
+            if not ignorePedHandle then
+                parts[#parts + 1] = tostring(ped)
+            end
             for component = 0, 11 do
                 if not ignoreCoverings or (component ~= 1 and component ~= 7) then
                     parts[#parts + 1] = table.concat({
@@ -378,6 +381,19 @@ CreateThread(function()
         local HIDDEN_PORTRAIT_COMPONENTS = { 1, 7 }
         local HIDDEN_PORTRAIT_PROPS = { 0, 1, 2 }
 
+        local activePortraitClone = nil
+
+        local function releasePortraitClone()
+            local clone = activePortraitClone
+            activePortraitClone = nil
+            if clone and DoesEntityExist(clone) then
+                local deleted = pcall(DeleteEntity, clone)
+                if not deleted or DoesEntityExist(clone) then
+                    portraitDebug(("could not delete portrait clone %s"):format(tostring(clone)))
+                end
+            end
+        end
+
         local function captureUncoveredPortrait()
             if portraitCaptureActive then
                 return { success = false, error = "Another character portrait capture is already active." }
@@ -388,136 +404,64 @@ CreateThread(function()
                 return { success = false, error = "Could not find your character for the portrait." }
             end
 
-            local fingerprintOk, identityFingerprint = pcall(getPedAppearanceFingerprint, ped, true)
-            if not fingerprintOk then
-                portraitDebug("could not read ped appearance before capture")
-                return { success = false, error = "Could not read your character appearance." }
-            end
-
             portraitCaptureActive = true
-            local components = {}
-            local props = {}
-            local appearanceRestored = false
-            local appearanceChangedDuringCapture = false
-            local function restoreAppearance()
-                -- Do not reapply this snapshot after conversion; the player's outfit may change meanwhile.
-                if appearanceRestored then
-                    return not appearanceChangedDuringCapture
-                end
-
-                local restored = true
-                local identityStable = ped == PlayerPedId() and DoesEntityExist(ped) and
-                    getPedAppearanceFingerprint(ped, true) == identityFingerprint
-                if not identityStable then
-                    appearanceChangedDuringCapture = true
-                    appearanceRestored = true
-                    portraitDebug(("ped or appearance changed during capture; original ped %s, current ped %s; skipped stale gear restoration"):format(
-                        tostring(ped), tostring(PlayerPedId())))
-                    return false
-                end
-
-                -- A clothing provider may replace a hidden slot while the headshot loads.
-                -- Keep its newer value, restore other hidden slots, and reject the covered image.
-                for _, component in ipairs(HIDDEN_PORTRAIT_COMPONENTS) do
-                    if components[component] and (GetPedDrawableVariation(ped, component) ~= 0 or
-                        GetPedTextureVariation(ped, component) ~= 0 or
-                        GetPedPaletteVariation(ped, component) ~= 0) then
-                        appearanceChangedDuringCapture = true
-                        portraitDebug(("covering component %s changed before headshot was ready"):format(
-                            tostring(component)))
-                    end
-                end
-                for _, prop in ipairs(HIDDEN_PORTRAIT_PROPS) do
-                    if props[prop] and GetPedPropIndex(ped, prop) ~= -1 then
-                        appearanceChangedDuringCapture = true
-                        portraitDebug(("covering prop %s changed before headshot was ready"):format(tostring(prop)))
-                    end
-                end
-
-                if DoesEntityExist(ped) then
-                    for _, component in ipairs(HIDDEN_PORTRAIT_COMPONENTS) do
-                        local value = components[component]
-                        if value and GetPedDrawableVariation(ped, component) == 0 and
-                            GetPedTextureVariation(ped, component) == 0 then
-                            local restoredComponent = pcall(SetPedComponentVariation, ped, component,
-                                value.drawable, value.texture, value.palette)
-                            restored = restored and restoredComponent
-                        end
-                    end
-                    for _, prop in ipairs(HIDDEN_PORTRAIT_PROPS) do
-                        local value = props[prop]
-                        if value and GetPedPropIndex(ped, prop) == -1 then
-                            local restoredProp
-                            if value.drawable and value.drawable >= 0 then
-                                for _ = 1, 3 do
-                                    restoredProp = pcall(SetPedPropIndex, ped, prop, value.drawable,
-                                        value.texture, true)
-                                    if restoredProp and GetPedPropIndex(ped, prop) == value.drawable and
-                                        GetPedPropTextureIndex(ped, prop) == value.texture then
-                                        break
-                                    end
-                                    Wait(0)
-                                end
-                                restoredProp = restoredProp and GetPedPropIndex(ped, prop) == value.drawable and
-                                    GetPedPropTextureIndex(ped, prop) == value.texture
-                            else
-                                restoredProp = pcall(ClearPedProp, ped, prop)
-                            end
-                            if not restoredProp then
-                                portraitDebug(("could not restore prop %s (drawable %s, texture %s); now %s/%s"):format(
-                                    tostring(prop), tostring(value.drawable), tostring(value.texture),
-                                    tostring(GetPedPropIndex(ped, prop)), tostring(GetPedPropTextureIndex(ped, prop))))
-                            end
-                            restored = restored and restoredProp
-                        end
-                    end
-                else
-                    restored = false
-                end
-
-                appearanceRestored = restored
-                return restored and not appearanceChangedDuringCapture
-            end
-
             local ok, result = pcall(function()
+                local originalFingerprint = getPedAppearanceFingerprint(ped, false, true)
+                local clone = ClonePed(ped, false, false, true)
+                if not clone or clone == 0 or not DoesEntityExist(clone) then
+                    return { success = false, error = "Could not prepare your character portrait." }
+                end
+                activePortraitClone = clone
+
+                -- Verify that the clone contains the selected skin before using it.
+                if getPedAppearanceFingerprint(clone, false, true) ~= originalFingerprint then
+                    portraitDebug(("clone appearance did not match player ped %s"):format(tostring(ped)))
+                    return { success = false, error = "Could not copy your character appearance." }
+                end
+
+                local originalHat = GetPedPropIndex(clone, 0)
+                local originalGlasses = GetPedPropIndex(clone, 1)
                 for _, component in ipairs(HIDDEN_PORTRAIT_COMPONENTS) do
-                    components[component] = {
-                        drawable = GetPedDrawableVariation(ped, component),
-                        texture = GetPedTextureVariation(ped, component),
-                        palette = GetPedPaletteVariation(ped, component)
-                    }
-                    SetPedComponentVariation(ped, component, 0, 0, 0)
+                    SetPedComponentVariation(clone, component, 0, 0, 0)
                 end
                 for _, prop in ipairs(HIDDEN_PORTRAIT_PROPS) do
-                    props[prop] = {
-                        drawable = GetPedPropIndex(ped, prop),
-                        texture = GetPedPropTextureIndex(ped, prop)
-                    }
-                    ClearPedProp(ped, prop)
+                    ClearPedProp(clone, prop)
                 end
 
-                portraitDebug(("capturing ped %s, model %s, hat=%s, glasses=%s, ears=%s"):format(
-                    tostring(ped), tostring(GetEntityModel(ped)), tostring(props[0].drawable),
-                    tostring(props[1].drawable), tostring(props[2].drawable)))
+                -- Keep the local clone out of view while retaining an active ped for the headshot native.
+                FreezeEntityPosition(clone, true)
+                SetEntityCollision(clone, false, false)
+                local coords = GetEntityCoords(ped)
+                SetEntityCoordsNoOffset(clone, coords.x, coords.y, coords.z - 100.0, false, false, false)
+
+                portraitDebug(("capturing clone %s of ped %s, model %s, hat=%s, glasses=%s"):format(
+                    tostring(clone), tostring(ped), tostring(GetEntityModel(ped)),
+                    tostring(originalHat), tostring(originalGlasses)))
 
                 Wait(0)
                 Wait(0)
-                return GetBase64(ped, restoreAppearance)
+                if ped ~= PlayerPedId() or not DoesEntityExist(ped) or
+                    getPedAppearanceFingerprint(ped, false, true) ~= originalFingerprint then
+                    return { success = false, error = "Your character appearance changed during capture." }
+                end
+
+                local image = GetBase64(clone)
+                if ped ~= PlayerPedId() or not DoesEntityExist(ped) or
+                    getPedAppearanceFingerprint(ped, false, true) ~= originalFingerprint then
+                    return { success = false, error = "Your character appearance changed during capture." }
+                end
+                return image
             end)
 
-            local restored = restoreAppearance()
+            releasePortraitClone()
             portraitCaptureActive = false
-
-            if not ok or not restored or ped ~= PlayerPedId() or
-                getPedAppearanceFingerprint(ped, true) ~= identityFingerprint then
-                portraitDebug(("portrait capture failed: helper=%s, restored=%s, error=%s"):format(
-                    tostring(ok), tostring(restored), tostring(ok and type(result) == "table" and result.error or result)))
+            if not ok then
+                portraitDebug(("portrait capture failed: %s"):format(tostring(result)))
                 return { success = false, error = "Could not capture your character portrait." }
             end
             return type(result) == "table" and result or
                 { success = false, error = "Could not capture your character portrait." }
         end
-
         RegisterNUICallback("civregClose", function(_, cb)
             closeUi()
             cb({ ok = true })
@@ -573,8 +517,11 @@ CreateThread(function()
         end)
 
         AddEventHandler("onClientResourceStop", function(resourceName)
-            if resourceName == GetCurrentResourceName() and uiOpen then
-                setUiOpen(false)
+            if resourceName == GetCurrentResourceName() then
+                releasePortraitClone()
+                if uiOpen then
+                    setUiOpen(false)
+                end
             end
         end)
     end)
