@@ -46,6 +46,30 @@ local function sanitizeForJson(value, seen)
     return sanitized
 end
 
+local function collectErsDiagnostics()
+    local plugin = type(Config.plugins) == "table" and Config.plugins.ersintegration or nil
+    local fallback = {
+        enabled = type(plugin) == "table" and plugin.enabled == true,
+        ready = false,
+        nightErsState = GetResourceState("night_ers"),
+        status = "ERS diagnostics provider did not load; verify the ERS server submodule is installed and check startup errors"
+    }
+    if type(plugin) == "table" and plugin.enabled == false then
+        fallback.status = plugin.disableReason or "disabled in config"
+    end
+    if type(GetErsIntegrationDiagnostics) == "function" then
+        local ok, result = pcall(GetErsIntegrationDiagnostics)
+        if ok and type(result) == "table" then
+            return sanitizeForJson(result)
+        end
+        fallback.lastFailure = {
+            stage = "diagnostics",
+            reason = ok and "ERS diagnostics returned invalid data" or tostring(result):sub(1, 300)
+        }
+    end
+    return fallback
+end
+
  function dumpInfo()
     local version = GetResourceMetadata(GetCurrentResourceName(), "version", 0)
     local pluginList, loadedPlugins, disabledPlugins = GetPluginLists()
@@ -176,6 +200,7 @@ local function sendSupportLogs(key, requester)
     end
     cadOutput.plugins = plugins
     cadOutput.errors = sanitizeForJson(getSupportErrorBuffer())
+    cadOutput.ersIntegration = collectErsDiagnostics()
     local encodedErrors = "[]"
     if cadOutput.errors ~= nil then
         local ok, serialized = pcall(json.encode, cadOutput.errors)
@@ -200,6 +225,10 @@ Structured Error Buffer
 -----------------------
 %s
 ---------------------------------------
+ERS Integration Health
+----------------------
+%s
+---------------------------------------
 Console Buffer
 ------
 %s
@@ -207,7 +236,9 @@ Console Buffer
 Last 50 Debug Messages
 ----------------------
 %s
-    ]]):format(dumpInfo(), networkDiagnostics, encodedErrors, GetConsoleBuffer(), table.concat(getDebugBuffer(), "\n"))
+    ]]):format(dumpInfo(), networkDiagnostics, encodedErrors,
+        SafeJsonEncode(cadOutput.ersIntegration, "support ERS diagnostics", "{}"),
+        GetConsoleBuffer(), table.concat(getDebugBuffer(), "\n"))
     Config.debugMode = false
     if SetCadClientLogLevel ~= nil then
         SetCadClientLogLevel()
@@ -280,6 +311,7 @@ SonoranCAD Help
     support - dump useful data for support staff
     errors - display all error/warning messages since last startup
     plugin <name> - show info about a plugin (config)
+    ers - show ERS integration health and last failure
     update - Run core updater
     viewcaches - View the current unit and call cache, for troubleshooting
     getclientlog <playerId> - Get a log buffer from a given client
@@ -308,6 +340,8 @@ SonoranCAD Help
         print(("SonoranCAD quietPrint toggled to %s"):format(convarString))
     elseif args[1] == "info" then
         print(dumpInfo())
+    elseif args[1] == "ers" then
+        print(SafeJsonEncode(collectErsDiagnostics(), "ERS diagnostics", "{}"))
     elseif args[1] == "support" and args[2] ~= nil then
         sendSupportLogs(args[2], 0)
     elseif args[1] == "plugin" and args[2] then

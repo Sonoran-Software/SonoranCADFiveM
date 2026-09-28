@@ -3,13 +3,13 @@
 local passed = 0
 local failed = 0
 
-local function runCase(name, resource, expected, suppliedPostal, enabled)
+local function runCase(name, resource, expected, suppliedPostal, enabled, mode, cadLookup)
     for _, event in ipairs({'ErsIntegration::OnIsOfferedCallout', 'ErsIntegration::OnAcceptedCalloutOffer'}) do
         local ok, err = pcall(function()
             local events, calls = {}, {}
             local plugin = {enabled = true, create911Call = true, createEmergencyCall = true,
                 clearRecordsAfter = 30, callPriority = 2, callCodes = {}}
-            local postals = {enabled = enabled ~= false, nearestPostalResourceName = 'nearest-postal'}
+            local postals = {enabled = enabled ~= false, nearestPostalResourceName = 'nearest-postal', mode = mode or 'resource'}
             local env = setmetatable({source = 1}, {__index = _G})
             local coords = {x = 100, y = 200, z = 30}
             env.type = function(value) return value == coords and 'vector3' or type(value) end
@@ -24,8 +24,10 @@ local function runCase(name, resource, expected, suppliedPostal, enabled)
             env.AddEventHandler = function(name, handler) events[name] = handler end
             env.CreateThread = function() end -- Background catalog loading is unrelated.
             env.debugLog = function() end
+            env.warnLog = function() end
             env.errorLog = function(_, message) error(message) end
             env.exports = {['nearest-postal'] = resource}
+            env.getPostalFromVector3 = cadLookup
             env.getPlayerCadStatus = function() return {success = true, link = 'unit-1'} end
             env.CadApiCreateEmergencyCall = function(data)
                 calls[#calls + 1] = data
@@ -66,5 +68,15 @@ runCase('missing postal code', {getPostalServer = function() return {} end}, 'Un
 runCase('supplied postal bypasses export', missingExport, '5678', '5678')
 runCase('unknown postal falls back', missingExport, 'Unknown postal', 'Unknown postal')
 runCase('disabled postals bypass export', missingExport, 'Unknown postal', nil, false)
+runCase('CAD postal file wins over ERS postal', missingExport, '2468', '5678', true, 'file', function(coords)
+    assert(coords.x == 100 and coords.y == 200)
+    return '2468'
+end)
+runCase('CAD postal resource wins over ERS postal', missingExport, '2468', '5678', true, 'resource', function()
+    return '2468'
+end)
+runCase('ERS postal remains a fallback in file mode', missingExport, '5678', '5678', true, 'file', function()
+    error('postal file not loaded')
+end)
 assert(failed == 0, tostring(failed) .. ' failed; ' .. tostring(passed) .. ' passed')
 print(tostring(passed) .. ' tests passed')
