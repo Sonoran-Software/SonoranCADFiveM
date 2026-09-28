@@ -71,7 +71,22 @@ end
 if pluginConfig.enabled then
     local handlersRegistered = false
     local catalogGeneration = 0
+    local runtimeGeneration = 0
+    local processedCalloutOffered = {}
+    local processedCalloutAccepted = {}
+    local processedPedData = {}
+    local processedVehData = {}
+    local cadDispatchCallouts = {}
     local syncCatalog
+
+    local function resetRuntimeState()
+        runtimeGeneration = runtimeGeneration + 1
+        processedCalloutOffered = {}
+        processedCalloutAccepted = {}
+        processedPedData = {}
+        processedVehData = {}
+        cadDispatchCallouts = {}
+    end
 
     local function isReady()
         return ersHealth.ready and pluginConfig.enabled == true and GetResourceState('night_ers') == 'started'
@@ -204,6 +219,7 @@ if pluginConfig.enabled then
         end
         ersSuccess("startup")
         if handlersRegistered then
+            resetRuntimeState()
             syncCatalog()
             return
         end
@@ -212,12 +228,6 @@ if pluginConfig.enabled then
         RegisterNetEvent('ErsIntegration::OnAcceptedCalloutOffer')
         RegisterNetEvent('SonoranCAD::ErsIntegration::BuildChars')
         RegisterNetEvent('SonoranCAD::ErsIntegration::BuildVehs')
-        local processedCalloutOffered = {}
-        local processedCalloutAccepted = {}
-        local processedPedData = {}
-        local processedVehData = {}
-        local cadDispatchCallouts = {}
-
         --[[
         @function escapeSpaces
         @param string str
@@ -362,9 +372,10 @@ if pluginConfig.enabled then
         end
 
         local function callCad(stage, fn, ...)
+            local generation = runtimeGeneration
             local ok, response = pcall(fn, ...)
             if ok and type(response) == "table" and type(response.success) == "boolean" then
-                if not response.success then
+                if not response.success and generation == runtimeGeneration then
                     local reason = CadApiReasonText(response.reason)
                     local status = tonumber(response.status) or
                         (type(response.reason) == "table" and tonumber(response.reason.status))
@@ -376,7 +387,7 @@ if pluginConfig.enabled then
                 return response
             end
             local reason = ok and "CAD returned an invalid response" or tostring(response)
-            ersFailure(stage, reason)
+            if generation == runtimeGeneration then ersFailure(stage, reason) end
             return {success = false, reason = reason}
         end
         --[[
@@ -608,7 +619,9 @@ if pluginConfig.enabled then
                     if pluginConfig.clearRecordsAfter ~= 0 then
                         data.deleteAfterMinutes = pluginConfig.clearRecordsAfter
                     end
+                    local generation = runtimeGeneration
                     local response = callCad("911 call", CadApiCreateEmergencyCall, data)
+                    if generation ~= runtimeGeneration then return end
                     if not response.success then
                         processedCalloutOffered[uniqueKey] = nil
                         ersFailure("911 call", CadApiReasonText(response.reason))
@@ -693,7 +706,9 @@ if pluginConfig.enabled then
                             ['callId'] = callId,
                             ['communityUserIds'] = {unitData.link}
                         }
+                        local generation = runtimeGeneration
                         local response = callCad("attach unit", CadApiAttachUnitsToDispatchCall, data)
+                        if generation ~= runtimeGeneration then return end
                         if not response.success then
                             CadApiLogFailure("ATTACH_UNIT", response, data)
                         else
@@ -732,7 +747,9 @@ if pluginConfig.enabled then
                     if pluginConfig.clearRecordsAfter ~= 0 then
                         data.deleteAfterMinutes = pluginConfig.clearRecordsAfter
                     end
+                    local generation = runtimeGeneration
                     local response = callCad("dispatch call", CadApiCreateDispatchCall, data)
+                    if generation ~= runtimeGeneration then return end
                     if not response.success then
                         processedCalloutAccepted[uniqueKey] = nil
                         ersFailure("dispatch call", CadApiReasonText(response.reason))
@@ -751,6 +768,7 @@ if pluginConfig.enabled then
                                         if queuedUnit.success then
                                             local attachData = {serverId = tonumber(Config.serverId), callId = callId, communityUserIds = {queuedUnit.link}}
                                             local attachResponse = callCad("attach unit", CadApiAttachUnitsToDispatchCall, attachData)
+                                            if generation ~= runtimeGeneration then return end
                                             if attachResponse.success then
                                                 rememberCadDispatchCall(callId, calloutData, queuedUnit.link, processedCalloutAccepted[uniqueKey])
                                                 ersSuccess("attach unit")
@@ -820,7 +838,9 @@ if pluginConfig.enabled then
                 -- A lost ERS offer can be retried if CAD sends another attachment update later.
                 calloutEntry.requestedIdentities[playerIdentity] = os.time()
 
+                local generation = runtimeGeneration
                 CreateThread(function()
+                    if generation ~= runtimeGeneration then return end
                     if GetResourceState('night_ers') ~= 'started' then
                         calloutEntry.requestedIdentities[playerIdentity] = nil
                         ersFailure("assign CAD unit", "night_ers stopped before the callout offer")
@@ -831,6 +851,7 @@ if pluginConfig.enabled then
                     local requestOk, offerResult, reason = pcall(function()
                         return exports['night_ers']:SendCalloutOfferToPlayer(playerSource, calloutEntry.calloutId)
                     end)
+                    if generation ~= runtimeGeneration then return end
                     if not requestOk then
                         calloutEntry.requestedIdentities[playerIdentity] = nil
                         ersFailure("assign CAD unit", offerResult)
@@ -907,7 +928,9 @@ if pluginConfig.enabled then
                 data.deleteAfterMinutes = pluginConfig.clearRecordsAfter
             end
             data.replaceValues = generateReplaceValues(pedData, pluginConfig.customRecords.civilianValues)
+            local generation = runtimeGeneration
             local characterResponse = callCad("character record", CadApiCreateRecord, data)
+            if generation ~= runtimeGeneration then return end
             if characterResponse.success and characterResponse.recordId ~= nil then
                 local recordId = characterResponse.recordId
                 processedPedData[uniqueKey] = {id = recordId, timestamp = os.time()}
@@ -1007,7 +1030,9 @@ if pluginConfig.enabled then
                 data.deleteAfterMinutes = pluginConfig.clearRecordsAfter
             end
             data.replaceValues = generateReplaceValues(vehData, pluginConfig.customRecords.vehicleRegistrationValues)
+            local generation = runtimeGeneration
             local recordResponse = callCad("vehicle record", CadApiCreateRecord, data)
+            if generation ~= runtimeGeneration then return end
             if recordResponse.success and recordResponse.recordId ~= nil then
                 local recordId = recordResponse.recordId
                 processedVehData[uniqueKey] = {id = recordId, timestamp = os.time()}
@@ -1057,6 +1082,7 @@ if pluginConfig.enabled then
                     if generation ~= catalogGeneration or not isReady() then return end
                     ersHealth.catalog.attempts = attempt
                     local ok, calloutData = pcall(function() return exports.night_ers:getCallouts() end)
+                    if generation ~= catalogGeneration or not isReady() then return end
                     if ok and type(calloutData) == "table" then
                         local list = {}
                         for uid, callout in pairs(calloutData) do
@@ -1077,6 +1103,7 @@ if pluginConfig.enabled then
                         if #list > 0 or (attempt >= 6 and not emptyPublished) then
                             local data = {serverId = tonumber(Config.serverId), callouts = list}
                             local uploadOk, response = pcall(CadApiSetAvailableCallouts, data)
+                            if generation ~= catalogGeneration or not isReady() then return end
                             if uploadOk and type(response) == "table" and response.success then
                                 ersHealth.catalog.status = #list > 0 and "synced to CAD" or "no callouts configured in night_ers"
                                 ersHealth.catalog.syncedAt = os.date('!%Y-%m-%dT%H:%M:%SZ')
@@ -1128,7 +1155,9 @@ if pluginConfig.enabled then
                 return
             end
             ersHealth.counters.cadCallouts = ersHealth.counters.cadCallouts + 1
+            local generation = runtimeGeneration
             local createOk, calloutID = pcall(function() return exports.night_ers:createCallout(calloutData.callout) end)
+            if generation ~= runtimeGeneration then return end
             if not createOk then
                 ersFailure("CAD callout", calloutID)
                 errorLog("ERS_CALLOUT_CREATE_FAILED", "night_ers createCallout export failed: " .. tostring(calloutID))
@@ -1165,6 +1194,7 @@ if pluginConfig.enabled then
     AddEventHandler('onResourceStop', function(resourceName)
         if resourceName == 'night_ers' then
             catalogGeneration = catalogGeneration + 1
+            resetRuntimeState()
             ersHealth.ready = false
             ersHealth.status = "night_ers stopped; waiting for restart"
             ersHealth.catalog.status = "night_ers stopped"
