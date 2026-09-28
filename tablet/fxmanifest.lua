@@ -9,7 +9,8 @@ server_scripts {
 }
 
 client_scripts {
-    'cl_main.lua'
+    'cl_main.lua',
+    'cl_display.lua'
 }
 
 
@@ -18,6 +19,7 @@ files {
     'html/style.css',
     'html/reset.css',
     "html/script.js",
+    "html/display-surface.js",
     "html/notepad-sync.js",
     "html/display.html",
     "html/background.png"

@@ -308,11 +308,13 @@ function SetFocused(focused)
 end
 
 -- Remove NUI focus
-RegisterNUICallback('NUIFocusOff', function()
+RegisterNUICallback('NUIFocusOff', function(_, cb)
 	print('NUI Focus Off Received')
+	CloseCadDisplay()
 	DisplayModule("cad", false)
-	toggleTabletDisplay(false)
+	if usingTablet then toggleTabletDisplay(false) end
 	SetFocused(false)
+	cb({ ok = true })
 end)
 
 RegisterNetEvent("SonoranCAD::mini:OpenMini:Return")
@@ -403,8 +405,9 @@ local function setMiniCadRows(args)
 end
 
 local function openCadTablet()
+	if IsCadDisplayActive() then CloseCadDisplay() end
 	DisplayModule("cad", true)
-	toggleTabletDisplay(true)
+	if not usingTablet then toggleTabletDisplay(true) end
 	SetFocused(true)
 end
 

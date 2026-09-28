@@ -172,6 +172,27 @@ local config = {
         "SHERIFF2"
     },
 
+    -- Live computer interaction. Corners are model-local metres in TL, TR, BR, BL order,
+    -- viewed from the front of the screen. Tune the starting laptop profile in-game.
+    -- Custom props can add their own model entry. For built-in vehicle screens, put
+    -- an interaction = { corners = {...} } profile on that builtinScreens entry;
+    -- those coordinates are relative to the vehicle, not a separate laptop prop.
+    -- Unconfigured models retain the normal tablet view.
+    interaction = {
+        enabled = true,
+        transitionMs = 450,
+        models = {
+            prop_laptop_jimmy = {
+                corners = {
+                    { x = -0.155, y = 0.082, z = 0.255 },
+                    { x =  0.155, y = 0.082, z = 0.255 },
+                    { x =  0.155, y = 0.035, z = 0.060 },
+                    { x = -0.155, y = 0.035, z = 0.060 }
+                }
+            }
+        }
+    },
+
     -- Interaction settings
     interactKey = "G", -- Default key mapping for interaction (RegisterKeyMapping)
     interactControl = 47, -- Fallback control code (INPUT_DETONATE) - avoid horn (E)

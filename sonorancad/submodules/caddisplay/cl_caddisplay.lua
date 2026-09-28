@@ -47,6 +47,7 @@ CreateThread(function()
                     local sx = texW / 512.0
                     local sy = texH / 256.0
                     local cfg = {
+                        interaction = entry.interaction,
                         texture = screenTexture,
                         scale = { x = sx, y = sy, z = 1.0 },
                         model = veh,
@@ -89,29 +90,30 @@ CreateThread(function()
             local displayOwners = {}
             local activeRequests = {}
             local incomingRequest = nil
-            local claimedOnce = {}
             local worldAdmin = false
+            local pendingInteraction = nil
+            local activeInteractionKey = nil
+            local interactionConfig = pluginConfig.interaction or {}
+            local interactionModels = {}
+            -- Existing local configs may predate the interaction settings.
+            local defaultLaptopProfile = {
+                corners = {
+                    { x = -0.155, y = 0.082, z = 0.255 },
+                    { x =  0.155, y = 0.082, z = 0.255 },
+                    { x =  0.155, y = 0.035, z = 0.060 },
+                    { x = -0.155, y = 0.035, z = 0.060 }
+                }
+            }
+            interactionModels[displayModelHash] = defaultLaptopProfile
+            for model, profile in pairs(interactionConfig.models or {}) do
+                interactionModels[GetHashKey(model)] = profile
+            end
 
             local interactRange = pluginConfig.interactRange or 1.5
-            local interactControl = pluginConfig.interactControl or 47
             local interactKeybind = pluginConfig.interactKey or "G"
             local screenshotInterval = 5000
             local acceptKeybind = pluginConfig.requestAcceptKey or "Y"
             local denyKeybind = pluginConfig.requestDenyKey or "L"
-            local fallbackTabletCommand = tostring(GetConvar("sonorantablet_command", "tablet"))
-            fallbackTabletCommand = fallbackTabletCommand:match("^%s*/?([^%s/]+)") or "tablet"
-
-            local function getTabletViewCommand()
-                if GetResourceState("tablet") == "started" then
-                    local ok, command = pcall(function()
-                        return exports["tablet"]:GetTabletCommand()
-                    end)
-                    if ok and type(command) == "string" and command ~= "" then
-                        return "/" .. command:gsub("^/+", "") .. " open"
-                    end
-                end
-                return "/" .. fallbackTabletCommand .. " open"
-            end
 
             function getVehNetIdOrNil(veh)
                 if veh == nil or veh == 0 then
@@ -1186,14 +1188,75 @@ CreateThread(function()
                 syncWorldPlacements(serverDb or {})
             end)
 
+            local function openDisplayInteraction(target)
+                pendingInteraction = nil
+                local ped = PlayerPedId()
+                if not DoesEntityExist(target.entity) or IsEntityDead(ped)
+                    or GetVehiclePedIsIn(ped, false) ~= target.vehicle
+                    or #(GetEntityCoords(ped) - GetEntityCoords(target.entity)) > interactRange then return end
+                if GetResourceState("tablet") ~= "started" then
+                    notify("The tablet resource must be running to use this display.")
+                    return
+                end
+                local builtin = target.vehicle ~= 0 and target.entity == target.vehicle
+                    and getBuiltinScreenConfig(target.vehicle) or nil
+                local profile
+                if builtin then
+                    profile = builtin.interaction
+                else
+                    profile = interactionModels[GetEntityModel(target.entity)]
+                end
+                if interactionConfig.enabled == false or not profile then
+                    TriggerEvent("SonoranCAD::Tablet::OpenCad")
+                    return
+                end
+                local ok, opened = pcall(function()
+                    return exports["tablet"]:OpenDisplay({
+                        entity = target.entity, key = target.key, profile = profile,
+                        range = interactRange, transitionMs = interactionConfig.transitionMs
+                    })
+                end)
+                if ok and opened then
+                    activeInteractionKey = target.key
+                else
+                    notify("Unable to focus this display. Close the tablet or check its screen profile.")
+                end
+            end
+
+            local function requestDisplayInteraction(entity, vehicle, key)
+                if activeInteractionKey then return false end
+                local target = { entity = entity, vehicle = vehicle, key = key, expires = GetGameTimer() + 12000 }
+                if displayOwners[key] == GetPlayerServerId(PlayerId()) then
+                    openDisplayInteraction(target)
+                    return false
+                end
+                pendingInteraction = target
+                return true
+            end
+
+            AddEventHandler("SonoranCAD::Tablet::DisplayClosed", function(key)
+                if activeInteractionKey == key then activeInteractionKey = nil end
+            end)
+
             RegisterNetEvent("SonoranCAD::caddisplay::SyncOwners", function(serverOwners)
+                local previousOwners = displayOwners
                 displayOwners = serverOwners or {}
                 local me = GetPlayerServerId(PlayerId())
+                if activeInteractionKey and displayOwners[activeInteractionKey] ~= me then
+                    if GetResourceState("tablet") == "started" then exports["tablet"]:CloseDisplay() end
+                    activeInteractionKey = nil
+                end
+                if pendingInteraction then
+                    if GetGameTimer() > pendingInteraction.expires then
+                        pendingInteraction = nil
+                    elseif displayOwners[pendingInteraction.key] == me then
+                        openDisplayInteraction(pendingInteraction)
+                    end
+                end
                 for vehNet, owner in pairs(displayOwners) do
                     if owner ~= nil then
                         local key = tostring(vehNet)
-                        claimedOnce[key] = true
-                        if owner == me then
+                        if owner == me and previousOwners[key] ~= me then
                             notify("You now have control of the CAD display.")
                         end
                     end
@@ -1228,8 +1291,9 @@ CreateThread(function()
                     incomingRequest.requesterName or "someone", acceptKeybind, denyKeybind))
             end)
 
-            RegisterNetEvent("SonoranCAD::caddisplay::ControlRequestExpired", function()
+            RegisterNetEvent("SonoranCAD::caddisplay::ControlRequestExpired", function(key)
                 incomingRequest = nil
+                if pendingInteraction and tostring(key) == pendingInteraction.key then pendingInteraction = nil end
             end)
 
             RegisterNetEvent("SonoranCAD::caddisplay::OpenMenu", function(adminFlag, worldFlag)
@@ -1249,6 +1313,10 @@ CreateThread(function()
             end)
 
             AddEventHandler("onResourceStop", function(resource)
+                if resource == "tablet" then
+                    activeInteractionKey = nil
+                    pendingInteraction = nil
+                end
                 if resource == GetCurrentResourceName() then
                     while #spawnedDisplays > 0 do
                         removeDisplayAtIndex(1)
@@ -1265,6 +1333,7 @@ CreateThread(function()
                 "Sonoran CAD Display: " .. pluginConfig.lang.addNewDisplayHelp)
 
             RegisterCommand("SonoranCAD::caddisplay::Interact", function()
+                if activeInteractionKey or worldEditActive then return end
                 local ped = PlayerPedId()
                 local veh = GetVehiclePedIsIn(ped, false)
                 if veh == 0 then
@@ -1279,8 +1348,9 @@ CreateThread(function()
                             notify("Move closer to the CAD display to interact.")
                             return
                         end
-                        TriggerEvent("SonoranCAD::Tablet::OpenCad")
-                        TriggerServerEvent("SonoranCAD::caddisplay::ClaimWorldDisplay", tonumber(displayId))
+                        if requestDisplayInteraction(displayObj, 0, getWorldDisplayKey(displayId)) then
+                            TriggerServerEvent("SonoranCAD::caddisplay::ClaimWorldDisplay", tonumber(displayId))
+                        end
                         return
                     end
                     notify(pluginConfig.lang.notInVeh)
@@ -1306,7 +1376,9 @@ CreateThread(function()
                 end
 
                 local seat = getSeatIndexForPed(veh, ped)
-                TriggerServerEvent("SonoranCAD::caddisplay::ClaimDisplay", vehNet, seat)
+                if requestDisplayInteraction(vehicleRecord.prop, veh, tostring(vehNet)) then
+                    TriggerServerEvent("SonoranCAD::caddisplay::ClaimDisplay", vehNet, seat)
+                end
             end, false)
 
             RegisterKeyMapping("SonoranCAD::caddisplay::Interact", "Interact with CAD Display", "keyboard",
@@ -1333,16 +1405,45 @@ CreateThread(function()
             end, false)
             RegisterKeyMapping("SonoranCAD::caddisplay::DenyRequest", "Deny CAD control request", "keyboard", denyKeybind)
 
-            -- Poll for CAD screenshots when the owner is seated in the vehicle and near the display
+            -- Draw only the current interaction target, including displays already claimed.
             CreateThread(function()
-                local drawInteractPrompt = false
+                while true do
+                    local object, key
+                    if not IsNuiFocused() and not worldEditActive then
+                        local ped = PlayerPedId()
+                        local vehicle = GetVehiclePedIsIn(ped, false)
+                        if vehicle ~= 0 then
+                            local record = findVehicleRecord(vehicle)
+                            if record then
+                                object, key = record.prop, tostring(record.vehNet)
+                            end
+                        elseif isWorldDisplayEnabled() then
+                            local id
+                            id, object = getClosestWorldDisplay(GetEntityCoords(ped), interactRange)
+                            if id then key = getWorldDisplayKey(id) end
+                        end
+                        if object and DoesEntityExist(object)
+                            and #(GetEntityCoords(ped) - GetEntityCoords(object)) <= interactRange then
+                            local owner = displayOwners[key]
+                            local action = owner and owner ~= GetPlayerServerId(PlayerId()) and "request control" or "use computer"
+                            drawWorldPrompt(GetEntityCoords(object) + vector3(0.0, 0.0, 0.3),
+                                ("Press %s to %s"):format(interactKeybind, action))
+                        else
+                            object = nil
+                        end
+                    end
+                    Wait(object and 0 or 250)
+                end
+            end)
+
+            -- Keep the existing screenshot broadcast for other players' world textures.
+            CreateThread(function()
                 while true do
                     Wait(1000)
                     if incomingRequest and incomingRequest.expires and GetGameTimer() > incomingRequest.expires then
                         incomingRequest = nil
                     end
                     local now = GetGameTimer()
-                    local ped = PlayerPedId()
                     local localServerId = GetPlayerServerId(PlayerId())
 
                     for _, car in ipairs(vehiclesWithDisplays) do
@@ -1356,25 +1457,6 @@ CreateThread(function()
                             local vehNet = getVehNetIdOrNil(veh)
                             local ownerId = vehNet and displayOwners[tostring(vehNet)] or nil
                             local prop = car.prop
-                            if not drawInteractPrompt and prop ~= nil and DoesEntityExist(prop) and ownerId == nil and hasAnyOccupant(veh) then
-                                local tabletViewCommand = getTabletViewCommand()
-                                CreateThread(function()
-                                    drawInteractPrompt = true
-                                    while drawInteractPrompt do
-                                        Wait(0)
-                                        local distPrompt = #(GetEntityCoords(ped) - GetEntityCoords(prop))
-                                        local promptKey = tostring(vehNet or prop)
-                                        if distPrompt <= interactRange + 0.5 and not claimedOnce[promptKey] then
-                                            drawWorldPrompt(GetEntityCoords(prop) + vector3(0.0, 0.0, 0.3),
-                                                ("Press %s to interact~n~%s to view"):format(interactKeybind,
-                                                    tabletViewCommand))
-                                        else
-                                            drawInteractPrompt = false
-                                        end
-                                    end
-                                end)
-                            end
-
                             if ownerId ~= nil and ownerId == localServerId then
                                 if prop ~= nil and DoesEntityExist(prop) then
                                     if (car._nextReq or 0) <= now then
@@ -1393,22 +1475,6 @@ CreateThread(function()
                             if obj ~= nil and DoesEntityExist(obj) then
                                 local key = getWorldDisplayKey(id)
                                 local ownerId = displayOwners[key]
-                                if not drawInteractPrompt and ownerId == nil then
-                                    CreateThread(function()
-                                        drawInteractPrompt = true
-                                        while drawInteractPrompt do
-                                            Wait(0)
-                                            local distPrompt = #(GetEntityCoords(ped) - GetEntityCoords(obj))
-                                            if distPrompt <= interactRange + 0.5 and not claimedOnce[key] then
-                                                drawWorldPrompt(GetEntityCoords(obj) + vector3(0.0, 0.0, 0.3),
-                                                    ("Press %s to interact"):format(interactKeybind))
-                                            else
-                                                drawInteractPrompt = false
-                                            end
-                                        end
-                                    end)
-                                end
-
                                 if ownerId ~= nil and ownerId == localServerId then
                                     if (worldDisplayNextReq[id] or 0) <= now then
                                         local reqId = ("caddisplay-world-%s-%d"):format(ownerId, now)

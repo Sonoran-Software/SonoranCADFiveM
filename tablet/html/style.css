@@ -1,3 +1,44 @@
+/* Live CAD projected onto an in-world screen. Saved tablet dimensions stay intact. */
+#cadDiv.display-surface {
+	position: fixed !important;
+	top: 0 !important;
+	left: 0 !important;
+	width: var(--display-width, 1280px) !important;
+	height: var(--display-height, 640px) !important;
+	border: 0;
+	border-radius: 0;
+	box-shadow: none;
+	transform-origin: 0 0;
+	transform: var(--display-transform, none) !important;
+	opacity: 0 !important;
+	pointer-events: none !important;
+	transition: none;
+	will-change: transform;
+}
+#cadDiv.display-surface.display-surface-ready {
+	opacity: 1 !important;
+	pointer-events: auto !important;
+}
+#cadDiv.display-surface::before,
+#cadDiv.display-surface #homeButton,
+#cadDiv.display-surface #tabletCamera { display: none; }
+#cadDiv.display-surface:not(.display-surface-ready) #cadFrame { pointer-events: none; }
+#cadDiv.display-surface #check-api-data { position: absolute; z-index: 1; }
+#displayExit {
+	position: fixed;
+	bottom: 24px;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 10000;
+	padding: 10px 20px;
+	border: 1px solid #777;
+	border-radius: 5px;
+	background: #202020;
+	color: white;
+	font: 16px sans-serif;
+	cursor: pointer;
+}
+#displayExit[hidden] { display: none; }
 /* Tablet Device */
 #cadDiv {
 	position: absolute;
@@ -96,7 +137,7 @@
 	height: 100%;
 	display: block;
 	overflow: hidden;
-	pointer-events: auto;
+	pointer-events: inherit;
 }
 
 /* Prevent iframe interference during drag operations */

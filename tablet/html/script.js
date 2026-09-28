@@ -560,6 +560,7 @@ function dragElement(elmnt) {
 	}
 
 	function dragMouseDown(e) {
+		if (elmnt.classList.contains('display-surface')) return;
 		e = e || window.event;
 		e.preventDefault();
 		e.stopPropagation();
