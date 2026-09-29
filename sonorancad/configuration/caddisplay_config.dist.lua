@@ -181,6 +181,8 @@ local config = {
     -- an interaction = { corners = {...} } profile on that builtinScreens entry;
     -- those coordinates are relative to the vehicle, not a separate laptop prop.
     -- Unconfigured models report a missing profile. /tablet open remains available.
+    -- /caddisplay calibrate shows a corner editor and prints a ready-to-paste profile in F8.
+    -- The standard laptop also has a hardcoded fallback when these settings are absent.
     interaction = {
         enabled = true,
         transitionMs = 900,

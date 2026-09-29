@@ -60,6 +60,37 @@ management. Station displays must also have `worldDisplays.enabled = true`.
 
 ### Screen alignment
 
+The standard `prop_laptop_jimmy` works without adding an `interaction` section:
+the client includes the default corners, enables interaction, and uses a 900 ms
+transition. Explicit settings in your config override these defaults.
+
+To calibrate a screen in game:
+
+1. Close the tablet. Stand within 3 metres of a station display, or sit in the
+   stationary vehicle containing the attached laptop or configured built-in screen.
+2. Run `/caddisplay calibrate` (use your configured command name if different).
+   You need menu permission plus station or vehicle display administration permission
+   for the selected target.
+3. Follow the numbered markers **1 top-left, 2 top-right, 3 bottom-right,
+   4 bottom-left**, viewed from the front. Aim with the mouse and click to place
+   the selected marker on the target's collision; Tab selects the next marker.
+4. Fine-tune with arrows (model X/Z) and Page Up/Down (model Y/depth). Hold Shift
+   for smaller movements, or Ctrl to move all four corners together. Inspect the
+   screen from different viewing angles to check depth. Models without an existing
+   profile start with a placeholder rectangle in front of the camera.
+5. R restores the starting corners. F flattens corner 4 onto the plane of corners
+   1-3. Enter validates and applies the profile locally; Backspace cancels.
+6. Press G to test the live CAD alignment. Copy the printed F8 block into your
+   active `caddisplay_config.lua` to keep it for everyone, then restart `sonorancad`.
+   Replace the existing model entry when present, keeping one profile per model.
+   Prop blocks belong inside `interaction.models` (numeric model hashes are valid);
+   built-in screen blocks belong inside that vehicle's `builtinScreens` entry.
+
+Calibration does not save server files or change other players' screens. Local
+test profiles last until the resource restarts. Collision can differ from the
+visible screen, so use the manual adjustments when click placement misses the
+bezel. The editor handles entity rotation and scale when exporting model coordinates.
+
 The optional `interaction` section in `caddisplay_config.lua` controls this mode:
 
 - `enabled = false` disables laptop camera interaction; `/tablet open` remains available.

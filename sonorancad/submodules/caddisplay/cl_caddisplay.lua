@@ -95,6 +95,7 @@ CreateThread(function()
             local activeInteractionKey = nil
             local interactionConfig = pluginConfig.interaction or {}
             local interactionModels = {}
+            local interactionModelKeys = { [displayModelHash] = displayModel }
             -- Existing local configs may predate the interaction settings.
             local defaultLaptopProfile = {
                 corners = {
@@ -106,7 +107,9 @@ CreateThread(function()
             }
             interactionModels[displayModelHash] = defaultLaptopProfile
             for model, profile in pairs(interactionConfig.models or {}) do
-                interactionModels[GetHashKey(model)] = profile
+                local hash = type(model) == "number" and model or GetHashKey(model)
+                interactionModels[hash] = profile
+                interactionModelKeys[hash] = model
             end
 
             local interactRange = pluginConfig.interactRange or 1.5
@@ -1314,7 +1317,54 @@ CreateThread(function()
                 if pendingInteraction and tostring(key) == pendingInteraction.key then pendingInteraction = nil end
             end)
 
+            RegisterNetEvent("SonoranCAD::caddisplay::Calibrate", function(adminFlag, worldFlag)
+                if worldEditActive or activeInteractionKey or pendingInteraction then
+                    notify("Close the display or placement editor before calibrating.")
+                    return
+                end
+                local ped = PlayerPedId()
+                local vehicle = GetVehiclePedIsIn(ped, false)
+                local entity, builtin
+                if vehicle == 0 then
+                    if not worldFlag or not isWorldDisplayEnabled() then
+                        notify("Station display administration permission is required to calibrate a station screen.")
+                        return
+                    end
+                    local _, object = getClosestWorldDisplay(GetEntityCoords(ped), 3.0)
+                    entity = object
+                else
+                    if not adminFlag then
+                        notify("Vehicle display administration permission is required to calibrate a vehicle screen.")
+                        return
+                    end
+                    local record = findVehicleRecord(vehicle)
+                    entity = record and record.prop
+                    builtin = entity == vehicle and getBuiltinScreenConfig(vehicle) or nil
+                end
+                if not entity or not DoesEntityExist(entity) then
+                    notify("No nearby CAD display found. Stand by a station display or sit in a vehicle with a display.")
+                    return
+                end
+                local model = GetEntityModel(entity)
+                WarMenu.CloseMenu()
+                local opened, reason = CadDisplayCalibration.Start({
+                    entity = entity, model = builtin and builtin.model or interactionModelKeys[model] or model,
+                    builtin = builtin ~= nil,
+                    range = vehicle == 0 and 3.0 or 5.0,
+                    profile = builtin and builtin.interaction or (not builtin and interactionModels[model] or nil),
+                    notify = notify,
+                    apply = function(profile)
+                        if builtin then builtin.interaction = profile else interactionModels[model] = profile end
+                    end
+                })
+                if not opened then notify(reason) end
+            end)
+
             RegisterNetEvent("SonoranCAD::caddisplay::OpenMenu", function(adminFlag, worldFlag)
+                if CadDisplayCalibration and CadDisplayCalibration.IsActive() then
+                    notify("Finish or cancel screen calibration before opening the placement menu.")
+                    return
+                end
                 isAdmin = adminFlag or false
                 worldAdmin = worldFlag or false
                 local veh = GetVehiclePedIsIn(PlayerPedId(), false)
@@ -1365,14 +1415,16 @@ CreateThread(function()
 
             TriggerServerEvent("SonoranCAD::caddisplay::RequestPlacements")
             TriggerEvent("chat:addSuggestion", "/" .. pluginConfig.commands.cadDisplayMenu,
-                "Sonoran CAD Display: " .. pluginConfig.lang.addNewDisplayHelp)
+                "Sonoran CAD Display: " .. pluginConfig.lang.addNewDisplayHelp,
+                { { name = "action", help = "calibrate: edit the four screen corners (display administrators)" } })
             RegisterPlayerCommandHelp("caddisplay", pluginConfig.commands.cadDisplayMenu,
                 "Sonoran CAD Display: " .. pluginConfig.lang.addNewDisplayHelp)
 
             RegisterCommand("SonoranCAD::caddisplay::Interact", function()
                 print(("[caddisplay] G interaction (laptop camera): tablet=%s active=%s editing=%s"):format(
                     GetResourceState("tablet"), tostring(activeInteractionKey), tostring(worldEditActive)))
-                if activeInteractionKey or worldEditActive then return end
+                if activeInteractionKey or worldEditActive
+                    or (CadDisplayCalibration and CadDisplayCalibration.IsActive()) then return end
                 local ped = PlayerPedId()
                 local veh = GetVehiclePedIsIn(ped, false)
                 if veh == 0 then

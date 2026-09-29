@@ -304,7 +304,7 @@ local function withCadDisplay(s, configure)
     assert(loadfile('sonorancad/configuration/caddisplay_config.dist.lua', 't', env))()
     if configure then configure(config) end
     env.print = function(message) table.insert(s.notifications, message) end
-    env.GetHashKey = function(model) return model end
+    env.GetHashKey = function(model) assert(type(model) == 'string'); return model end
     env.GetEntityModel = function() return 'prop_laptop_jimmy' end
     env.GetResourceState = function() return 'started' end
     env.GetPlayerServerId = function() return 42 end
@@ -318,9 +318,13 @@ local function withCadDisplay(s, configure)
     env.RegisterKeyMapping = function(name, _, _, key) s.keymaps[name] = key end
     env.RegisterPlayerCommandHelp = noop
     env.TriggerServerEvent = function(name, ...) table.insert(s.claims, { name, ... }) end
-    env.WarMenu = { OpenMenu = function(menu) s.openedMenu = menu end }
+    env.WarMenu = { OpenMenu = function(menu) s.openedMenu = menu end,
+        CloseMenu = function() s.openedMenu = nil end }
     env.exports = { tablet = {
-        OpenDisplay = function(_, options) return s.exports.OpenDisplay(options) end,
+        OpenDisplay = function(_, options)
+            s.lastDisplayOptions = options
+            return s.exports.OpenDisplay(options)
+        end,
         CloseDisplay = function(_, immediate) return s.exports.CloseDisplay(immediate) end
     } }
     local createThread = env.CreateThread
@@ -333,6 +337,89 @@ local function withCadDisplay(s, configure)
     s.claims = {}
     return s.commands['SonoranCAD::caddisplay::Interact'], s.events['SonoranCAD::caddisplay::SyncOwners']
 end
+
+for _, missing in ipairs({ 'section', 'models' }) do
+    test('hardcoded laptop corners work without the interaction ' .. missing, function()
+        local s = harness()
+        local interact, syncOwners = withCadDisplay(s, function(config)
+            if missing == 'section' then config.interaction = nil else config.interaction.models = nil end
+        end)
+        syncOwners({ ['world:7'] = 42 })
+        interact()
+        assert(s.env.IsCadDisplayActive())
+        local p = s.lastDisplayOptions.profile.corners
+        assert(p[1].x == -.162 and p[1].y == .0774 and p[1].z == .236)
+        assert(p[3].x == .158 and p[3].y == .0316 and p[3].z == .046)
+        s.time = 999
+        s:frame()
+        assert(s.messages[#s.messages].type == 'display_surface')
+        s.time = 1000
+        s:frame()
+        assert(s.messages[#s.messages].type == 'display_surface_frame')
+    end)
+end
+
+test('calibration applies a prop profile locally for the next G interaction', function()
+    local s = harness()
+    local interact, syncOwners = withCadDisplay(s)
+    local options
+    s.env.CadDisplayCalibration = { IsActive = function() return false end,
+        Start = function(value) options = value; return true end }
+    s.events['SonoranCAD::caddisplay::Calibrate'](false, true)
+    assert(options.entity == 2 and not options.builtin)
+    local profile = { corners = s.options.profile.corners }
+    options.apply(profile)
+    syncOwners({ ['world:7'] = 42 })
+    interact()
+    assert(s.lastDisplayOptions.profile == profile)
+end)
+
+test('exported numeric model keys load as configured interaction profiles', function()
+    local s = harness()
+    local profile = { corners = s.options.profile.corners }
+    local interact, syncOwners = withCadDisplay(s, function(config)
+        config.interaction.models[123456] = profile
+    end)
+    s.env.GetEntityModel = function() return 123456 end
+    syncOwners({ ['world:7'] = 42 })
+    interact()
+    assert(s.env.IsCadDisplayActive() and s.lastDisplayOptions.profile == profile)
+end)
+
+test('station calibration rejects vehicle-only administrators', function()
+    local s = harness()
+    withCadDisplay(s)
+    s.env.CadDisplayCalibration = { Start = function() error('unauthorized calibration') end }
+    s.events['SonoranCAD::caddisplay::Calibrate'](true, false)
+    assert(s.notifications[#s.notifications]:find('Station display administration', 1, true))
+end)
+
+test('built-in vehicle calibration updates that screen profile for G', function()
+    local s = harness()
+    local interact, syncOwners = withCadDisplay(s)
+    s.vehicle = 3
+    s.env.trackDisplayForVehicle(3, 3)
+    local builtin, options = { model = 'POLICE' }
+    s.env.getBuiltinScreenConfig = function() return builtin end
+    s.env.CadDisplayCalibration = { IsActive = function() return false end,
+        Start = function(value) options = value; return true end }
+    s.events['SonoranCAD::caddisplay::Calibrate'](true, false)
+    assert(options.entity == 3 and options.builtin and options.model == 'POLICE' and not options.profile)
+    local profile = { corners = s.options.profile.corners }
+    options.apply(profile)
+    syncOwners({ ['100'] = 42 })
+    interact()
+    assert(s.lastDisplayOptions.profile == profile and builtin.interaction == profile)
+end)
+
+test('G and the placement menu are blocked while calibrating', function()
+    local s = harness()
+    local interact = withCadDisplay(s)
+    s.env.CadDisplayCalibration = { IsActive = function() return true end }
+    interact()
+    s.events['SonoranCAD::caddisplay::OpenMenu'](true, true)
+    assert(not s.env.IsCadDisplayActive() and not s.openedMenu and #s.claims == 0)
+end)
 
 test('station administrators on foot open station management without a vehicle', function()
     local s = harness()
