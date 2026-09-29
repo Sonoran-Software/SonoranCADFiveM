@@ -31,7 +31,7 @@ test('invalid, degenerate and folded surfaces are rejected', () => {
     }
 });
 
-test('surface lifecycle preserves the iframe and rejects iframe-sourced messages', () => {
+test('FiveM parent messages drive the surface while child and foreign messages are rejected', () => {
     const vm = require('node:vm');
     const fs = require('node:fs');
     const classes = new Set();
@@ -49,7 +49,11 @@ test('surface lifecycle preserves the iframe and rejects iframe-sourced messages
         }
     };
     const callbacks = [];
+    const gameWindow = {};
+    const gameOrigin = 'nui://game';
     const context = {
+        parent: gameWindow,
+        location: { ancestorOrigins: [gameOrigin] },
         document: { getElementById(id) { return id === 'cadDiv' ? surface : exit; } },
         innerWidth: 1920, innerHeight: 1080,
         addEventListener(type, fn) { listeners[type] = fn; },
@@ -57,8 +61,10 @@ test('surface lifecycle preserves the iframe and rejects iframe-sourced messages
     };
     context.window = context;
     vm.runInNewContext(fs.readFileSync(require.resolve('../html/display-surface'), 'utf8'), context);
-    const send = data => listeners.message({ source: null, data });
+    const send = data => listeners.message({ source: gameWindow, origin: gameOrigin, data });
     listeners.message({ source: {}, data: { type: 'display_surface', enabled: true } });
+    listeners.message({ source: null, origin: gameOrigin, data: { type: 'display_surface', enabled: true } });
+    listeners.message({ source: gameWindow, origin: 'https://example.invalid', data: { type: 'display_surface', enabled: true } });
     assert.equal(classes.size, 0);
     send({ type: 'display_surface', enabled: true });
     assert.equal(exit.hidden, false);

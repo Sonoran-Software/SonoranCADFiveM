@@ -16,7 +16,10 @@ local function harness()
         vector3 = vector, nuiFocused = false, usingTablet = false,
         exports = function(name, callback) state.exports[name] = callback end,
         AddEventHandler = function(name, callback) state.events[name] = callback end,
-        TriggerEvent = function(name, key) state.closedKey = key end,
+        TriggerEvent = function(name, key)
+            state.closedKey = key
+            if state.events[name] then state.events[name](key) end
+        end,
         GetGameTimer = function() return state.time end,
         DoesEntityExist = function(entity) return entity ~= 0 and state.exists end,
         PlayerPedId = function() return 1 end, PlayerId = function() return 1 end,
@@ -156,5 +159,81 @@ test('leaving interaction range restores the player', function()
     s.env.GetEntityCoords = function(entity) return s.env.vector3(entity == 1 and 10 or 0, 0, 0) end
     s:frame()
     assert(not s.focused and not s.frozen and not s.env.IsCadDisplayActive())
+end)
+
+-- Exercise the actual G command and ownership handlers against the tablet export,
+-- without running unrelated placement/menu polling threads.
+local function withCadDisplay(s)
+    local env = s.env
+    local config, setup
+    local noop = function() end
+    s.commands, s.claims, s.notifications, s.keymaps = {}, {}, {}, {}
+    env.Config = {
+        RegisterPluginConfig = function(_, value) config = value end,
+        LoadPlugin = function(_, callback) callback(config) end
+    }
+    assert(loadfile('sonorancad/configuration/caddisplay_config.dist.lua', 't', env))()
+    env.GetHashKey = function(model) return model end
+    env.GetEntityModel = function() return 'prop_laptop_jimmy' end
+    env.GetResourceState = function() return 'started' end
+    env.GetPlayerServerId = function() return 42 end
+    env.GetVehicleMaxNumberOfPassengers = function() return 3 end
+    env.GetPedInVehicleSeat = function(_, seat) return seat == -1 and 1 or 0 end
+    env.VehToNet = function() return 100 end
+    env.ApplyPluginNotificationOverrides = function(_, payload) return payload end
+    env.NotifyClient = function(payload) table.insert(s.notifications, payload.message) end
+    env.RegisterNetEvent = function(name, callback) s.events[name] = callback end
+    env.RegisterCommand = function(name, callback) s.commands[name] = callback end
+    env.RegisterKeyMapping = function(name, _, _, key) s.keymaps[name] = key end
+    env.RegisterPlayerCommandHelp = noop
+    env.TriggerServerEvent = function(name, ...) table.insert(s.claims, { name, ... }) end
+    env.WarMenu = {}
+    env.exports = { tablet = {
+        OpenDisplay = function(_, options) return s.exports.OpenDisplay(options) end,
+        CloseDisplay = function(_, immediate) return s.exports.CloseDisplay(immediate) end
+    } }
+    local createThread = env.CreateThread
+    env.CreateThread = function(callback) setup = callback end
+    assert(loadfile('sonorancad/submodules/caddisplay/cl_caddisplay.lua', 't', env))()
+    env.CreateThread = noop
+    setup()
+    env.CreateThread = createThread
+    env.getClosestWorldDisplay = function() return 7, 2, 0.5 end
+    s.claims = {}
+    return s.commands['SonoranCAD::caddisplay::Interact'], s.events['SonoranCAD::caddisplay::SyncOwners']
+end
+
+for _, target in ipairs({ 'station', 'vehicle' }) do
+    test('G starts the ' .. target .. ' laptop camera on ownership grant and on reuse', function()
+        local s = harness()
+        local interact, syncOwners = withCadDisplay(s)
+        local key = 'world:7'
+        if target == 'vehicle' then
+            s.vehicle = 3
+            s.env.trackDisplayForVehicle(3, 2)
+            key = '100'
+        end
+        assert(s.keymaps['SonoranCAD::caddisplay::Interact'] == 'G')
+        interact()
+        assert(#s.claims == 1 and not s.rendering)
+        syncOwners({ [key] = 42 })
+        assert(s.rendering and s.focused and s.env.IsCadDisplayActive())
+        assert(s.messages[#s.messages].type == 'display_surface')
+        s.env.CloseCadDisplay(true)
+        interact()
+        assert(#s.claims == 1 and s.rendering and s.focused)
+        syncOwners({ [key] = 99 })
+        assert(not s.rendering and not s.focused)
+    end)
+end
+
+test('G reports a busy handheld tablet instead of silently failing', function()
+    local s = harness()
+    local interact, syncOwners = withCadDisplay(s)
+    syncOwners({ ['world:7'] = 42 })
+    s.env.usingTablet = true
+    interact()
+    assert(not s.rendering)
+    assert(s.notifications[#s.notifications] == 'Close the handheld tablet before using the laptop.')
 end)
 print(('Passed %d display session tests'):format(count))

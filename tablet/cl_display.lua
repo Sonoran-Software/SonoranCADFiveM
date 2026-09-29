@@ -62,19 +62,27 @@ local function updateCamera(session, corners)
 end
 
 exports("OpenDisplay", function(options)
-    if displaySession or GetGameTimer() < closingUntil or nuiFocused or usingTablet then return false end
-    if type(options) ~= "table" or not DoesEntityExist(options.entity or 0) then return false end
+    if displaySession then return false, "A CAD display is already open." end
+    if GetGameTimer() < closingUntil then return false, "Wait for the camera to return, then press the interaction key again." end
+    if nuiFocused or usingTablet then return false, "Close the handheld tablet before using the laptop." end
+    if type(options) ~= "table" or not DoesEntityExist(options.entity or 0) then
+        return false, "The CAD display no longer exists."
+    end
     local profile = options.profile
-    if type(profile) ~= "table" or type(profile.corners) ~= "table" or #profile.corners ~= 4 then return false end
+    if type(profile) ~= "table" or type(profile.corners) ~= "table" or #profile.corners ~= 4 then
+        return false, "This screen needs four configured interaction corners."
+    end
     for _, point in ipairs(profile.corners) do
-        if type(point) ~= "table" then return false end
+        if type(point) ~= "table" then return false, "Invalid screen corner configuration." end
         for _, axis in ipairs({ "x", "y", "z" }) do
             local value = point[axis]
-            if type(value) ~= "number" or value ~= value or math.abs(value) > 100 then return false end
+            if type(value) ~= "number" or value ~= value or math.abs(value) > 100 then
+                return false, "Invalid screen corner coordinates."
+            end
         end
     end
     local ped = PlayerPedId()
-    if IsEntityDead(ped) or IsPedRagdoll(ped) then return false end
+    if IsEntityDead(ped) or IsPedRagdoll(ped) then return false, "You cannot use a display in this state." end
     local session = {
         key = options.key, entity = options.entity, corners = profile.corners,
         ped = ped, vehicle = GetVehiclePedIsIn(ped, false),
@@ -87,7 +95,7 @@ exports("OpenDisplay", function(options)
     local corners = worldCorners(session)
     if not updateCamera(session, corners) then
         DestroyCam(session.cam, false)
-        return false
+        return false, "The configured screen corners form an invalid surface."
     end
     displaySession = session
     session.frozePed = session.vehicle == 0 and not IsEntityPositionFrozen(ped)

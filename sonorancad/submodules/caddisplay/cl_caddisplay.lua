@@ -1210,7 +1210,7 @@ CreateThread(function()
                     TriggerEvent("SonoranCAD::Tablet::OpenCad")
                     return
                 end
-                local ok, opened = pcall(function()
+                local ok, opened, reason = pcall(function()
                     return exports["tablet"]:OpenDisplay({
                         entity = target.entity, key = target.key, profile = profile,
                         range = interactRange, transitionMs = interactionConfig.transitionMs
@@ -1218,8 +1218,13 @@ CreateThread(function()
                 end)
                 if ok and opened then
                     activeInteractionKey = target.key
+                elseif not ok then
+                    -- Do not swallow the export/native error behind a generic notification.
+                    print(("[caddisplay] Failed to open laptop view: %s"):format(tostring(opened)))
+                    pcall(function() exports["tablet"]:CloseDisplay(true) end)
+                    notify("Unable to start the laptop view. Update both sonorancad and tablet; see F8 for the error.")
                 else
-                    notify("Unable to focus this display. Close the tablet or check its screen profile.")
+                    notify(reason or "Unable to focus this display. Close the tablet or check its screen profile.")
                 end
             end
 

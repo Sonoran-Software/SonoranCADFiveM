@@ -26,6 +26,11 @@ Use **Exit computer** below the screen to return to the game. Escape also closes
 when the tablet's outer page has keyboard focus; the exit button works even when
 focus is inside the CAD iframe.
 
+You do not need to run `/tablet` first. `/tablet` shows command help, while
+`/tablet open` opens the separate handheld tablet. Close the handheld tablet before
+pressing **G** to use a laptop. If the laptop view cannot start, its notification
+explains why; export/native errors are also printed in F8 with a `[caddisplay]` prefix.
+
 Both `sonorancad` and `tablet` must be updated together. This uses a screen-aligned
 NUI iframe for the interacting player. Other players continue to see the existing
 periodic screenshot texture; this does not stream a live CAD session to spectators.
@@ -58,6 +63,8 @@ preserved when you exit.
 From the repository root, run `node --test tablet/tests/*.test.js` and
 `lua tablet/tests/display-session.test.lua`. These cover projection math, NUI
 lifecycle, and mocked camera/input cleanup. They do not validate FiveM rendering.
+The regression tests also cover FiveM's parent-window message delivery and the
+G-command ownership flow for station and vehicle displays.
 
 In-game QA should cover clicking/typing/scrolling in the CAD, exact bezel alignment,
 16:9 and ultrawide resolutions, rotated/scaled station props, passenger use in a

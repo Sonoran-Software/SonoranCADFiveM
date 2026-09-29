@@ -27,6 +27,9 @@
     if (!root.document) return;
     const surface = document.getElementById('cadDiv');
     const exit = document.getElementById('displayExit');
+    // FiveM's root UI forwards SendNUIMessage with parent -> resource postMessage.
+    // Chromium supplies the immediate parent's origin, including legacy nui:// URLs.
+    const gameOrigin = root.location.ancestorOrigins[0];
     let enabled = false;
     let corners = null;
     let width = 1280, height = 640;
@@ -38,8 +41,8 @@
         if (matrix) surface.style.setProperty('--display-transform', `matrix3d(${matrix.join(',')})`);
     }
     root.addEventListener('message', event => {
-        // NUI game messages have no source window; never accept iframe commands here.
-        if (event.source !== null || !event.data) return;
+        if (!gameOrigin || root.parent === root || event.source !== root.parent
+            || event.origin !== gameOrigin || !event.data) return;
         const data = event.data;
         if (data.type === 'display_surface') {
             enabled = data.enabled === true;
