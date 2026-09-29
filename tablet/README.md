@@ -41,8 +41,16 @@ either resource closes the focused view and restores the camera and input.
 ### Moving or deleting station displays
 
 Run `/caddisplay` on foot to open **Station CAD Displays**, select the placement,
-then use **Edit Selected Display** (and **Save Station Display**) or **Delete
+then use **Edit Selected Display** or **Delete
 Selected Display**. Station management does not require a compatible vehicle.
+
+Station and vehicle placement use a mouse gizmo. Drag colored axes or plane handles
+to move, click **Rotate** for rotation rings, and use the mouse wheel/right-drag to
+zoom/orbit. **Frame object** centers the view. Click **Save station display** to
+finish station placement. Vehicle placement offers **Apply to this vehicle** and,
+for vehicle administrators, **Save for this vehicle model**. **Cancel** discards
+the preview. Stop the vehicle before editing. The reusable editor API is documented
+in `sonorancad/core/placement/README.md`.
 
 With restricted ACE permissions, you need menu access (`sonoran.caddisplay`) and
 station management (`sonoran.caddisplay.world`) using the default configuration.

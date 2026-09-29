@@ -421,6 +421,76 @@ test('G and the placement menu are blocked while calibrating', function()
     assert(not s.env.IsCadDisplayActive() and not s.openedMenu and #s.claims == 0)
 end)
 
+test('station mouse placement sends the final world transform only on Save', function()
+    local s = harness()
+    withCadDisplay(s)
+    local editor, deleted
+    s.env.GetEntityHeading = function() return 0 end
+    s.env.GetEntityRotation = function() return s.env.vector3(0,0,0) end
+    s.env.spawnWorldDisplay = function() return 2 end
+    s.env.DeleteObject = function(entity) deleted = entity end
+    s.env.SonoranPlacementEditor = {IsActive=function() return false end,
+        Start=function(options) editor=options; return true end}
+    s.env.beginWorldEdit(nil,true)
+    assert(editor.entity==2 and #s.claims==0)
+    editor.onFinish({accepted=true,position={x=1,y=2,z=3},rotation={x=4,y=5,z=6}})
+    assert(s.claims[1][1]=='SonoranCAD::caddisplay::SaveWorldPlacement')
+    assert(s.claims[1][2].position.x==1 and s.claims[1][2].rotation.z==6 and deleted==2)
+end)
+
+test('cancelling an existing station gizmo does not delete or save it', function()
+    local s = harness()
+    withCadDisplay(s)
+    local editor
+    s.env.GetEntityRotation = function() return s.env.vector3(0,0,0) end
+    s.env.spawnWorldDisplay = function() return 2 end
+    s.env.DeleteObject = function() error('existing station deleted') end
+    s.env.SonoranPlacementEditor = {IsActive=function() return false end,
+        Start=function(options) editor=options; return true end}
+    s.env.beginWorldEdit({ID=7,Position={x=0,y=0,z=0},Rotation={pitch=0,roll=0,yaw=0}},false)
+    editor.onFinish({accepted=false})
+    assert(#s.claims==0)
+end)
+
+for _,mode in ipairs({'save','cancel','new_cancel'}) do
+    local accept, isNew = mode=='save', mode=='new_cancel'
+    test('vehicle gizmo '..mode..' preserves the expected attachment and preview lifecycle',function()
+        local s = harness()
+        withCadDisplay(s)
+        s.vehicle=3
+        local env=s.env
+        env.trackDisplayForVehicle(3,2)
+        env.isVehicleBlocked=function() return false end
+        s.events['SonoranCAD::caddisplay::OpenMenu'](true,true)
+        local editor,created,deleted,attached= nil,9,{},{}
+        env.GetEntityType=function() return 3 end
+        env.GetEntitySpeed=function() return 0 end
+        env.NetworkGetEntityIsNetworked=function() return false end
+        env.GetEntityBoneIndexByName=function() return 12 end
+        env.GetDisplayNameFromVehicleModel=function() return 'POLICE' end
+        env.CreateObjectNoOffset=function() created=created+1; return created end
+        env.DeleteObject=function(entity) deleted[entity]=true end
+        env.SetEntityCollision=function() end; env.SetEntityVisible=function() end
+        env.SetEntityLocallyInvisible=function() end; env.SetEntityMatrix=function() end
+        env.AttachEntityToEntity=function(...) attached[#attached+1]={...} end
+        env.GetEntityMatrix=function(entity)
+            return env.vector3(0,1,0),env.vector3(1,0,0),env.vector3(0,0,1),env.vector3(entity==11 and 10 or 0,0,0)
+        end
+        assert(loadfile('sonorancad/core/placement/math.lua','t',env))()
+        env.SonoranPlacementEditor={IsActive=function() return false end,
+            Start=function(options) editor=options; return true end}
+        env.beginVehiclePlacementEditor(isNew)
+        s:frame()
+        assert(editor and editor.entity==10 and #editor.actions==2 and #attached==1 and attached[1][1]==11)
+        editor.onFinish({accepted=accept,action='save',matrix={p=env.vector3(11,2,3),r=env.vector3(1,0,0),f=env.vector3(0,1,0),u=env.vector3(0,0,1)}})
+        assert(deleted[10] and deleted[11] and (deleted[2] == true) == isNew)
+        if accept then
+            assert(#attached==2 and attached[2][1]==2 and attached[2][3]==12)
+            assert(s.claims[1][1]=='SonoranCAD::caddisplay::SavePlacement' and s.claims[1][2].position.x==1)
+        else assert(#attached==1 and #s.claims==0) end
+    end)
+end
+
 test('station administrators on foot open station management without a vehicle', function()
     local s = harness()
     withCadDisplay(s)
