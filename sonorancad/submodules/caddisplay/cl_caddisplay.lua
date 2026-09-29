@@ -1206,8 +1206,20 @@ CreateThread(function()
                 else
                     profile = interactionModels[GetEntityModel(target.entity)]
                 end
-                if interactionConfig.enabled == false or not profile then
-                    TriggerEvent("SonoranCAD::Tablet::OpenCad")
+                print(("[caddisplay] Laptop interaction: model=%s expectedLaptop=%s enabled=%s profile=%s"):format(
+                    tostring(GetEntityModel(target.entity)), tostring(displayModelHash),
+                    tostring(interactionConfig.enabled ~= false), tostring(profile ~= nil)))
+                if interactionConfig.enabled == false then
+                    notify("Laptop camera interaction is disabled. Set interaction.enabled = true in caddisplay_config.lua.")
+                    return
+                end
+                if not profile then
+                    local message = builtin
+                        and "This built-in vehicle screen needs interaction.corners configured in builtinScreens."
+                        or ("No laptop screen profile for model %s. Check interaction.models in caddisplay_config.lua."):format(
+                            tostring(GetEntityModel(target.entity)))
+                    print("[caddisplay] " .. message)
+                    notify(message)
                     return
                 end
                 local ok, opened, reason = pcall(function()
@@ -1218,6 +1230,7 @@ CreateThread(function()
                 end)
                 if ok and opened then
                     activeInteractionKey = target.key
+                    print("[caddisplay] Laptop camera started; waiting for the aligned CAD surface.")
                 elseif not ok then
                     -- Do not swallow the export/native error behind a generic notification.
                     print(("[caddisplay] Failed to open laptop view: %s"):format(tostring(opened)))
@@ -1338,6 +1351,8 @@ CreateThread(function()
                 "Sonoran CAD Display: " .. pluginConfig.lang.addNewDisplayHelp)
 
             RegisterCommand("SonoranCAD::caddisplay::Interact", function()
+                print(("[caddisplay] G interaction (laptop camera): tablet=%s active=%s editing=%s"):format(
+                    GetResourceState("tablet"), tostring(activeInteractionKey), tostring(worldEditActive)))
                 if activeInteractionKey or worldEditActive then return end
                 local ped = PlayerPedId()
                 local veh = GetVehiclePedIsIn(ped, false)

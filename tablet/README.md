@@ -42,7 +42,7 @@ either resource closes the focused view and restores the camera and input.
 
 The optional `interaction` section in `caddisplay_config.lua` controls this mode:
 
-- `enabled = false` keeps the normal tablet presentation.
+- `enabled = false` disables laptop camera interaction; `/tablet open` remains available.
 - `transitionMs` sets the camera transition duration (default 450 ms).
 - `models[modelName].corners` defines four model-local screen corners in metres,
   ordered **top-left, top-right, bottom-right, bottom-left**, looking at the screen.
@@ -53,10 +53,18 @@ The optional `interaction` section in `caddisplay_config.lua` controls this mode
 
 The standard `prop_laptop_jimmy` has an approximate starting profile even with an
 older configuration. Calibrate it against the actual asset in FiveM before release.
-Custom props and built-in vehicle screens without profiles open the normal tablet.
+Custom props and built-in vehicle screens without profiles report which profile is
+missing. G never silently opens the handheld tablet in place of the laptop view.
 The projection follows entity rotation/scale and screen resolution; the iframe's
 viewport uses the screen's aspect ratio. Normal tablet dimensions and position are
 preserved when you exit.
+
+For branch testing, copy both resources from the feature branch and restart them.
+The built-in Sonoran updater installs published release archives; it does not
+install unreleased branch commits. Pressing G with the current client code prints
+`[caddisplay] G interaction (laptop camera)` in F8, followed by the profile result
+and camera-start status. These lines help distinguish old client files, missing
+profiles, disabled interaction, and a camera that starts but fails to display CAD.
 
 ### Validation
 

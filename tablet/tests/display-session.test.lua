@@ -163,7 +163,7 @@ end)
 
 -- Exercise the actual G command and ownership handlers against the tablet export,
 -- without running unrelated placement/menu polling threads.
-local function withCadDisplay(s)
+local function withCadDisplay(s, configure)
     local env = s.env
     local config, setup
     local noop = function() end
@@ -173,6 +173,8 @@ local function withCadDisplay(s)
         LoadPlugin = function(_, callback) callback(config) end
     }
     assert(loadfile('sonorancad/configuration/caddisplay_config.dist.lua', 't', env))()
+    if configure then configure(config) end
+    env.print = function(message) table.insert(s.notifications, message) end
     env.GetHashKey = function(model) return model end
     env.GetEntityModel = function() return 'prop_laptop_jimmy' end
     env.GetResourceState = function() return 'started' end
@@ -235,5 +237,28 @@ test('G reports a busy handheld tablet instead of silently failing', function()
     interact()
     assert(not s.rendering)
     assert(s.notifications[#s.notifications] == 'Close the handheld tablet before using the laptop.')
+end)
+
+test('G with disabled interaction reports the setting without opening the handheld tablet', function()
+    local s = harness()
+    local interact, syncOwners = withCadDisplay(s, function(config) config.interaction.enabled = false end)
+    local handheldOpened = false
+    s.events['SonoranCAD::Tablet::OpenCad'] = function() handheldOpened = true end
+    syncOwners({ ['world:7'] = 42 })
+    interact()
+    assert(not handheldOpened and not s.rendering)
+    assert(s.notifications[#s.notifications]:find('interaction.enabled = true', 1, true))
+end)
+
+test('G with an unknown model reports its hash without substituting the handheld tablet', function()
+    local s = harness()
+    local interact, syncOwners = withCadDisplay(s)
+    s.env.GetEntityModel = function() return 123456 end
+    local handheldOpened = false
+    s.events['SonoranCAD::Tablet::OpenCad'] = function() handheldOpened = true end
+    syncOwners({ ['world:7'] = 42 })
+    interact()
+    assert(not handheldOpened and not s.rendering)
+    assert(s.notifications[#s.notifications]:find('model 123456', 1, true))
 end)
 print(('Passed %d display session tests'):format(count))

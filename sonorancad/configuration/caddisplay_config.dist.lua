@@ -177,7 +177,7 @@ local config = {
     -- Custom props can add their own model entry. For built-in vehicle screens, put
     -- an interaction = { corners = {...} } profile on that builtinScreens entry;
     -- those coordinates are relative to the vehicle, not a separate laptop prop.
-    -- Unconfigured models retain the normal tablet view.
+    -- Unconfigured models report a missing profile. /tablet open remains available.
     interaction = {
         enabled = true,
         transitionMs = 450,
