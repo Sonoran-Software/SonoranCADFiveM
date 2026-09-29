@@ -43,7 +43,9 @@ either resource closes the focused view and restores the camera and input.
 The optional `interaction` section in `caddisplay_config.lua` controls this mode:
 
 - `enabled = false` disables laptop camera interaction; `/tablet open` remains available.
-- `transitionMs` sets the camera transition duration (default 450 ms).
+- `transitionMs` sets the camera transition duration (default 900 ms). Entry eases
+  position, rotation, and field of view from the player's current camera; CAD fades
+  in after the camera settles. Exit uses the same duration to return to gameplay.
 - `models[modelName].corners` defines four model-local screen corners in metres,
   ordered **top-left, top-right, bottom-right, bottom-left**, looking at the screen.
   Coordinates describe the visible screen area inside the bezel, not the whole prop.
@@ -52,7 +54,10 @@ The optional `interaction` section in `caddisplay_config.lua` controls this mode
   alone cannot locate a custom vehicle's monitor in 3D.
 
 The standard `prop_laptop_jimmy` has an approximate starting profile even with an
-older configuration. Calibrate it against the actual asset in FiveM before release.
+older configuration. Its corners have been adjusted from an in-game screenshot;
+confirm the fit against the actual asset in FiveM before release. If your active
+config includes the earlier laptop corners or `transitionMs = 450`, copy the updated
+values from `caddisplay_config.dist.lua`; explicit local settings still take precedence.
 Custom props and built-in vehicle screens without profiles report which profile is
 missing. G never silently opens the handheld tablet in place of the laptop view.
 The projection follows entity rotation/scale and screen resolution; the iframe's

@@ -8,6 +8,7 @@
 	border: 0;
 	border-radius: 0;
 	box-shadow: none;
+	overflow: hidden;
 	transform-origin: 0 0;
 	transform: var(--display-transform, none) !important;
 	opacity: 0 !important;
@@ -18,6 +19,13 @@
 #cadDiv.display-surface.display-surface-ready {
 	opacity: 1 !important;
 	pointer-events: auto !important;
+}
+#cadDiv.display-surface-ready .content {
+	animation: display-surface-reveal 160ms ease-out;
+}
+@keyframes display-surface-reveal {
+	from { opacity: 0; }
+	to { opacity: 1; }
 }
 #cadDiv.display-surface::before,
 #cadDiv.display-surface #homeButton,

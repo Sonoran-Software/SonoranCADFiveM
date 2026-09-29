@@ -98,10 +98,10 @@ CreateThread(function()
             -- Existing local configs may predate the interaction settings.
             local defaultLaptopProfile = {
                 corners = {
-                    { x = -0.155, y = 0.082, z = 0.255 },
-                    { x =  0.155, y = 0.082, z = 0.255 },
-                    { x =  0.155, y = 0.035, z = 0.060 },
-                    { x = -0.155, y = 0.035, z = 0.060 }
+                    { x = -0.162, y = 0.0774, z = 0.236 },
+                    { x =  0.158, y = 0.0774, z = 0.236 },
+                    { x =  0.158, y = 0.0316, z = 0.046 },
+                    { x = -0.162, y = 0.0316, z = 0.046 }
                 }
             }
             interactionModels[displayModelHash] = defaultLaptopProfile

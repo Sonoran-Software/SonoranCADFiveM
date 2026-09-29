@@ -35,9 +35,12 @@ local function harness()
         FreezeEntityPosition = function(_, frozen) state.frozen = frozen end,
         CreateCam = function() return 10 end,
         DestroyCam = function() state.destroyed = state.destroyed + 1 end,
-        SetCamFov = noop, SetCamNearClip = noop,
+        GetFinalRenderedCamCoord = function() return vector(0, -2, 1) end,
+        GetFinalRenderedCamRot = function() return state.entryRotation or vector(0, 0, 0) end,
+        GetFinalRenderedCamFov = function() return 70 end,
+        SetCamFov = function(_, fov) state.cameraFov = fov end, SetCamNearClip = noop,
         SetCamCoord = function(_, x, y, z) state.cameraPosition = vector(x, y, z) end,
-        PointCamAtCoord = function(_, x, y, z) state.cameraTarget = vector(x, y, z) end,
+        SetCamRot = function(_, x, y, z) state.cameraRotation = vector(x, y, z) end,
         SetNuiFocusKeepInput = noop, DisablePlayerFiring = noop, DisableControlAction = noop,
         RenderScriptCams = function(render) state.rendering = render end,
         DisplayModule = function(_, visible) state.visible = visible end,
@@ -147,10 +150,58 @@ test('rotated and scaled entity axes drive camera position and CAD aspect ratio'
         return v(-2, 0, 0), v(0, 3, 0), v(0, 0, 4), v(1, 2, 3)
     end
     assert(s.exports.OpenDisplay(s.options))
+    s.time = 600
+    s:frame()
     assert(s.cameraPosition.x > 1 and s.cameraPosition.y == 2)
     assert(math.abs(s.cameraPosition.z - 3.4) < 0.00001)
-    assert(#(s.cameraTarget - v(1, 2, 3.4)) < 0.00001)
-    assert(s.messages[#s.messages].height == 853)
+    assert(math.abs(s.cameraRotation.x) < 0.00001 and math.abs(s.cameraRotation.z - 90) < 0.00001)
+    assert(s.messages[1].height == 853)
+end)
+
+test('zoom starts at the rendered view and eases in and out without overshoot', function()
+    local s = harness()
+    assert(s.exports.OpenDisplay(s.options))
+    assert(#(s.cameraPosition - s.env.GetFinalRenderedCamCoord()) < 0.00001)
+    assert(s.cameraFov == 70)
+    local previous = 70
+    for _, time in ipairs({ 145, 325, 505, 550 }) do
+        s.time = time
+        s:frame()
+        assert(s.cameraFov <= previous and s.cameraFov >= 45)
+        previous = s.cameraFov
+        if time == 145 then assert(s.cameraFov > 69) end
+        if time == 325 then assert(math.abs(s.cameraFov - 57.5) < 0.00001) end
+        if time == 505 then assert(s.cameraFov < 46) end
+    end
+    assert(s.cameraFov == 45)
+    local position = s.cameraPosition
+    s.time = 1000
+    s:frame()
+    assert(#(s.cameraPosition - position) < 0.00001)
+end)
+
+test('zoom takes the short rotation path across the heading wrap', function()
+    local s = harness()
+    local v = s.env.vector3
+    local angle = math.rad(190)
+    s.entryRotation = v(0, 0, 170)
+    s.env.GetEntityMatrix = function()
+        return v(-math.sin(angle), math.cos(angle), 0), v(math.cos(angle), math.sin(angle), 0),
+            v(0, 0, 1), v(0, 0, 0)
+    end
+    assert(s.exports.OpenDisplay(s.options))
+    s.time = 325
+    s:frame()
+    assert(math.abs(s.cameraRotation.z - 180) < 0.00001)
+end)
+
+test('zero-duration entry immediately reaches the screen camera', function()
+    local s = harness()
+    s.options.transitionMs = 0
+    assert(s.exports.OpenDisplay(s.options))
+    assert(s.cameraFov == 45)
+    s:frame()
+    assert(s.messages[#s.messages].type == 'display_surface_frame')
 end)
 
 test('leaving interaction range restores the player', function()

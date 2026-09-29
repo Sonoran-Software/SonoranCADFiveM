@@ -180,14 +180,14 @@ local config = {
     -- Unconfigured models report a missing profile. /tablet open remains available.
     interaction = {
         enabled = true,
-        transitionMs = 450,
+        transitionMs = 900,
         models = {
             prop_laptop_jimmy = {
                 corners = {
-                    { x = -0.155, y = 0.082, z = 0.255 },
-                    { x =  0.155, y = 0.082, z = 0.255 },
-                    { x =  0.155, y = 0.035, z = 0.060 },
-                    { x = -0.155, y = 0.035, z = 0.060 }
+                    { x = -0.162, y = 0.0774, z = 0.236 },
+                    { x =  0.158, y = 0.0774, z = 0.236 },
+                    { x =  0.158, y = 0.0316, z = 0.046 },
+                    { x = -0.162, y = 0.0316, z = 0.046 }
                 }
             }
         }

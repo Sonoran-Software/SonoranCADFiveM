@@ -54,10 +54,28 @@ local function updateCamera(session, corners)
     if #normal < 0.00001 then return false end
     local center = (corners[1] + corners[2] + corners[3] + corners[4]) / 4
     local aspect = GetAspectRatio(false)
-    local distance = math.max(#vertical, #horizontal / aspect) / (2 * math.tan(math.rad(45 / 2))) * 1.3
+    local distance = math.max(#vertical, #horizontal / aspect) / (2 * math.tan(math.rad(45 / 2))) * 1.4
     local position = center + normal / #normal * math.max(distance, 0.2)
+    local direction = center - position
+    local rotation = vector3(math.deg(math.atan(direction.z,
+        math.sqrt(direction.x * direction.x + direction.y * direction.y))),
+        0.0, math.deg(math.atan(-direction.x, direction.y)))
+
+    -- Start exactly at the player's rendered view, with zero velocity/acceleration
+    -- at each end. Keep the entry position relative to the moving laptop's center.
+    session.entryCenter = session.entryCenter or center
+    local t = session.duration == 0 and 1.0
+        or math.min(1.0, math.max(0.0, (GetGameTimer() - session.startedAt) / session.duration))
+    local blend = t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+    local start = session.entryCoord + (center - session.entryCenter)
+    position = start + (position - start) * blend
+    local function blendAngle(from, to)
+        return from + ((to - from + 180.0) % 360.0 - 180.0) * blend
+    end
     SetCamCoord(session.cam, position.x, position.y, position.z)
-    PointCamAtCoord(session.cam, center.x, center.y, center.z)
+    SetCamRot(session.cam, blendAngle(session.entryRot.x, rotation.x),
+        blendAngle(session.entryRot.y, rotation.y), blendAngle(session.entryRot.z, rotation.z), 2)
+    SetCamFov(session.cam, session.entryFov + (45.0 - session.entryFov) * blend)
     return true
 end
 
@@ -87,7 +105,11 @@ exports("OpenDisplay", function(options)
         key = options.key, entity = options.entity, corners = profile.corners,
         ped = ped, vehicle = GetVehiclePedIsIn(ped, false),
         range = tonumber(options.range) or 1.5,
-        duration = math.floor(math.max(0, math.min(1500, tonumber(options.transitionMs) or 450))),
+        duration = math.floor(math.max(0, math.min(1500, tonumber(options.transitionMs) or 900))),
+        startedAt = GetGameTimer(),
+        entryCoord = GetFinalRenderedCamCoord(),
+        entryRot = GetFinalRenderedCamRot(2),
+        entryFov = GetFinalRenderedCamFov(),
         cam = CreateCam("DEFAULT_SCRIPTED_CAMERA", true)
     }
     SetCamFov(session.cam, 45.0)
@@ -106,7 +128,8 @@ exports("OpenDisplay", function(options)
         width = 1280, height = math.max(256, math.min(2048, height)) })
     SetFocused(true)
     SetNuiFocusKeepInput(false)
-    RenderScriptCams(true, session.duration > 0, session.duration, true, true)
+    -- Interpolate the pose ourselves; a second native blend would fight that motion.
+    RenderScriptCams(true, false, 0, true, true)
     session.readyAt = GetGameTimer() + session.duration
     CreateThread(function()
         while displaySession == session do
