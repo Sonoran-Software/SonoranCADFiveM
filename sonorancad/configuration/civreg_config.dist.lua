@@ -25,6 +25,10 @@ local config = {
     -- to the decoded size of each PNG or JPEG. No public image hosting is needed.
     maxSelfieBytes = 1024 * 1024,
 
+    -- Wait for this many seconds of unchanged, fully spawned appearance before
+    -- automatic portraits (3-30 seconds). Readiness times out after 60 seconds.
+    portraitSettleSeconds = 10,
+
     -- When CAD database sync and character mapping are enabled, CivReg writes
     -- portraits to the framework database instead of creating API characters.
     -- These defaults match the standard QBCore and ESX character schemas.

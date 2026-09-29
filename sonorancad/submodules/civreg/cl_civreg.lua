@@ -37,9 +37,12 @@ CreateThread(function()
         local esxStarted = GetResourceState("es_extended") == "started"
         local useQBCore = qbStarted and (not esxStarted or frameworkConfig.usingQBCore ~= false)
         local frameworkSelectionGeneration = 0
-        local FRAMEWORK_SPAWN_TIMEOUT_MS = 30 * 1000
-        local FRAMEWORK_CAPTURE_SETTLE_MS = 3 * 1000
+        local FRAMEWORK_SPAWN_TIMEOUT_MS = 60 * 1000
+        local FRAMEWORK_CAPTURE_SETTLE_MS = math.max(3, math.min(30,
+            tonumber(pluginConfig.portraitSettleSeconds) or 10)) * 1000
         local FRAMEWORK_READY_POLL_MS = 250
+        local frameworkReadySnapshot = nil
+        local portraitCaptureSequence = 0
         local qbAppearanceReadyAt = nil
         local qbAppearanceReadyPed = nil
         local qbExpectedProps = nil
@@ -49,6 +52,11 @@ CreateThread(function()
                 debugLog("[civreg portrait] " .. message)
             end
         end
+
+        portraitDebug(("initialized framework=%s qb-clothing=%s illenium-appearance=%s fivem-appearance=%s settle=%sms timeout=%sms"):format(
+            useQBCore and "qbcore" or (esxStarted and "esx" or "standalone"),
+            GetResourceState("qb-clothing"), GetResourceState("illenium-appearance"),
+            GetResourceState("fivem-appearance"), FRAMEWORK_CAPTURE_SETTLE_MS, FRAMEWORK_SPAWN_TIMEOUT_MS))
 
         local function getQBCorePlayerData()
             local loaded, playerData = pcall(function()
@@ -184,6 +192,26 @@ CreateThread(function()
                 IsEntityVisible(ped) and HasCollisionLoadedAroundEntity(ped) and IsScreenFadedIn()
         end
 
+        local function getFrameworkCharacterId()
+            if useQBCore then
+                local data = getQBCorePlayerData()
+                return data and data.citizenid
+            elseif esxStarted then
+                local ok, data = pcall(function()
+                    return exports["es_extended"]:getSharedObject().GetPlayerData()
+                end)
+                return ok and type(data) == "table" and data.identifier or nil
+            end
+        end
+
+        local function describeSpawnState()
+            local ped = PlayerPedId()
+            return ("ped=%s model=%s active=%s exists=%s visible=%s collision=%s fadedIn=%s"):format(
+                tostring(ped), tostring(GetEntityModel(ped)), tostring(NetworkIsPlayerActive(PlayerId())),
+                tostring(DoesEntityExist(ped)), tostring(IsEntityVisible(ped)),
+                tostring(HasCollisionLoadedAroundEntity(ped)), tostring(IsScreenFadedIn()))
+        end
+
         local function qbSkinPropsApplied(ped)
             if not qbExpectedProps then
                 return true
@@ -200,9 +228,13 @@ CreateThread(function()
         local function captureFrameworkCharacterWhenSpawned(options)
             options = options or {}
             frameworkSelectionGeneration = frameworkSelectionGeneration + 1
+            frameworkReadySnapshot = nil
             local generation = frameworkSelectionGeneration
             CreateThread(function()
+                local startedAt = GetGameTimer()
                 local timeoutAt = GetGameTimer() + FRAMEWORK_SPAWN_TIMEOUT_MS
+                local nextDebugAt = startedAt
+                local resetCount = 0
                 local expectedCharacterId = options.characterId
                 local stableFingerprint = nil
                 local stableSince = nil
@@ -212,9 +244,8 @@ CreateThread(function()
                 while generation == frameworkSelectionGeneration and GetGameTimer() < timeoutAt do
                     local ped = PlayerPedId()
                     local characterReady = true
-                    if useQBCore then
-                        local playerData = getQBCorePlayerData()
-                        local characterId = type(playerData) == "table" and playerData.citizenid or nil
+                    if useQBCore or esxStarted then
+                        local characterId = getFrameworkCharacterId()
                         characterReady = type(characterId) == "string" and characterId ~= ""
                         if characterReady and not expectedCharacterId then
                             expectedCharacterId = characterId
@@ -249,7 +280,12 @@ CreateThread(function()
                         if fingerprint ~= stableFingerprint then
                             stableFingerprint = fingerprint
                             stableSince = GetGameTimer()
+                            resetCount = resetCount + 1
                         elseif stableSince and GetGameTimer() - stableSince >= FRAMEWORK_CAPTURE_SETTLE_MS then
+                            frameworkReadySnapshot = {
+                                generation = generation, characterId = expectedCharacterId,
+                                ped = ped, fingerprint = fingerprint
+                            }
                             portraitDebug(("appearance settled for character %s, ped %s, model %s; requesting capture"):format(
                                 tostring(expectedCharacterId), tostring(ped), tostring(GetEntityModel(ped))))
                             TriggerServerEvent("SonoranCAD::civreg::FrameworkCharacterSelected")
@@ -258,6 +294,15 @@ CreateThread(function()
                     else
                         stableFingerprint = nil
                         stableSince = nil
+                    end
+                    if GetGameTimer() >= nextDebugAt then
+                        portraitDebug(("readiness generation=%s elapsed=%sms character=%s characterReady=%s clothingReady=%s signaledPed=%s propsApplied=%s changed=%s stable=%sms/%sms resets=%s %s"):format(
+                            generation, GetGameTimer() - startedAt, tostring(expectedCharacterId),
+                            tostring(characterReady), tostring(appearanceReady), tostring(qbAppearanceReadyPed),
+                            tostring(DoesEntityExist(ped) and qbSkinPropsApplied(ped)), tostring(appearanceChanged),
+                            stableSince and GetGameTimer() - stableSince or 0, FRAMEWORK_CAPTURE_SETTLE_MS,
+                            resetCount, describeSpawnState()))
+                        nextDebugAt = GetGameTimer() + 5000
                     end
                     Wait(FRAMEWORK_READY_POLL_MS)
                 end
@@ -324,6 +369,8 @@ CreateThread(function()
             end)
             RegisterNetEvent("QBCore:Client:OnPlayerUnload", function()
                 frameworkSelectionGeneration = frameworkSelectionGeneration + 1
+                frameworkReadySnapshot = nil
+                portraitDebug("QB player unloaded; invalidated portrait readiness")
                 qbAppearanceReadyAt = nil
                 qbAppearanceReadyPed = nil
                 qbExpectedProps = nil
@@ -340,7 +387,15 @@ CreateThread(function()
         elseif esxStarted then
             local selectedEsxCharacterPending = false
             RegisterNetEvent("esx:playerLoaded", function()
+                frameworkSelectionGeneration = frameworkSelectionGeneration + 1
+                frameworkReadySnapshot = nil
                 selectedEsxCharacterPending = true
+            end)
+            RegisterNetEvent("esx:onPlayerLogout", function()
+                frameworkSelectionGeneration = frameworkSelectionGeneration + 1
+                frameworkReadySnapshot = nil
+                selectedEsxCharacterPending = false
+                portraitDebug("ESX player unloaded; invalidated portrait readiness")
             end)
             AddEventHandler("esx:onPlayerSpawn", function()
                 if not selectedEsxCharacterPending then
@@ -400,7 +455,7 @@ CreateThread(function()
             end
         end
 
-        local function captureUncoveredPortrait()
+        local function captureUncoveredPortrait(expectedCharacterId)
             if portraitCaptureActive then
                 return { success = false, error = "Another character portrait capture is already active." }
             end
@@ -411,8 +466,36 @@ CreateThread(function()
             end
 
             portraitCaptureActive = true
+            portraitCaptureSequence = portraitCaptureSequence + 1
+            local captureId = portraitCaptureSequence
+            local startedAt = GetGameTimer()
+            local generation = frameworkSelectionGeneration
+            local characterId = getFrameworkCharacterId()
+            portraitDebug(("capture=%s started character=%s expected=%s generation=%s %s"):format(
+                captureId, tostring(characterId), tostring(expectedCharacterId), generation, describeSpawnState()))
             local ok, result = pcall(function()
+                if expectedCharacterId and (not frameworkReadySnapshot or
+                    frameworkReadySnapshot.generation ~= generation or
+                    frameworkReadySnapshot.characterId ~= expectedCharacterId or
+                    frameworkReadySnapshot.ped ~= ped or characterId ~= expectedCharacterId) then
+                    return { success = false, error = "Your selected character is not ready for a portrait yet." }
+                end
+                if not frameworkCharacterIsFullySpawned() then
+                    return { success = false, error = "Your character has not finished spawning." }
+                end
+                if expectedCharacterId then
+                    local fingerprint = getPedAppearanceFingerprint(ped, false, false, true) .. "|tattoos:" ..
+                        (getProviderTattooFingerprint(ped) or "unavailable")
+                    if fingerprint ~= frameworkReadySnapshot.fingerprint then
+                        return { success = false, error = "Your character appearance changed after the readiness check." }
+                    end
+                end
                 local originalFingerprint = getPedAppearanceFingerprint(ped, false, true)
+                local function captureStillValid()
+                    return generation == frameworkSelectionGeneration and characterId == getFrameworkCharacterId() and
+                        ped == PlayerPedId() and frameworkCharacterIsFullySpawned() and
+                        getPedAppearanceFingerprint(ped, false, true) == originalFingerprint
+                end
                 local clone = ClonePed(ped, false, false, true)
                 if not clone or clone == 0 or not DoesEntityExist(clone) then
                     return { success = false, error = "Could not prepare your character portrait." }
@@ -446,14 +529,12 @@ CreateThread(function()
 
                 Wait(0)
                 Wait(0)
-                if ped ~= PlayerPedId() or not DoesEntityExist(ped) or
-                    getPedAppearanceFingerprint(ped, false, true) ~= originalFingerprint then
+                if not captureStillValid() then
                     return { success = false, error = "Your character appearance changed during capture." }
                 end
 
                 local image = GetBase64(clone)
-                if ped ~= PlayerPedId() or not DoesEntityExist(ped) or
-                    getPedAppearanceFingerprint(ped, false, true) ~= originalFingerprint then
+                if not captureStillValid() then
                     return { success = false, error = "Your character appearance changed during capture." }
                 end
                 return image
@@ -461,6 +542,10 @@ CreateThread(function()
 
             releasePortraitClone()
             portraitCaptureActive = false
+            portraitDebug(("capture=%s finished elapsed=%sms success=%s imageBytes=%s error=%s"):format(
+                captureId, GetGameTimer() - startedAt, tostring(ok and type(result) == "table" and result.success == true),
+                type(result) == "table" and type(result.base64) == "string" and #result.base64 or 0,
+                type(result) == "table" and tostring(result.error) or (ok and "invalid result" or "capture exception")))
             if not ok then
                 portraitDebug(("portrait capture failed: %s"):format(tostring(result)))
                 return { success = false, error = "Could not capture your character portrait." }
@@ -496,19 +581,28 @@ CreateThread(function()
                 return
             end
             if databaseSyncCaptureActive then
+                portraitDebug("ignored automatic request while another capture is active")
                 TriggerServerEvent("SonoranCAD::civreg::DatabaseSyncMugshot", payload.token, nil,
                     "Another character portrait capture is already active.")
                 return
             end
+            local expectedCharacterId = payload.characterId or getFrameworkCharacterId()
+            if type(expectedCharacterId) ~= "string" or expectedCharacterId == "" then
+                portraitDebug("rejected automatic request without an active character")
+                TriggerServerEvent("SonoranCAD::civreg::DatabaseSyncMugshot", payload.token, nil,
+                    "No active framework character was found for the portrait.")
+                return
+            end
             databaseSyncCaptureActive = true
-            local result = captureUncoveredPortrait()
+            local result = captureUncoveredPortrait(expectedCharacterId)
             databaseSyncCaptureActive = false
 
             local image = type(result) == "table" and result.success and result.base64 or nil
             local captureError = type(result) == "table" and result.error or
                 "Could not capture your character portrait."
+            if image then captureError = nil end
             TriggerLatentServerEvent("SonoranCAD::civreg::DatabaseSyncMugshot", 200000,
-                payload.token, image, image and nil or captureError)
+                payload.token, image, captureError)
         end)
 
         RegisterNUICallback("civregSubmit", function(data, cb)

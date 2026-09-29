@@ -558,8 +558,11 @@ CreateThread(function()
                 notifyOnSuccess = notifyOnSuccess == true
             }
             TriggerClientEvent("SonoranCAD::civreg::CaptureDatabaseSyncMugshot", source, {
-                token = token
+                token = token,
+                characterId = tostring(characterId)
             })
+            debugLog(("[civreg portrait] requested fresh capture player=%s character=%s"):format(
+                source, tostring(characterId)))
             return true
         end
 
@@ -1087,9 +1090,20 @@ CreateThread(function()
             end
             if GetGameTimer() - pending.createdAt > DB_SYNC_CAPTURE_TIMEOUT_MS then
                 pendingDatabaseSyncCaptures[source] = nil
+                debugLog(("[civreg portrait] rejected expired upload player=%s character=%s"):format(
+                    source, pending.characterId))
+                return
+            end
+            if getCurrentFrameworkCharacterId(source) ~= pending.characterId then
+                pendingDatabaseSyncCaptures[source] = nil
+                debugLog(("[civreg portrait] rejected upload after character change player=%s character=%s"):format(
+                    source, pending.characterId))
                 return
             end
             pending.processing = true
+            debugLog(("[civreg portrait] received upload player=%s character=%s elapsed=%sms imageBytes=%s"):format(
+                source, pending.characterId, GetGameTimer() - pending.createdAt,
+                type(dataUrl) == "string" and #dataUrl or 0))
 
             local valid, validationError = validateSelfie(dataUrl)
             if not valid then
@@ -1115,8 +1129,8 @@ CreateThread(function()
                     end
                     return
                 end
-                debugLog(("CivReg updated the database sync mugshot for character %s."):format(
-                    tostring(pending.characterId)))
+                debugLog(("[civreg portrait] saved fresh database mugshot player=%s character=%s elapsed=%sms"):format(
+                    source, tostring(pending.characterId), GetGameTimer() - pending.createdAt))
                 if pending.notifyOnSuccess then
                     notifyPlayer(source, {
                         title = "CAD - Success",

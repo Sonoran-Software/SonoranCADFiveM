@@ -74,7 +74,8 @@ local function harness(framework, options)
             callback({
                 enabled = true,
                 commandName = "civreg",
-                language = { helpMsg = "help" }
+                language = { helpMsg = "help" },
+                portraitSettleSeconds = not options.defaultSettle and (options.settleSeconds or 3) or nil
             })
         end,
         GetPluginConfig = function()
@@ -295,7 +296,7 @@ test("framework selection times out when the player never fully spawns", functio
     local h = harness("qbcore", { neverReady = true })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 0)
-    equal(h.now, 30000)
+    equal(h.now, 60000)
 end)
 
 test("QBCore waits for qb-clothing to apply the selected appearance", function()
@@ -312,14 +313,14 @@ test("QBCore fails closed when qb-clothing never reports an applied appearance",
     local h = harness("qbcore", { qbClothing = true })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 0)
-    equal(h.now, 30000)
+    equal(h.now, 60000)
 end)
 
 test("QBCore ignores a character-preview clothing signal", function()
     local h = harness("qbcore", { qbClothing = true, qbPreviewAt = 1000 })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 0)
-    equal(h.now, 30000)
+    equal(h.now, 60000)
 end)
 
 test("QBCore waits for saved hat and glasses before capture", function()
@@ -344,7 +345,7 @@ test("QBCore rejects a portrait when the saved hat never appears", function()
     })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 0)
-    equal(h.now, 30000)
+    equal(h.now, 60000)
 end)
 
 test("QBCore waits for an alternate appearance provider to replace the placeholder", function()
@@ -384,7 +385,7 @@ test("QBCore does not treat tattoo application order as loaded skin", function()
     })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 0)
-    equal(h.now, 30000)
+    equal(h.now, 60000)
 end)
 
 test("QBCore does not capture a placeholder when provider appearance export fails", function()
@@ -394,7 +395,7 @@ test("QBCore does not capture a placeholder when provider appearance export fail
     })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 0)
-    equal(h.now, 30000)
+    equal(h.now, 60000)
 end)
 
 test("tattoo export becoming available does not count as skin application", function()
@@ -404,14 +405,14 @@ test("tattoo export becoming available does not count as skin application", func
     })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 0)
-    equal(h.now, 30000)
+    equal(h.now, 60000)
 end)
 
 test("QBCore fails closed when an alternate provider never applies an appearance", function()
     local h = harness("qbcore", { illenium = true })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 0)
-    equal(h.now, 30000)
+    equal(h.now, 60000)
 end)
 
 test("QBCore settles after a late alternate-provider appearance change", function()
@@ -428,7 +429,30 @@ test("QBCore cancels capture if the active citizen changes while loading", funct
     local h = harness("qbcore", { characterChangeAt = 1000 })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 0)
-    equal(h.now, 30000)
+    equal(h.now, 60000)
+end)
+
+test("default ten-second stability window includes delayed QB appearance changes", function()
+    local h = harness("qbcore", { defaultSettle = true, qbClothing = true,
+        qbAppearanceReadyAt = 1000, facialAppearanceChangeAt = 7000 })
+    h.events["QBCore:Client:OnPlayerLoaded"]()
+    equal(#h.serverEvents, 1)
+    equal(h.now, 17000)
+end)
+
+test("slow QB clothing application has sixty seconds to settle", function()
+    local h = harness("qbcore", { defaultSettle = true, qbClothing = true,
+        qbAppearanceReadyAt = 35000 })
+    h.events["QBCore:Client:OnPlayerLoaded"]()
+    equal(#h.serverEvents, 1)
+    equal(h.now, 45000)
+end)
+
+test("ESX character changes cannot pass an earlier selection wait", function()
+    local h = harness("esx", { characterChangeAt = 1000 })
+    h.events["esx:playerLoaded"]()
+    h.events["esx:onPlayerSpawn"]()
+    equal(#h.serverEvents, 0)
 end)
 
 print(("%d CivReg framework selection regression tests passed."):format(passed))
