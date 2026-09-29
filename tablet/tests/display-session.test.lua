@@ -318,7 +318,7 @@ local function withCadDisplay(s, configure)
     env.RegisterKeyMapping = function(name, _, _, key) s.keymaps[name] = key end
     env.RegisterPlayerCommandHelp = noop
     env.TriggerServerEvent = function(name, ...) table.insert(s.claims, { name, ... }) end
-    env.WarMenu = {}
+    env.WarMenu = { OpenMenu = function(menu) s.openedMenu = menu end }
     env.exports = { tablet = {
         OpenDisplay = function(_, options) return s.exports.OpenDisplay(options) end,
         CloseDisplay = function(_, immediate) return s.exports.CloseDisplay(immediate) end
@@ -333,6 +333,60 @@ local function withCadDisplay(s, configure)
     s.claims = {}
     return s.commands['SonoranCAD::caddisplay::Interact'], s.events['SonoranCAD::caddisplay::SyncOwners']
 end
+
+test('station administrators on foot open station management without a vehicle', function()
+    local s = harness()
+    withCadDisplay(s)
+    s.events['SonoranCAD::caddisplay::OpenMenu'](false, true)
+    assert(s.openedMenu == 'caddisplay_world_menu')
+end)
+
+test('station administrators in blocked vehicles can still manage station displays', function()
+    local s = harness()
+    withCadDisplay(s)
+    s.vehicle = 3
+    s.env.isVehicleBlocked = function() return true end
+    s.events['SonoranCAD::caddisplay::OpenMenu'](false, true)
+    assert(s.openedMenu == 'caddisplay_world_menu')
+end)
+
+test('compatible vehicles retain the main placement menu', function()
+    local s = harness()
+    withCadDisplay(s)
+    s.vehicle = 3
+    s.env.isVehicleBlocked = function() return false end
+    s.events['SonoranCAD::caddisplay::OpenMenu'](true, false)
+    assert(s.openedMenu == 'caddisplay_menu')
+end)
+
+test('missing station permissions report the configured ACE without granting access', function()
+    local s = harness()
+    withCadDisplay(s, function(config)
+        config.acePerms.aceWorldDisplayAdmin = 'custom.station.admin'
+        -- Existing local configurations do not contain the new language keys.
+        config.lang.worldPermissionDenied = nil
+        config.lang.worldPermissionRequiredAce = nil
+    end)
+    s.events['SonoranCAD::caddisplay::OpenMenu'](true, false)
+    assert(not s.openedMenu)
+    assert(s.notifications[#s.notifications]:find('Required ACE: custom.station.admin', 1, true))
+end)
+
+test('framework station denial does not recommend ACE permissions', function()
+    local s = harness()
+    withCadDisplay(s, function(config) config.permissionMode = 'framework' end)
+    s.events['SonoranCAD::caddisplay::OpenMenu'](true, false)
+    assert(not s.openedMenu)
+    assert(s.notifications[#s.notifications] == 'You do not have permission to manage station CAD displays.')
+end)
+
+test('disabled station displays report their setting to players on foot', function()
+    local s = harness()
+    withCadDisplay(s, function(config) config.worldDisplays.enabled = false end)
+    s.events['SonoranCAD::caddisplay::OpenMenu'](true, true)
+    assert(not s.openedMenu)
+    assert(s.notifications[#s.notifications] == 'Station CAD displays are disabled in the configuration.')
+end)
 
 for _, target in ipairs({ 'station', 'vehicle' }) do
     test('G starts the ' .. target .. ' laptop camera on ownership grant and on reuse', function()

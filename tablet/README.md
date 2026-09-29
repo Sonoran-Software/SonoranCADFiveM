@@ -38,6 +38,26 @@ Control requests still use the display's existing ownership/accept/deny flow.
 Death, leaving the vehicle, losing ownership, removal of the display, or stopping
 either resource closes the focused view and restores the camera and input.
 
+### Moving or deleting station displays
+
+Run `/caddisplay` on foot to open **Station CAD Displays**, select the placement,
+then use **Edit Selected Display** (and **Save Station Display**) or **Delete
+Selected Display**. Station management does not require a compatible vehicle.
+
+With restricted ACE permissions, you need menu access (`sonoran.caddisplay`) and
+station management (`sonoran.caddisplay.world`) using the default configuration.
+Vehicle placement admin access alone does not grant station management. For an
+existing `group.admin` group, a server administrator can grant these in `server.cfg`:
+
+```cfg
+add_ace group.admin sonoran.caddisplay allow
+add_ace group.admin sonoran.caddisplay.world allow
+```
+
+Use your actual admin group and configured ACE names. Framework mode uses the
+configured admin jobs; custom mode uses permission check type `1` for station
+management. Station displays must also have `worldDisplays.enabled = true`.
+
 ### Screen alignment
 
 The optional `interaction` section in `caddisplay_config.lua` controls this mode:

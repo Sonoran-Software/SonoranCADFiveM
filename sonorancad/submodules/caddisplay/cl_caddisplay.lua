@@ -1318,8 +1318,27 @@ CreateThread(function()
                 isAdmin = adminFlag or false
                 worldAdmin = worldFlag or false
                 local veh = GetVehiclePedIsIn(PlayerPedId(), false)
-                if (veh ~= 0 and not isVehicleBlocked(veh)) or (isWorldDisplayEnabled() and worldAdmin) then
+                if veh ~= 0 and not isVehicleBlocked(veh) then
                     WarMenu.OpenMenu("caddisplay_menu")
+                elseif isWorldDisplayEnabled() then
+                    if worldAdmin then
+                        WarMenu.OpenMenu("caddisplay_world_menu")
+                    else
+                        local message = pluginConfig.lang.worldPermissionDenied
+                            or "You do not have permission to manage station CAD displays."
+                        if pluginConfig.permissionMode == "ace" then
+                            local perms = pluginConfig.acePerms or {}
+                            local permission = perms.aceWorldDisplayAdmin
+                            if permission == nil or permission == "" then permission = perms.aceObjectAdminUseMenu end
+                            if permission and permission ~= "" then
+                                message = message .. " " .. ((pluginConfig.lang.worldPermissionRequiredAce
+                                    or "Required ACE: %s"):format(permission))
+                            end
+                        end
+                        notify(message)
+                    end
+                elseif veh == 0 then
+                    notify(pluginConfig.lang.worldDisplaysDisabled or "Station CAD displays are disabled in the configuration.")
                 else
                     notify(pluginConfig.lang.vehNotCompatible)
                 end
