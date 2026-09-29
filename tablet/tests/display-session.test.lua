@@ -1,7 +1,7 @@
 -- Run from the repository root: lua tablet/tests/display-session.test.lua
 local function harness()
     local state = { time = 100, exists = true, frozen = false, dead = false,
-        vehicle = 0, messages = {}, threads = {}, timers = {}, events = {}, exports = {}, destroyed = 0 }
+        vehicle = 0, messages = {}, threads = {}, events = {}, exports = {}, destroyed = 0 }
     local vector
     local mt = {
         __add = function(a, b) return vector(a.x + b.x, a.y + b.y, a.z + b.z) end,
@@ -38,6 +38,12 @@ local function harness()
         GetFinalRenderedCamCoord = function() return vector(0, -2, 1) end,
         GetFinalRenderedCamRot = function() return state.entryRotation or vector(0, 0, 0) end,
         GetFinalRenderedCamFov = function() return 70 end,
+        GetCamCoord = function() return state.cameraPosition end,
+        GetCamRot = function() return state.cameraRotation end,
+        GetCamFov = function() return state.cameraFov end,
+        GetGameplayCamCoord = function() return state.gameplayPosition or vector(0, -2, 1) end,
+        GetGameplayCamRot = function() return state.gameplayRotation or vector(0, 0, 0) end,
+        GetGameplayCamFov = function() return 70 end,
         SetCamFov = function(_, fov) state.cameraFov = fov end, SetCamNearClip = noop,
         SetCamCoord = function(_, x, y, z) state.cameraPosition = vector(x, y, z) end,
         SetCamRot = function(_, x, y, z) state.cameraRotation = vector(x, y, z) end,
@@ -46,7 +52,6 @@ local function harness()
         DisplayModule = function(_, visible) state.visible = visible end,
         SetFocused = function(focused) state.focused = focused end,
         SendNUIMessage = function(message) table.insert(state.messages, message) end,
-        SetTimeout = function(_, callback) table.insert(state.timers, callback) end,
         CreateThread = function(callback)
             local thread = coroutine.create(callback)
             table.insert(state.threads, thread)
@@ -83,14 +88,13 @@ test('close during entry restores focus and movement, and cancels stale frames',
     assert(s.focused and s.frozen and s.rendering)
     assert(not s.exports.OpenDisplay(s.options))
     s.env.CloseCadDisplay()
-    assert(not s.focused and not s.frozen and not s.rendering)
+    assert(not s.focused and not s.frozen and s.rendering)
     assert(s.closedKey == 'world:1')
     local messages = #s.messages
     s.time = 1000
     s:frame()
     assert(#s.messages == messages)
-    s.timers[1]()
-    assert(s.destroyed == 1)
+    assert(s.destroyed == 1 and not s.rendering)
 end)
 
 test('projection starts only after camera entry completes', function()
@@ -111,7 +115,10 @@ for _, reason in ipairs({ 'death', 'vehicle exit', 'entity deletion' }) do
         elseif reason == 'vehicle exit' then s.vehicle = 3
         else s.exists = false end
         s:frame()
-        assert(not s.env.IsCadDisplayActive() and not s.focused and not s.rendering)
+        assert(not s.env.IsCadDisplayActive() and not s.focused)
+        s.time = 1000
+        s:frame()
+        assert(not s.rendering and s.destroyed == 1)
     end)
 end
 
@@ -121,7 +128,8 @@ test('resource stop immediately destroys a returning camera', function()
     s.env.CloseCadDisplay()
     s.events.onResourceStop('tablet')
     assert(s.destroyed == 1)
-    s.timers[1]()
+    s.time = 1000
+    s:frame()
     assert(s.destroyed == 1)
 end)
 
@@ -195,6 +203,74 @@ test('zoom takes the short rotation path across the heading wrap', function()
     assert(math.abs(s.cameraRotation.z - 180) < 0.00001)
 end)
 
+test('camera levels screens with combined pitch, roll, heading and scale', function()
+    for _, angles in ipairs({ { 13, 7, 64 }, { -20, -12, -130 }, { 35, 28, 179 } }) do
+        local s = harness()
+        local v = s.env.vector3
+        -- Independently rotate each model axis in ZXY order, then scale it.
+        local function rotate(point)
+            local x, y, z = point.x, point.y, point.z
+            local pitch, roll, yaw = math.rad(angles[1]), math.rad(angles[2]), math.rad(angles[3])
+            x, z = x * math.cos(roll) + z * math.sin(roll), -x * math.sin(roll) + z * math.cos(roll)
+            y, z = y * math.cos(pitch) - z * math.sin(pitch), y * math.sin(pitch) + z * math.cos(pitch)
+            x, y = x * math.cos(yaw) - y * math.sin(yaw), x * math.sin(yaw) + y * math.cos(yaw)
+            return v(x, y, z)
+        end
+        s.env.GetEntityMatrix = function()
+            return rotate(v(0, 2, 0)), rotate(v(3, 0, 0)), rotate(v(0, 0, 4)), v(0, 0, 0)
+        end
+        assert(s.exports.OpenDisplay(s.options))
+        s.time = 600
+        s:frame()
+        assert(#(s.cameraRotation - v(angles[1], angles[2], angles[3])) < 0.00001)
+    end
+end)
+
+test('exit eases pose and FOV to the moving gameplay camera before handing back control', function()
+    local s = harness()
+    local v = s.env.vector3
+    assert(s.exports.OpenDisplay(s.options))
+    s.time = 550
+    s:frame()
+    local position = s.cameraPosition
+    s.env.CloseCadDisplay()
+    assert(s.rendering and s.destroyed == 0 and not s.focused)
+    assert(not s.exports.OpenDisplay(s.options))
+    assert(#(s.cameraPosition - position) < 0.00001 and s.cameraFov == 45)
+    for _, time in ipairs({ 595, 775, 955 }) do
+        s.time = time
+        s:frame()
+        assert(s.rendering and s.destroyed == 0)
+        if time == 595 then assert(s.cameraFov < 46) end
+        if time == 775 then
+            assert(math.abs(s.cameraFov - 57.5) < 0.00001)
+            assert(#(s.cameraPosition - (position + s.env.GetGameplayCamCoord()) / 2) < 0.00001)
+        end
+        if time == 955 then assert(s.cameraFov > 69) end
+    end
+    s.gameplayPosition, s.gameplayRotation = v(3, -4, 2), v(-10, 5, 60)
+    s.time = 1000
+    s:frame()
+    assert(not s.rendering and s.destroyed == 1 and s.cameraFov == 70)
+    assert(#(s.cameraPosition - s.gameplayPosition) < 0.00001)
+    assert(#(s.cameraRotation - s.gameplayRotation) < 0.00001)
+    assert(s.exports.OpenDisplay(s.options))
+end)
+
+test('exit during entry starts at the current pose without jumping to the laptop', function()
+    local s = harness()
+    assert(s.exports.OpenDisplay(s.options))
+    s.time = 325
+    s:frame()
+    local position, fov = s.cameraPosition, s.cameraFov
+    s.env.CloseCadDisplay()
+    s:frame()
+    assert(#(s.cameraPosition - position) < 0.00001 and s.cameraFov == fov)
+    s.time = 775
+    s:frame()
+    assert(not s.rendering and s.destroyed == 1)
+end)
+
 test('zero-duration entry immediately reaches the screen camera', function()
     local s = harness()
     s.options.transitionMs = 0
@@ -202,6 +278,8 @@ test('zero-duration entry immediately reaches the screen camera', function()
     assert(s.cameraFov == 45)
     s:frame()
     assert(s.messages[#s.messages].type == 'display_surface_frame')
+    s.env.CloseCadDisplay()
+    assert(not s.rendering and s.destroyed == 1)
 end)
 
 test('leaving interaction range restores the player', function()
@@ -276,7 +354,10 @@ for _, target in ipairs({ 'station', 'vehicle' }) do
         interact()
         assert(#s.claims == 1 and s.rendering and s.focused)
         syncOwners({ [key] = 99 })
-        assert(not s.rendering and not s.focused)
+        assert(not s.env.IsCadDisplayActive() and not s.focused)
+        s.time = 1100
+        s:frame()
+        assert(not s.rendering)
     end)
 end
 

@@ -1,7 +1,23 @@
 -- The live CAD stays in its existing NUI iframe; only its presentation changes.
 local displaySession
-local closingUntil = 0
 local returningCameras = {}
+
+local function transitionBlend(startedAt, duration)
+    local t = duration == 0 and 1.0
+        or math.min(1.0, math.max(0.0, (GetGameTimer() - startedAt) / duration))
+    return t * t * t * (t * (t * 6.0 - 15.0) + 10.0), t >= 1.0
+end
+
+local function blendCamera(cam, fromPosition, fromRotation, fromFov, position, rotation, fov, blend)
+    local function blendAngle(from, to)
+        return from + ((to - from + 180.0) % 360.0 - 180.0) * blend
+    end
+    position = fromPosition + (position - fromPosition) * blend
+    SetCamCoord(cam, position.x, position.y, position.z)
+    SetCamRot(cam, blendAngle(fromRotation.x, rotation.x),
+        blendAngle(fromRotation.y, rotation.y), blendAngle(fromRotation.z, rotation.z), 2)
+    SetCamFov(cam, fromFov + (fov - fromFov) * blend)
+end
 
 function IsCadDisplayActive()
     return displaySession ~= nil
@@ -18,17 +34,28 @@ function CloseCadDisplay(immediate)
         FreezeEntityPosition(session.ped, false)
     end
     local duration = immediate and 0 or session.duration
-    closingUntil = GetGameTimer() + duration
-    RenderScriptCams(false, duration > 0, duration, true, true)
-    -- Keep the camera alive until the return interpolation has finished.
     if duration == 0 then
+        RenderScriptCams(false, false, 0, true, true)
         DestroyCam(session.cam, false)
     else
+        local startedAt = GetGameTimer()
+        local position, rotation, fov = GetCamCoord(session.cam), GetCamRot(session.cam, 2), GetCamFov(session.cam)
         returningCameras[session.cam] = true
-        SetTimeout(duration, function()
-            if returningCameras[session.cam] then
-                returningCameras[session.cam] = nil
-                DestroyCam(session.cam, false)
+        -- Keep rendering our camera until the eased return reaches the live
+        -- gameplay view, including any movement of the player or vehicle.
+        CreateThread(function()
+            while returningCameras[session.cam] do
+                Wait(0)
+                if not returningCameras[session.cam] then break end
+                local blend, finished = transitionBlend(startedAt, duration)
+                blendCamera(session.cam, position, rotation, fov,
+                    GetGameplayCamCoord(), GetGameplayCamRot(2), GetGameplayCamFov(), blend)
+                if finished then
+                    returningCameras[session.cam] = nil
+                    RenderScriptCams(false, false, 0, true, true)
+                    DestroyCam(session.cam, false)
+                    break
+                end
             end
         end)
     end
@@ -57,31 +84,28 @@ local function updateCamera(session, corners)
     local distance = math.max(#vertical, #horizontal / aspect) / (2 * math.tan(math.rad(45 / 2))) * 1.4
     local position = center + normal / #normal * math.max(distance, 0.2)
     local direction = center - position
-    local rotation = vector3(math.deg(math.atan(direction.z,
-        math.sqrt(direction.x * direction.x + direction.y * direction.y))),
-        0.0, math.deg(math.atan(-direction.x, direction.y)))
+    local pitch = math.atan(direction.z, math.sqrt(direction.x * direction.x + direction.y * direction.y))
+    local yaw = math.atan(-direction.x, direction.y)
+    local right = vector3(math.cos(yaw), math.sin(yaw), 0.0)
+    local up = vector3(math.sin(pitch) * math.sin(yaw), -math.sin(pitch) * math.cos(yaw), math.cos(pitch))
+    local function dot(a, b) return a.x * b.x + a.y * b.y + a.z * b.z end
+    -- Rotation order 2 (ZXY): match the screen's right axis as well as its
+    -- normal, so a rolled laptop/vehicle still reads level in the focused view.
+    local roll = math.atan(-dot(horizontal, up), dot(horizontal, right))
+    local rotation = vector3(math.deg(pitch), math.deg(roll), math.deg(yaw))
 
     -- Start exactly at the player's rendered view, with zero velocity/acceleration
     -- at each end. Keep the entry position relative to the moving laptop's center.
     session.entryCenter = session.entryCenter or center
-    local t = session.duration == 0 and 1.0
-        or math.min(1.0, math.max(0.0, (GetGameTimer() - session.startedAt) / session.duration))
-    local blend = t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+    local blend = transitionBlend(session.startedAt, session.duration)
     local start = session.entryCoord + (center - session.entryCenter)
-    position = start + (position - start) * blend
-    local function blendAngle(from, to)
-        return from + ((to - from + 180.0) % 360.0 - 180.0) * blend
-    end
-    SetCamCoord(session.cam, position.x, position.y, position.z)
-    SetCamRot(session.cam, blendAngle(session.entryRot.x, rotation.x),
-        blendAngle(session.entryRot.y, rotation.y), blendAngle(session.entryRot.z, rotation.z), 2)
-    SetCamFov(session.cam, session.entryFov + (45.0 - session.entryFov) * blend)
+    blendCamera(session.cam, start, session.entryRot, session.entryFov, position, rotation, 45.0, blend)
     return true
 end
 
 exports("OpenDisplay", function(options)
     if displaySession then return false, "A CAD display is already open." end
-    if GetGameTimer() < closingUntil then return false, "Wait for the camera to return, then press the interaction key again." end
+    if next(returningCameras) then return false, "Wait for the camera to return, then press the interaction key again." end
     if nuiFocused or usingTablet then return false, "Close the handheld tablet before using the laptop." end
     if type(options) ~= "table" or not DoesEntityExist(options.entity or 0) then
         return false, "The CAD display no longer exists."

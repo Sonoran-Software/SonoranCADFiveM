@@ -45,7 +45,8 @@ The optional `interaction` section in `caddisplay_config.lua` controls this mode
 - `enabled = false` disables laptop camera interaction; `/tablet open` remains available.
 - `transitionMs` sets the camera transition duration (default 900 ms). Entry eases
   position, rotation, and field of view from the player's current camera; CAD fades
-  in after the camera settles. Exit uses the same duration to return to gameplay.
+  in after the camera settles. Exit eases position, rotation, and field of view
+  over the same duration, following the gameplay camera as the player/vehicle moves.
 - `models[modelName].corners` defines four model-local screen corners in metres,
   ordered **top-left, top-right, bottom-right, bottom-left**, looking at the screen.
   Coordinates describe the visible screen area inside the bezel, not the whole prop.
@@ -61,8 +62,9 @@ values from `caddisplay_config.dist.lua`; explicit local settings still take pre
 Custom props and built-in vehicle screens without profiles report which profile is
 missing. G never silently opens the handheld tablet in place of the laptop view.
 The projection follows entity rotation/scale and screen resolution; the iframe's
-viewport uses the screen's aspect ratio. Normal tablet dimensions and position are
-preserved when you exit.
+viewport uses the screen's aspect ratio. The focused camera matches the screen's
+roll so its top edge appears level even when the laptop or vehicle is tilted.
+Normal tablet dimensions and position are preserved when you exit.
 
 For branch testing, copy both resources from the feature branch and restart them.
 The built-in Sonoran updater installs published release archives; it does not
