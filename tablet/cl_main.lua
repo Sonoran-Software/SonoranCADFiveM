@@ -843,8 +843,8 @@ RegisterNetEvent("SonoranCAD::Tablet::LinkMissing")
 AddEventHandler('SonoranCAD::Tablet::LinkMissing', function()
 	isRegistered = false
 	SendNUIMessage({
-		type = "regbar",
-		show = true
+		type = "cad_link_status",
+		linked = false
 	})
 	publishNotepadSyncStatus()
 end)
@@ -853,8 +853,8 @@ RegisterNetEvent("SonoranCAD::Tablet::LinkFound")
 AddEventHandler("SonoranCAD::Tablet::LinkFound", function()
 	isRegistered = true
 	SendNUIMessage({
-		type = "regbar",
-		show = false
+		type = "cad_link_status",
+		linked = true
 	})
 	publishNotepadSyncStatus()
 end)
@@ -872,10 +872,6 @@ RegisterNUICallback('SetLinkInformation', function(data,cb)
 	end
 	requestTabletLinkStatus()
 	cb(true)
-end)
-
-RegisterNUICallback('runLinkCheck', function()
-	requestTabletLinkStatus()
 end)
 
 RegisterNUICallback('NotepadSyncSessionStatus', function(data, cb)

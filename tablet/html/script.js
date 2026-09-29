@@ -383,7 +383,6 @@ $(function () {
 			moduleVisible(event.data.module, event.data.enabled)
 			if (event.data.apiCheck) {
 				currentlyCheckingLink = true;
-				//$("#check-api-data").show();
 			}
 			setHotkeys(event.data.keyMap);
 		}
@@ -447,14 +446,8 @@ $(function () {
 				document.getElementById('cadFrame').setAttribute("name", Date.now())
 			}
 		}
-		else if (event.data.type == "regbar") {
-			const shouldShow = event.data.show !== false;
-			currentlyCheckingLink = shouldShow;
-			if (shouldShow) {
-				$("#check-api-data").show();
-			} else {
-				$("#check-api-data").hide();
-			}
+		else if (event.data.type == "cad_link_status") {
+			currentlyCheckingLink = event.data.linked !== true;
 		}
 		else if (event.data.type == "resize") {
 			if (event.data.module == "cad") {
@@ -715,7 +708,6 @@ function receiveMessage(event) {
 				session: session,
 				username: username
 			});
-			$("#check-api-data").hide();
 		}
 	}
 
@@ -742,14 +734,6 @@ function receiveMessage(event) {
 
 function addCallNote(call, data) {
 	nui('addCallNote', {call: call, data: data});
-}
-
-function runLinkCheck() {
-	currentlyCheckingLink = true;
-	markCadFrameNotReady();
-	document.getElementById("cadFrame").src += '';
-	nui('runLinkCheck');
-	$("#check-api-data").hide();
 }
 
 document.getElementById('homeButton').addEventListener('click', function() {
