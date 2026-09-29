@@ -38,8 +38,7 @@ CreateThread(function()
         local useQBCore = qbStarted and (not esxStarted or frameworkConfig.usingQBCore ~= false)
         local frameworkSelectionGeneration = 0
         local FRAMEWORK_SPAWN_TIMEOUT_MS = 60 * 1000
-        local FRAMEWORK_CAPTURE_SETTLE_MS = math.max(3, math.min(30,
-            tonumber(pluginConfig.portraitSettleSeconds) or 10)) * 1000
+        local FRAMEWORK_CAPTURE_SETTLE_MS = GetPortraitCaptureSettleMs()
         local FRAMEWORK_READY_POLL_MS = 250
         local frameworkReadySnapshot = nil
         local portraitCaptureSequence = 0

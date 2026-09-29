@@ -3,6 +3,11 @@
 local requests = {}
 local handles = {}
 local requestSequence = 0
+local PORTRAIT_CAPTURE_SETTLE_MS = 10 * 1000
+
+function GetPortraitCaptureSettleMs()
+    return PORTRAIT_CAPTURE_SETTLE_MS
+end
 
 local function headshotDebug(message)
     if type(debugLog) == "function" then debugLog("[civreg headshot] " .. message) end

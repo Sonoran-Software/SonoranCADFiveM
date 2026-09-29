@@ -2,6 +2,14 @@
 -- Exercises temporary portrait appearance changes with isolated FiveM boundaries.
 local passed = 0
 
+-- Load the actual core timing policy without registering headshot lifecycle hooks.
+local headshotCore = setmetatable({
+    RegisterNUICallback = function() end,
+    AddEventHandler = function() end,
+    exports = function() end
+}, { __index = _G })
+assert(loadfile("sonorancad/core/headshots.lua", "t", headshotCore))()
+
 local function equal(actual, expected, message)
     assert(actual == expected,
         (message or "unexpected value") .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
@@ -46,6 +54,7 @@ local function harness(options)
     end
 
     local env = setmetatable({}, { __index = _G })
+    env.GetPortraitCaptureSettleMs = headshotCore.GetPortraitCaptureSettleMs
     env.Config = {
         LoadPlugin = function(_, callback)
             callback({

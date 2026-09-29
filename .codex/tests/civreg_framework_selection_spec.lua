@@ -2,6 +2,14 @@
 -- Exercises framework character-selection hooks with isolated FiveM boundaries.
 local passed = 0
 
+-- Load the actual core timing policy without registering headshot lifecycle hooks.
+local headshotCore = setmetatable({
+    RegisterNUICallback = function() end,
+    AddEventHandler = function() end,
+    exports = function() end
+}, { __index = _G })
+assert(loadfile("sonorancad/core/headshots.lua", "t", headshotCore))()
+
 local function equal(actual, expected, message)
     assert(actual == expected,
         (message or "unexpected value") .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
@@ -69,13 +77,13 @@ local function harness(framework, options)
         }
     end
     local env = setmetatable({}, { __index = _G })
+    env.GetPortraitCaptureSettleMs = headshotCore.GetPortraitCaptureSettleMs
     env.Config = {
         LoadPlugin = function(_, callback)
             callback({
                 enabled = true,
                 commandName = "civreg",
-                language = { helpMsg = "help" },
-                portraitSettleSeconds = not options.defaultSettle and (options.settleSeconds or 3) or nil
+                language = { helpMsg = "help" }
             })
         end,
         GetPluginConfig = function()
@@ -264,7 +272,7 @@ test("QBCore selection settles after the player is fully spawned", function()
     equal(#h.serverEvents, 1)
     equal(h.serverEvents[1], "SonoranCAD::civreg::FrameworkCharacterSelected")
     equal(h.waits[1], 250)
-    equal(h.now, 3000)
+    equal(h.now, 10000)
 end)
 
 test("an already-loaded QBCore character is captured after resource restart", function()
@@ -306,7 +314,7 @@ test("QBCore waits for qb-clothing to apply the selected appearance", function()
     })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 1)
-    equal(h.now, 4000)
+    equal(h.now, 11000)
 end)
 
 test("QBCore fails closed when qb-clothing never reports an applied appearance", function()
@@ -334,7 +342,7 @@ test("QBCore waits for saved hat and glasses before capture", function()
     })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 1)
-    equal(h.now, 5500)
+    equal(h.now, 12500)
 end)
 
 test("QBCore rejects a portrait when the saved hat never appears", function()
@@ -355,7 +363,7 @@ test("QBCore waits for an alternate appearance provider to replace the placehold
     })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 1)
-    equal(h.now, 4000)
+    equal(h.now, 11000)
 end)
 
 test("QBCore detects alternate-provider changes to facial appearance only", function()
@@ -365,7 +373,7 @@ test("QBCore detects alternate-provider changes to facial appearance only", func
     })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 1)
-    equal(h.now, 4000)
+    equal(h.now, 11000)
 end)
 
 test("QBCore detects alternate-provider changes to tattoo identities only", function()
@@ -375,7 +383,7 @@ test("QBCore detects alternate-provider changes to tattoo identities only", func
     })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 1)
-    equal(h.now, 4000)
+    equal(h.now, 11000)
 end)
 
 test("QBCore does not treat tattoo application order as loaded skin", function()
@@ -422,7 +430,7 @@ test("QBCore settles after a late alternate-provider appearance change", functio
     })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 1)
-    equal(h.now, 19000)
+    equal(h.now, 26000)
 end)
 
 test("QBCore cancels capture if the active citizen changes while loading", function()
@@ -432,8 +440,8 @@ test("QBCore cancels capture if the active citizen changes while loading", funct
     equal(h.now, 60000)
 end)
 
-test("default ten-second stability window includes delayed QB appearance changes", function()
-    local h = harness("qbcore", { defaultSettle = true, qbClothing = true,
+test("fixed ten-second stability window includes delayed QB appearance changes", function()
+    local h = harness("qbcore", { qbClothing = true,
         qbAppearanceReadyAt = 1000, facialAppearanceChangeAt = 7000 })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 1)
@@ -441,7 +449,7 @@ test("default ten-second stability window includes delayed QB appearance changes
 end)
 
 test("slow QB clothing application has sixty seconds to settle", function()
-    local h = harness("qbcore", { defaultSettle = true, qbClothing = true,
+    local h = harness("qbcore", { qbClothing = true,
         qbAppearanceReadyAt = 35000 })
     h.events["QBCore:Client:OnPlayerLoaded"]()
     equal(#h.serverEvents, 1)
