@@ -4,10 +4,13 @@ The CAD display uses this editor for station and vehicle prop placement. It has 
 external resource or JavaScript library dependency. The core NUI loads `placement.js`;
 the manifest loads `math.lua` and `client.lua` before submodules.
 
-Drag a red/green/blue axis to move on X/Y/Z, or a colored square to move in a plane.
-Click **Rotate** for rotation rings. **Local axes / World axes** switches alignment;
+Drag either end of a red/green/blue axis to move on X/Y/Z, or a colored square to
+move in a plane. Handles stay compact on screen and highlight yellow when selected.
+Click **Rotate** for rotation rings, including an outer ring aligned to the view.
+**Local axes / World axes** switches alignment;
 **Snap** enables 1 cm movement and 5 degree rotation increments. Right-drag orbits
-the camera, the wheel zooms, and **Frame object** brings the object into view.
+the camera, middle-drag pans, the wheel zooms, and **Frame object** brings the object into view.
+**Original view** restores the starting camera; vehicle editing calls this **Driver view**.
 **Reset**, **Apply**, and **Cancel** are clickable. Scale is preserved, not edited.
 
 ## Reuse from another client script
@@ -17,6 +20,8 @@ local opened, reason = exports["sonorancad"]:StartPlacementEditor({
     entity = previewObject, -- existing local object, or a network entity you control
     title = "Place a sign",
     maxDistance = 10, -- maximum movement from the initial position, metres
+    -- Optional view = {position=vector3(...), rotation=vector3(...), fov=65}.
+    -- Camera rotation uses order 2. Otherwise the current rendered view is used.
     actions = {{ id = "apply", label = "Apply sign placement" }},
     validate = function() -- optional; checked every frame and before acceptance
         return DoesEntityExist(previewObject)
@@ -48,7 +53,10 @@ that opens other NUI should cancel placement first.
 
 The result also contains `entity` and `matrix = {r,f,u,p}` vectors. CAD uses a local
 vehicle preview and an invisible zero-offset bone anchor to convert the chosen
-world matrix into a bone-relative transform. `SonoranPlacementMath.relative` and
+world matrix into a bone-relative transform. New vehicle props start ahead of the
+seated player near the dashboard, even when the gameplay camera is outside. The
+editor opens at the driver's head position, with **Driver view** available after
+orbiting or panning. `SonoranPlacementMath.relative` and
 `rotation(matrix, 0)` produce the existing attachment format without subtracting
 Euler angles. No attachment or server persistence policy is built into the editor.
 
@@ -60,17 +68,21 @@ only from the actual FiveM parent frame and its exact origin; stale sessions are
 * Game → UI `placement_editor`: `enabled`, `session`, and, when enabled, `title`
   and `actions = [{id,label}]`. Hiding releases pointer state.
 * Game → UI `placement_frame`: `session`, `mode` (`move`/`rotate`), `space`
-  (`local`/`world`), `snap`, world `position`/`rotation`, and `handles`.
-  Each handle has `id` (`x/y/z/xy/xz/yz`), `kind` (`axis/plane/ring`), and normalized
+  (`local`/`world`), `snap`, world `position`/`rotation`, projected `pivot`, optional
+  `selected` handle ID, and `handles`.
+  Each handle has `id` (`x/y/z/xy/xz/yz/view`), `kind` (`axis/plane/ring`), and normalized
   projected `points`. `false` points are not visible and break rendered paths.
 * UI → `placementInput`: JSON `{session, action, ...}`. Actions: `mode` with
-  `value`; `space`, `snap`, `reset`, `focus`, `cancel`; `finish` with an advertised
+  `value`; `space`, `snap`, `reset`, `focus`, `view`, `cancel`; `finish` with an advertised
   `choice`; `down` with `handle,x,y`; `drag` with `x,y`; `up`; and `camera` with
-  normalized `dx,dy` and signed `zoom`. Callback replies `{ok:boolean}`. Pointer
+  normalized `dx,dy`, signed `zoom`, and optional `pan=true` for middle-drag.
+  `view` restores the initial camera. Callback replies `{ok:boolean}`. Pointer
   coordinates must be finite and in [0,1]; the server save path remains separate.
 
 Mouse events are ordered and coalesced under callback latency so stale drag events
 cannot overtake release or Apply. Switching tools clears the active drag.
+Drag rays use the script camera's pose, FOV, and aspect ratio directly. Applying a
+transform updates engine coordinates before the matrix so frozen previews move too.
 
 ## Verification
 

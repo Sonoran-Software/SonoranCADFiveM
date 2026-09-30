@@ -465,6 +465,8 @@ for _,mode in ipairs({'save','cancel','new_cancel'}) do
         local editor,created,deleted,attached= nil,9,{},{}
         env.GetEntityType=function() return 3 end
         env.GetEntitySpeed=function() return 0 end
+        env.GetEntityRotation=function() return env.vector3(0,0,30) end
+        env.GetPedBoneCoords=function() return env.vector3(0,0,1) end
         env.NetworkGetEntityIsNetworked=function() return false end
         env.GetEntityBoneIndexByName=function() return 12 end
         env.GetDisplayNameFromVehicleModel=function() return 'POLICE' end
@@ -472,6 +474,7 @@ for _,mode in ipairs({'save','cancel','new_cancel'}) do
         env.DeleteObject=function(entity) deleted[entity]=true end
         env.SetEntityCollision=function() end; env.SetEntityVisible=function() end
         env.SetEntityLocallyInvisible=function() end; env.SetEntityMatrix=function() end
+        env.SetEntityCoordsNoOffset=function() end
         env.AttachEntityToEntity=function(...) attached[#attached+1]={...} end
         env.GetEntityMatrix=function(entity)
             return env.vector3(0,1,0),env.vector3(1,0,0),env.vector3(0,0,1),env.vector3(entity==11 and 10 or 0,0,0)
@@ -482,6 +485,7 @@ for _,mode in ipairs({'save','cancel','new_cancel'}) do
         env.beginVehiclePlacementEditor(isNew)
         s:frame()
         assert(editor and editor.entity==10 and #editor.actions==2 and #attached==1 and attached[1][1]==11)
+        assert(editor.view and editor.view.rotation.x==-8 and editor.view.rotation.z==30 and editor.view.fov==65)
         editor.onFinish({accepted=accept,action='save',matrix={p=env.vector3(11,2,3),r=env.vector3(1,0,0),f=env.vector3(0,1,0),u=env.vector3(0,0,1)}})
         assert(deleted[10] and deleted[11] and (deleted[2] == true) == isNew)
         if accept then
@@ -490,6 +494,18 @@ for _,mode in ipairs({'save','cancel','new_cancel'}) do
         else assert(#attached==1 and #s.claims==0) end
     end)
 end
+
+test('new vehicle preview starts inside from the seated player even with an exterior gameplay camera',function()
+    local s=harness();withCadDisplay(s);s.vehicle=3
+    local env=s.env
+    assert(loadfile('sonorancad/core/placement/math.lua','t',env))()
+    env.GetPedBoneCoords=function() return env.vector3(10,20,1) end
+    env.GetEntityMatrix=function() return env.vector3(0,1,0),env.vector3(1,0,0),env.vector3(0,0,1),env.vector3(10,20,0) end
+    env.GetEntityHeading=function() return 90 end
+    env.GetGameplayCamCoord=function() error('exterior camera used to spawn seated preview') end
+    local point,heading=env.getDisplayPreviewTransform()
+    assert(point.x==10.25 and point.y==20.55 and point.z==.75 and heading==270)
+end)
 
 test('station administrators on foot open station management without a vehicle', function()
     local s = harness()

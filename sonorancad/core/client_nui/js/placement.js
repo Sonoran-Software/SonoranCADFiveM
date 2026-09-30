@@ -5,16 +5,19 @@
         #placementEditor[hidden] {display:none}
         #placementEditor svg {position:absolute;inset:0;width:100%;height:100%;overflow:hidden}
         #placementEditor [data-handle] {cursor:grab}
-        #placementEditor [data-handle]:hover {stroke:#fff;stroke-opacity:.55}
-        #placementToolbar {position:absolute;bottom:30px;left:50%;transform:translateX(-50%);width:max-content;max-width:94vw;padding:14px 18px;border:1px solid #475569;border-radius:12px;background:rgba(15,23,36,.97);box-shadow:0 8px 32px #0008}
-        #placementToolbar h3 {margin:0 0 10px;font-size:15px}
-        #placementToolbar .row {display:flex;gap:7px;flex-wrap:wrap;align-items:center}
-        #placementToolbar button {padding:8px 12px;border:1px solid #526174;border-radius:6px;background:#253246;color:#edf2fa;cursor:pointer;font:inherit}
+        #placementToolbar {position:absolute;top:18px;left:18px;width:max-content;max-width:calc(100vw - 36px);padding:10px 12px;border:1px solid #ffffff24;border-radius:7px;background:rgba(12,17,23,.78);box-shadow:0 3px 14px #0004}
+        #placementToolbar h3 {margin:0 0 8px;font-size:12px;font-weight:500;color:#cbd5e1}
+        #placementToolbar .row {display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+        #placementEditor button {padding:6px 9px;border:1px solid #ffffff30;border-radius:4px;background:#1e293bcc;color:#edf2fa;cursor:pointer;font:12px 'Segoe UI',sans-serif}
         #placementToolbar button:hover {background:#3b4f69}
         #placementToolbar button[aria-pressed=true] {border-color:#66c9ff;background:#175078}
         #placementToolbar button[data-finish] {background:#176447;border-color:#37966f}
         #placementToolbar p {margin:9px 0 0;color:#abb9ce;font-size:12px}
         #placementValues {font-variant-numeric:tabular-nums}
+        #placementFinish {position:absolute;right:18px;bottom:18px;display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;max-width:calc(100vw - 36px)}
+        #placementActions {display:contents}
+        #placementFinish [data-finish] {background:#176447dd;border-color:#37966f}
+        #placementFinish [data-action=cancel] {background:#1e293bdd}
     `;
     document.head.appendChild(style);
     const root = document.createElement('section');
@@ -24,14 +27,15 @@
         <h3></h3><div class="row">
         <button data-mode="move" aria-pressed="true">Move</button><button data-mode="rotate" aria-pressed="false">Rotate</button>
         <button data-action="space">Local axes</button><button data-action="snap" aria-pressed="false">Snap: off</button>
-        <button data-action="focus">Frame object</button><button data-action="reset">Reset</button><span id="placementActions" class="row"></span><button data-action="cancel">Cancel</button>
-        </div><p>Drag a colored axis, plane, or ring. Right-drag to orbit · Wheel to zoom.</p>
-        <p id="placementValues"></p></div>`;
+        <button data-action="view">Original view</button><button data-action="focus">Frame object</button><button data-action="reset">Reset</button>
+        </div><p>Drag arrows, squares, or rings · Right-drag orbit · Middle-drag pan · Wheel zoom</p>
+        <p id="placementValues"></p></div><div id="placementFinish"><span id="placementActions"></span><button data-action="cancel">Cancel</button></div>`;
     document.body.appendChild(root);
     const svg = root.querySelector('svg');
-    const colors = {x:'#ff515a',y:'#64dc78',z:'#569aff'};
+    const colors = {x:'#ff3030',y:'#32ed32',z:'#3f6bff',v:'#d8dde7'};
     const gameOrigin = window.location.ancestorOrigins[0];
-    let session = null, pointer = null, pending = null, scheduled = false, sending = false;
+    let session = null, pointer = null, pending = null, scheduled = false, sending = false, hovered = null;
+    let lastFrame = null;
     const outbound = [];
     async function pump() {
         if (sending) return;
@@ -50,7 +54,7 @@
         const data = {session,action,...extra};
         if (data.session === null) return;
         const last = outbound[outbound.length-1];
-        if (last && last.session===data.session && last.action===action && (action==='drag' || action==='camera')) {
+        if (last && last.session===data.session && last.action===action && last.pan===data.pan && (action==='drag' || action==='camera')) {
             if (action==='camera') {data.dx+=last.dx; data.dy+=last.dy; data.zoom+=last.zoom;}
             outbound[outbound.length-1]=data;
         } else outbound.push(data);
@@ -62,7 +66,8 @@
     }
     function defer(data) {
         // Keep pointer motion bounded while preserving down -> drag -> up order.
-        if (pending && data.action === 'camera' && pending.action === 'camera') {
+        if (pending && (pending.action!==data.action || pending.pan!==data.pan)) flush();
+        if (pending && data.action === 'camera' && pending.action === 'camera' && pending.pan===data.pan) {
             data.dx += pending.dx; data.dy += pending.dy; data.zoom += pending.zoom;
         }
         pending = data;
@@ -75,16 +80,27 @@
         return el;
     }
     function render(data) {
+        lastFrame=data;
         svg.setAttribute('viewBox',`0 0 ${innerWidth} ${innerHeight}`);
         const fragment = document.createDocumentFragment();
         for (const handle of data.handles || []) {
             const points = handle.points.map(p => p && Number.isFinite(p.x) && Number.isFinite(p.y)
                 ? {x:p.x*innerWidth,y:p.y*innerHeight} : null);
-            const color = colors[handle.id[0]];
+            const selected=data.selected || hovered;
+            const color = handle.id===selected ? '#fff000' : colors[handle.id[0]];
+            if (handle.kind==='axis' && handle.id===selected && points[0] && points[1]) {
+                const [a,b]=points, length=Math.hypot(b.x-a.x,b.y-a.y);
+                if (length>1) {
+                    const scale=Math.hypot(innerWidth,innerHeight)/length;
+                    fragment.appendChild(node('line',{x1:a.x-(b.x-a.x)*scale,y1:a.y-(b.y-a.y)*scale,
+                        x2:b.x+(b.x-a.x)*scale,y2:b.y+(b.y-a.y)*scale,stroke:'#d5d9df',
+                        'stroke-opacity':.45,'stroke-width':1,'pointer-events':'none'}));
+                }
+            }
             if (handle.kind === 'plane') {
                 if (points.some(p => !p)) continue;
                 fragment.appendChild(node('polygon',{points:points.map(p=>`${p.x},${p.y}`).join(' '),
-                    fill:color,'fill-opacity':'.22',stroke:color,'stroke-width':1,'data-handle':handle.id}));
+                    fill:color,'fill-opacity':'.65',stroke:color,'stroke-width':1,'data-handle':handle.id}));
                 continue;
             }
             let path = '', previous = false;
@@ -92,17 +108,18 @@
                 if (!p) {previous = false; continue;}
                 path += `${previous?'L':'M'}${p.x},${p.y} `; previous = true;
             }
-            fragment.appendChild(node('path',{d:path,fill:'none',stroke:color,'stroke-width':3,'pointer-events':'none'}));
+            fragment.appendChild(node('path',{d:path,fill:'none',stroke:color,'stroke-width':handle.kind==='ring'?1.6:2,'pointer-events':'none'}));
             fragment.appendChild(node('path',{d:path,fill:'none',stroke:color,'stroke-opacity':0,
-                'stroke-width':18,'pointer-events':'stroke','data-handle':handle.id}));
+                'stroke-width':12,'pointer-events':'stroke','data-handle':handle.id}));
             if (handle.kind === 'axis' && points[0] && points[1]) {
-                const [a,b] = points, angle = Math.atan2(b.y-a.y,b.x-a.x);
-                const wing = sign => `${b.x-12*Math.cos(angle)+sign*6*Math.sin(angle)},${b.y-12*Math.sin(angle)-sign*6*Math.cos(angle)}`;
-                fragment.appendChild(node('polygon',{points:`${b.x},${b.y} ${wing(1)} ${wing(-1)}`,fill:color,'data-handle':handle.id}));
-                const label = node('text',{x:b.x+9,y:b.y-9,fill:color,'font-size':14,'font-weight':700,'pointer-events':'none'});
-                label.textContent=handle.id.toUpperCase(); fragment.appendChild(label);
+                for (const [a,b] of [points,[points[1],points[0]]]) {
+                    const angle = Math.atan2(b.y-a.y,b.x-a.x);
+                    const wing = sign => `${b.x-10*Math.cos(angle)+sign*5*Math.sin(angle)},${b.y-10*Math.sin(angle)-sign*5*Math.cos(angle)}`;
+                    fragment.appendChild(node('polygon',{points:`${b.x},${b.y} ${wing(1)} ${wing(-1)}`,fill:color,'data-handle':handle.id}));
+                }
             }
         }
+        if (data.pivot) fragment.appendChild(node('circle',{cx:data.pivot.x*innerWidth,cy:data.pivot.y*innerHeight,r:3,fill:'#fff000','pointer-events':'none'}));
         svg.replaceChildren(fragment);
         for (const button of root.querySelectorAll('[data-mode]')) button.setAttribute('aria-pressed',button.dataset.mode===data.mode);
         root.querySelector('[data-action=space]').textContent=data.space==='local'?'Local axes':'World axes';
@@ -119,10 +136,11 @@
             if (pointer && root.hasPointerCapture(pointer.id)) {
                 const id=pointer.id; pointer=null; root.releasePointerCapture(id);
             }
-            session=data.enabled?data.session:null; root.hidden=!data.enabled; pointer=null; pending=null;
+            session=data.enabled?data.session:null; root.hidden=!data.enabled; pointer=null; pending=null; hovered=null; lastFrame=null;
             svg.replaceChildren();
             if (data.enabled) {
                 root.querySelector('h3').textContent=data.title;
+                root.querySelector('[data-action=view]').textContent=data.title.startsWith('Vehicle')?'Driver view':'Original view';
                 const actions=root.querySelector('#placementActions'); actions.replaceChildren();
                 for (const action of data.actions || []) {
                     const button=document.createElement('button'); button.dataset.finish=action.id;
@@ -141,15 +159,20 @@
     });
     root.addEventListener('pointerdown',event=>{
         const handle=event.target.closest('[data-handle]');
-        if (event.target.closest('#placementToolbar')) return;
-        if (event.button!==2 && !(event.button===0 && handle)) return;
+        if (event.target.closest('#placementToolbar, #placementFinish')) return;
+        if (event.button!==2 && event.button!==1 && !(event.button===0 && handle)) return;
         event.preventDefault(); root.setPointerCapture(event.pointerId);
-        pointer={id:event.pointerId,orbit:event.button===2,x:event.clientX,y:event.clientY};
-        if (!pointer.orbit) send('down',{...coordinates(event),handle:handle.dataset.handle});
+        pointer={id:event.pointerId,camera:event.button!==0,pan:event.button===1,x:event.clientX,y:event.clientY};
+        if (!pointer.camera) {hovered=handle.dataset.handle;send('down',{...coordinates(event),handle:handle.dataset.handle});}
     });
     root.addEventListener('pointermove',event=>{
-        if (!pointer || event.pointerId!==pointer.id) return;
-        if (pointer.orbit) defer({action:'camera',dx:(event.clientX-pointer.x)/innerWidth,dy:(event.clientY-pointer.y)/innerHeight,zoom:0});
+        if (!pointer) {
+            const next=event.target.closest('[data-handle]')?.dataset.handle || null;
+            if (next!==hovered) {hovered=next;if(lastFrame) render(lastFrame);}
+            return;
+        }
+        if (event.pointerId!==pointer.id) return;
+        if (pointer.camera) defer({action:'camera',pan:pointer.pan,dx:(event.clientX-pointer.x)/innerWidth,dy:(event.clientY-pointer.y)/innerHeight,zoom:0});
         else defer({action:'drag',...coordinates(event)});
         pointer.x=event.clientX; pointer.y=event.clientY;
     });

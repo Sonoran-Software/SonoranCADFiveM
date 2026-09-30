@@ -45,8 +45,11 @@ then use **Edit Selected Display** or **Delete
 Selected Display**. Station management does not require a compatible vehicle.
 
 Station and vehicle placement use a mouse gizmo. Drag colored axes or plane handles
-to move, click **Rotate** for rotation rings, and use the mouse wheel/right-drag to
-zoom/orbit. **Frame object** centers the view. Click **Save station display** to
+to move in either direction; selected handles turn yellow. Click **Rotate** for
+rotation rings, use the mouse wheel/right-drag to zoom/orbit, and middle-drag to
+pan. Vehicle editing starts from the driver's viewpoint with new props near the
+dashboard. **Driver view** returns to that camera; **Frame object** centers the
+prop from outside when needed. Click **Save station display** to
 finish station placement. Vehicle placement offers **Apply to this vehicle** and,
 for vehicle administrators, **Save for this vehicle model**. **Cancel** discards
 the preview. Stop the vehicle before editing. The reusable editor API is documented

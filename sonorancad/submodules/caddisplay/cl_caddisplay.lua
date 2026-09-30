@@ -437,6 +437,16 @@ CreateThread(function()
             end
 
             function getDisplayPreviewTransform()
+                local ped=PlayerPedId()
+                local vehicle=GetVehiclePedIsIn(ped,false)
+                if vehicle ~= 0 then
+                    -- Start near the dashboard even when the gameplay camera is outside the car.
+                    local forward,right,up,origin=GetEntityMatrix(vehicle)
+                    local head=GetPedBoneCoords(ped,31086,0,0,0)
+                    local side=SonoranPlacementMath.dot(head-origin,right)
+                    local point=head+forward*.55+right*(side>0 and -.25 or .25)-up*.25
+                    return {x=point.x,y=point.y,z=point.z},GetEntityHeading(vehicle)+180.0
+                end
                 local cameraPosition = GetGameplayCamCoord()
                 local cameraRotation = GetGameplayCamRot(2)
                 local pitch = math.rad(cameraRotation.x)
@@ -729,8 +739,11 @@ CreateThread(function()
                     if not DoesEntityExist(object) or not DoesEntityExist(vehicle) or not DoesEntityExist(anchor) then cleanup(true); return end
                     local actions = {{id="apply",label="Apply to this vehicle"}}
                     if isAdmin then actions[#actions+1] = {id="save",label="Save for this vehicle model"} end
+                    local vehicleRotation=GetEntityRotation(vehicle,2)
+                    local driverView={position=GetPedBoneCoords(PlayerPedId(),31086,0,.08,.06)+parent.f*.12,
+                        rotation=vector3(vehicleRotation.x-8,vehicleRotation.y,vehicleRotation.z),fov=65}
                     local opened, reason = SonoranPlacementEditor.Start({
-                        entity=preview, title="Vehicle display placement", maxDistance=5, actions=actions,
+                        entity=preview, title="Vehicle display placement", maxDistance=5, actions=actions,view=driverView,
                         validate=function()
                             if not DoesEntityExist(object) or not DoesEntityExist(vehicle) or not DoesEntityExist(anchor)
                                 or GetVehiclePedIsIn(PlayerPedId(),false) ~= vehicle or GetEntitySpeed(vehicle) > .05 then return false end

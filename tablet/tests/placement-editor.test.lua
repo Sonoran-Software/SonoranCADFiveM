@@ -27,7 +27,11 @@ local function harness()
         FreezeEntityPosition=function(entity,frozen) s.frozen[entity]=frozen end,
         CreateCam=function() return 10 end,DestroyCam=function() s.destroyed=s.destroyed+1 end,
         SetCamCoord=function(_,x,y,z) s.camera=v(x,y,z) end, GetCamCoord=function() return s.camera end,
-        SetCamRot=noop,SetCamFov=noop,SetCamNearClip=noop,PointCamAtCoord=noop,
+        SetCamRot=function(_,x,y,z) s.cameraRotation=v(x,y,z) end,
+        GetCamRot=function() return s.cameraRotation end,
+        SetCamFov=function(_,fov) s.fov=fov end, GetCamFov=function() return s.fov end,
+        GetAspectRatio=function() return 1 end,SetCamNearClip=noop,PointCamAtCoord=noop,
+        SetEntityCoordsNoOffset=function(_,x,y,z) s.enginePosition=v(x,y,z) end,
         GetFinalRenderedCamCoord=function() return v(0,-2,2) end,
         GetFinalRenderedCamRot=function() return v(-45,0,0) end,GetFinalRenderedCamFov=function() return 70 end,
         RenderScriptCams=function(render) s.render=render end,
@@ -103,10 +107,53 @@ test('mouse axis drag changes only the selected world axis and cancel restores s
     s.matrix.r=s.matrix.r*2; s.matrix.u=s.matrix.u*3
     assert(s:start())
     s:input('down',{handle='x',x=.5,y=.5}); s:input('drag',{x=.7,y=.5}); s:input('up')
-    near(s.matrix.p,v(.4,0,0))
+    near(s.matrix.p,v(.4*math.sqrt(8)*math.tan(math.rad(35)),0,0))
+    near(s.enginePosition,s.matrix.p)
     s:input('cancel')
     near(s.matrix.p,v(0,0,0)); near(s.matrix.r,v(2,0,0)); near(s.matrix.u,v(0,0,3))
     assert(not s.focus and not s.frozen[1] and not s.frozen[2] and not s.result.accepted)
+end)
+
+test('camera rays match the selected script camera including roll and aspect',function()
+    local s=harness()
+    local origin,direction=s.M.cameraRay(v(10,20,30),v(0,0,90),90,2,.5,.5)
+    near(origin,v(10,20,30)); near(direction,v(-1,0,0))
+    local _,edge=s.M.cameraRay(v(0,0,0),v(0,0,0),90,2,1,.5)
+    near(edge,s.M.unit(v(2,1,0)))
+    local _,rolled=s.M.cameraRay(v(0,0,0),v(0,90,0),90,1,1,.5)
+    near(rolled,s.M.unit(v(0,1,-1)))
+end)
+
+test('drag can move a preview from outside to inside the vehicle in world coordinates',function()
+    local s=harness()
+    s.matrix.p=v(1856,3677,34)
+    local start=s.matrix.p
+    assert(s:start({view={position=start+v(0,-2,2),rotation=v(-45,0,0),fov=70}}))
+    s:input('down',{handle='x',x=.75,y=.5})
+    s:input('drag',{x=.25,y=.5});s:input('up')
+    assert(s.matrix.p.x<start.x-1 and s.matrix.p.x>start.x-3)
+    assert(s.matrix.p.y==start.y and s.matrix.p.z==start.z)
+    near(s.enginePosition,s.matrix.p)
+end)
+
+test('camera pan preserves orientation and driver view restores its starting pose',function()
+    local s=harness()
+    local view={position=v(0,-.5,.4),rotation=v(-8,0,0),fov=65}
+    assert(s:start({view=view}));near(s.camera,view.position)
+    s:input('camera',{dx=.03,dy=.02,zoom=0,pan=true})
+    assert(#(s.camera-view.position)>.01);near(s.cameraRotation,view.rotation)
+    s:input('view');near(s.camera,view.position);near(s.cameraRotation,view.rotation)
+end)
+
+test('gizmo has compact bidirectional handles and a view rotation ring',function()
+    local s=harness();assert(s:start());s:frame()
+    local frame=s.messages[#s.messages]
+    assert(frame.pivot and #frame.handles==6)
+    assert(frame.handles[1].points[1].x<.5 and frame.handles[1].points[2].x>.5)
+    s:input('mode',{value='rotate'});s:frame()
+    assert(s.messages[#s.messages].handles[4].id=='view')
+    s:input('down',{handle='view',x=.7,y=.5});s:input('drag',{x=.5,y=.3})
+    assert(#(s.matrix.r-v(1,0,0))>.01)
 end)
 
 test('plane drag and snap stay in the selected plane',function()

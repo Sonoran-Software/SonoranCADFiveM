@@ -9,7 +9,20 @@ function M.capture(entity)
     return { r = r, f = f, u = u, p = p }
 end
 function M.apply(entity, m)
+    -- Update the engine position as well as the render matrix, including frozen props.
+    SetEntityCoordsNoOffset(entity, m.p.x,m.p.y,m.p.z, false,false,false)
     SetEntityMatrix(entity, m.f.x,m.f.y,m.f.z, m.r.x,m.r.y,m.r.z, m.u.x,m.u.y,m.u.z, m.p.x,m.p.y,m.p.z)
+end
+function M.cameraBasis(rotation)
+    local m = {r=vector3(1,0,0),f=vector3(0,1,0),u=vector3(0,0,1),p=vector3(0,0,0)}
+    m=M.rotate(m,vector3(0,1,0),math.rad(rotation.y))
+    m=M.rotate(m,vector3(1,0,0),math.rad(rotation.x))
+    return M.rotate(m,vector3(0,0,1),math.rad(rotation.z))
+end
+function M.cameraRay(position, rotation, fov, aspect, x, y)
+    local b=M.cameraBasis(rotation)
+    local height=math.tan(math.rad(fov)*.5)
+    return position, M.unit(b.f+b.r*((x*2-1)*height*aspect)+b.u*((1-y*2)*height))
 end
 function M.relative(frame, m)
     local function localVector(v)

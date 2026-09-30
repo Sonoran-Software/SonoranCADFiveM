@@ -43,14 +43,19 @@ local function projected(point)
     local visible,x,y = GetScreenCoordFromWorldCoord(point.x,point.y,point.z)
     return visible and finite(x) and finite(y) and {x=x,y=y} or false
 end
+local function cameraRay(s,x,y)
+    return M.cameraRay(GetCamCoord(s.cam),GetCamRot(s.cam,2),GetCamFov(s.cam),GetAspectRatio(false),x,y)
+end
 local function frame(s)
     local matrix = M.capture(s.entity)
     local b = basis(s,matrix)
-    local size = math.max(.08,math.min(1.5,#(GetCamCoord(s.cam)-matrix.p)*.22))
+    local camera=M.cameraBasis(GetCamRot(s.cam,2))
+    local depth=math.max(.05,M.dot(matrix.p-GetCamCoord(s.cam),camera.f))
+    local size = math.max(.025,depth*math.tan(math.rad(GetCamFov(s.cam))*.5)*.18)
     local handles = {}
     if s.mode == 'move' then
         for _, key in ipairs({'x','y','z'}) do
-            handles[#handles+1] = { id=key, kind='axis', points={projected(matrix.p),projected(matrix.p+b[key]*size)} }
+            handles[#handles+1] = { id=key, kind='axis', points={projected(matrix.p-b[key]*size),projected(matrix.p+b[key]*size)} }
         end
         for _, pair in ipairs({'xy','xz','yz'}) do
             local a,c = b[pair:sub(1,1)],b[pair:sub(2,2)]
@@ -61,19 +66,22 @@ local function frame(s)
             handles[#handles+1] = {id=pair,kind='plane',points=points}
         end
     else
-        for _, key in ipairs({'x','y','z'}) do
-            local a = b[key == 'x' and 'y' or 'x']
-            local c = M.cross(b[key],a)
+        for _, key in ipairs({'x','y','z','view'}) do
+            local normal=key=='view' and camera.f or b[key]
+            local a = key=='view' and camera.r or b[key == 'x' and 'y' or 'x']
+            local c = M.cross(normal,a)
+            local radius=key=='view' and size*1.15 or size
             local points = {}
             for i=0,48 do
                 local angle = i*math.pi/24
-                points[#points+1] = projected(matrix.p+(a*math.cos(angle)+c*math.sin(angle))*size)
+                points[#points+1] = projected(matrix.p+(a*math.cos(angle)+c*math.sin(angle))*radius)
             end
             handles[#handles+1] = {id=key,kind='ring',points=points}
         end
     end
     SendNUIMessage({type='placement_frame',session=s.id,handles=handles, mode=s.mode,space=s.space,
-        snap=s.snap,position=pack(matrix.p),rotation=pack(M.rotation(matrix,2))})
+        snap=s.snap,selected=s.drag and s.drag.handle,pivot=projected(matrix.p),
+        position=pack(matrix.p),rotation=pack(M.rotation(matrix,2))})
 end
 local function validSession(s)
     if not DoesEntityExist(s.entity) or PlayerPedId() ~= s.ped or IsEntityDead(s.ped)
@@ -97,9 +105,11 @@ function E.Start(options)
         ped=ped,vehicle=GetVehiclePedIsIn(ped,false),mode='move',space='local',snap=false,
         actions=options.actions or {{id='apply',label='Apply'}},
         entityFrozen=IsEntityPositionFrozen(options.entity),cam=CreateCam('DEFAULT_SCRIPTED_CAMERA',true) }
-    local p,r = GetFinalRenderedCamCoord(),GetFinalRenderedCamRot(2)
+    local view=options.view
+    local p,r = view and view.position or GetFinalRenderedCamCoord(),view and view.rotation or GetFinalRenderedCamRot(2)
+    s.view={position=p,rotation=r,fov=view and view.fov or GetFinalRenderedCamFov()}
     SetCamCoord(s.cam,p.x,p.y,p.z); SetCamRot(s.cam,r.x,r.y,r.z,2)
-    SetCamFov(s.cam,GetFinalRenderedCamFov()); SetCamNearClip(s.cam,.01)
+    SetCamFov(s.cam,s.view.fov); SetCamNearClip(s.cam,.01)
     s.frozePed = s.vehicle == 0 and not IsEntityPositionFrozen(ped)
     if s.frozePed then FreezeEntityPosition(ped,true) end
     FreezeEntityPosition(s.entity,true)
@@ -146,20 +156,20 @@ RegisterNUICallback('placementInput',function(data,cb)
         elseif data.action == 'down' and pointer(data) and type(data.handle) == 'string' then
             local m = M.capture(s.entity)
             local b = basis(s,m)
-            local a = b[data.handle:sub(1,1)]
+            local a = data.handle=='view' and M.cameraBasis(GetCamRot(s.cam,2)).f or b[data.handle:sub(1,1)]
             if not a then return end
-            local origin,direction = GetWorldCoordFromScreenCoord(data.x,data.y)
+            local origin,direction = cameraRay(s,data.x,data.y)
             local normal,kind
-            if s.mode == 'rotate' and #data.handle == 1 then normal=a; kind='rotate'
+            if s.mode == 'rotate' and (#data.handle == 1 or data.handle=='view') then normal=a; kind='rotate'
             elseif s.mode == 'move' and #data.handle == 1 then normal=M.unit(direction-a*M.dot(direction,a)); kind='axis'
             elseif s.mode == 'move' and ({xy=true,xz=true,yz=true})[data.handle] then
                 normal=M.cross(a,b[data.handle:sub(2,2)]); kind='plane'
             else return end
             local hit=M.plane(origin,direction,m.p,normal)
-            if hit and #normal > .001 then s.drag={matrix=m,axis=a,normal=normal,hit=hit,kind=kind} end
+            if hit and #normal > .001 then s.drag={matrix=m,axis=a,normal=normal,hit=hit,kind=kind,handle=data.handle} end
         elseif data.action == 'drag' and s.drag and pointer(data) then
             local d=s.drag
-            local origin,direction=GetWorldCoordFromScreenCoord(data.x,data.y)
+            local origin,direction=cameraRay(s,data.x,data.y)
             local hit=M.plane(origin,direction,d.matrix.p,d.normal)
             if not hit then return end
             local m=d.matrix
@@ -178,12 +188,26 @@ RegisterNUICallback('placementInput',function(data,cb)
                 m={r=m.r,f=m.f,u=m.u,p=m.p+delta}
             end
             if #(m.p-s.original.p) <= (s.options.maxDistance or 10) then M.apply(s.entity,m) end
+        elseif data.action == 'view' then
+            s.drag=nil
+            local view=s.view
+            SetCamCoord(s.cam,view.position.x,view.position.y,view.position.z)
+            SetCamRot(s.cam,view.rotation.x,view.rotation.y,view.rotation.z,2)
+            SetCamFov(s.cam,view.fov)
         elseif data.action == 'focus' or (data.action == 'camera' and finite(data.dx) and finite(data.dy) and finite(data.zoom)) then
             if data.action == 'focus' then data.dx,data.dy,data.zoom=0,0,0 end
             s.drag=nil
             local center=GetEntityCoords(s.entity)
             local offset=GetCamCoord(s.cam)-center
             local radius=math.max(.15,#offset)
+            if data.pan then
+                local b=M.cameraBasis(GetCamRot(s.cam,2))
+                local height=radius*math.tan(math.rad(GetCamFov(s.cam))*.5)*2
+                local p=GetCamCoord(s.cam)-b.r*(math.max(-.1,math.min(.1,data.dx))*height*GetAspectRatio(false))
+                    +b.u*(math.max(-.1,math.min(.1,data.dy))*height)
+                SetCamCoord(s.cam,p.x,p.y,p.z)
+                return
+            end
             local yaw=math.atan(offset.y,offset.x)-math.max(-.1,math.min(.1,data.dx))*4
             local pitch=math.asin(math.max(-1,math.min(1,offset.z/radius)))+math.max(-.1,math.min(.1,data.dy))*3
             pitch=math.max(-1.4,math.min(1.4,pitch))
