@@ -397,7 +397,7 @@ CreateThread(function()
                 syncWorldPlacements()
             end
 
-            RegisterCommand(pluginConfig.commands.cadDisplayMenu, function(source)
+            RegisterCommand(pluginConfig.commands.cadDisplayMenu, function(source, args)
                 local allowed, isAdmin = checkPermissions(source)
                 if not allowed then
                     notifyPlayerPayload(source, {
@@ -408,6 +408,18 @@ CreateThread(function()
                     return
                 end
                 local worldAdmin = checkWorldPlacementPermission(source)
+                if args and string.lower(args[1] or "") == "calibrate" then
+                    if not isAdmin and not worldAdmin then
+                        notifyPlayerPayload(source, {
+                            title = "CAD Display",
+                            message = "Display administration permission is required to calibrate screen corners.",
+                            type = "error"
+                        })
+                        return
+                    end
+                    TriggerClientEvent("SonoranCAD::caddisplay::Calibrate", source, isAdmin, worldAdmin)
+                    return
+                end
                 TriggerClientEvent("SonoranCAD::caddisplay::OpenMenu", source, isAdmin, worldAdmin)
             end, false)
 

@@ -35,6 +35,8 @@ client_scripts {
     ,'core/shared_functions.lua'
     ,'core/client.lua'
     ,'core/linking_cl.lua'
+    ,'core/placement/math.lua'
+    ,'core/placement/client.lua'
     ,'core/lighting.lua'
     ,'configuration/*_config.lua'
     ,'submodules/**/cl_*.lua'
