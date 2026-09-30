@@ -353,7 +353,7 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 ### ERR-BC-117
 - `Key`: `BODYCAM_WATCH_ACTIVE`
 - `Meaning`: Bodycam disable was blocked because the bodycam is currently being watched.
-- `Potential Fix`: Stop the remote watch session first, or use an authorized force-off flow if policy allows it.
+- `Potential Fix`: Wait until all viewers stop watching, then try again. Players allowed by the configured `forceOffAce` permission are shown `/<configured bodycam command> forceoff` in the error message; players without access are told they cannot force off their bodycam. The force-off command checks permission again when run.
 
 ### ERR-BC-118
 - `Key`: `BODYCAM_SOUND_LEVEL_INVALID`

@@ -1008,7 +1008,7 @@ CreateThread(function()
                 PublishBodycamRuntime("initialized")
             end)
 
-            RegisterNetEvent('SonoranCAD::bodycam::Toggle', function(manualActivation, toggle, forceOff)
+            RegisterNetEvent('SonoranCAD::bodycam::Toggle', function(manualActivation, toggle, forceOff, canForceOff)
                 local isManualActivation = manualActivation == true
                 local shouldToggle = toggle == true
                 local isForceOff = forceOff == true
@@ -1040,7 +1040,14 @@ CreateThread(function()
                 end
 
                 if isManualActivation and not shouldToggle and watchingDisplayOn and not isForceOff then
-                    showClientError('BODYCAM_WATCH_ACTIVE')
+                    if canForceOff == true then
+                        showClientError('BODYCAM_WATCH_ACTIVE',
+                            'Bodycam cannot be turned off while it is being watched. To force it off, use /%s forceoff.',
+                            pluginConfig.command)
+                    else
+                        showClientError('BODYCAM_WATCH_ACTIVE',
+                            'Bodycam cannot be turned off while it is being watched. You do not have permission to force off your bodycam. Wait until all viewers stop watching, then try again.')
+                    end
                     return
                 end
 
