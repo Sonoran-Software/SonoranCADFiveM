@@ -1,0 +1,377 @@
+-- Run from the repository root with Lua 5.4 or newer.
+-- Exercises temporary portrait appearance changes with isolated FiveM boundaries.
+local passed = 0
+
+-- Load the actual core timing policy without registering headshot lifecycle hooks.
+local headshotCore = setmetatable({
+    RegisterNUICallback = function() end,
+    AddEventHandler = function() end,
+    exports = function() end
+}, { __index = _G })
+assert(loadfile("sonorancad/core/headshots.lua", "t", headshotCore))()
+
+local function equal(actual, expected, message)
+    assert(actual == expected,
+        (message or "unexpected value") .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
+end
+
+local function test(name, callback)
+    local ok, err = pcall(callback)
+    assert(ok, name .. ": " .. tostring(err))
+    passed = passed + 1
+    print("PASS " .. name)
+end
+
+local function harness(options)
+    options = options or {}
+    local h = {
+        events = {},
+        nuiCallbacks = {},
+        components = {
+            [1] = { drawable = 12, texture = 3, palette = 2 },
+            [2] = { drawable = 9, texture = 1, palette = 0 },
+            [7] = { drawable = 5, texture = 4, palette = 1 }
+        },
+        props = {
+            [0] = { drawable = 8, texture = 2 },
+            [1] = { drawable = 6, texture = 1 },
+            [2] = { drawable = 4, texture = 3 }
+        },
+        liveMutations = 0,
+        now = 0,
+        captureCount = 0,
+        characterId = "QB-123"
+    }
+    local function copySlots(slots)
+        local copy = {}
+        for key, value in pairs(slots) do
+            copy[key] = { drawable = value.drawable, texture = value.texture, palette = value.palette }
+        end
+        return copy
+    end
+    local function stateFor(ped)
+        return ped == 199 and h.clone or h
+    end
+
+    local env = setmetatable({}, { __index = _G })
+    env.GetPortraitCaptureSettleMs = headshotCore.GetPortraitCaptureSettleMs
+    env.Config = {
+        LoadPlugin = function(_, callback)
+            callback({
+                enabled = true,
+                commandName = "civreg",
+                language = { helpMsg = "help" }
+            })
+        end,
+        GetPluginConfig = function() return { usingQBCore = true } end
+    }
+    env.CreateThread = function(callback) callback() end
+    env.Wait = function(ms) h.now = h.now + ms end
+    env.GetGameTimer = function() return h.now end
+    env.GetResourceState = function(name)
+        return name == "qb-core" and "started" or "missing"
+    end
+    env.exports = {
+        ["qb-core"] = {
+            GetCoreObject = function()
+                return { Functions = { GetPlayerData = function() return h.loaded and { citizenid = h.characterId } or nil end } }
+            end
+        }
+    }
+    env.NetworkIsPlayerActive = function() return true end
+    env.IsEntityVisible = function() return not h.hidden end
+    env.HasCollisionLoadedAroundEntity = function() return true end
+    env.IsScreenFadedIn = function() return true end
+    env.PlayerId = function() return 1 end
+    env.PlayerPedId = function() return 99 end
+    env.DoesEntityExist = function(ped) return ped == 99 or (ped == 199 and h.clone and not h.cloneDeleted) end
+    env.GetEntityModel = function(ped) return ped == 199 and options.cloneModel or 1885233650 end
+    env.GetEntityCoords = function() return { x = 10.0, y = 20.0, z = 30.0 } end
+    env.SetEntityCoordsNoOffset = function(ped, x, y, z)
+        h.cloneMoved = { ped = ped, x = x, y = y, z = z }
+    end
+    env.FreezeEntityPosition = function(ped, frozen) h.cloneFrozen = ped == 199 and frozen end
+    env.SetEntityCollision = function(ped, collision) h.cloneCollisionDisabled = ped == 199 and not collision end
+    env.ClonePed = function(ped, isNetwork, scriptHost, copyHeadBlend)
+        equal(ped, 99)
+        equal(isNetwork, false)
+        equal(scriptHost, false)
+        equal(copyHeadBlend, true)
+        if options.cloneFailure then return 0 end
+        h.cloneDeleted = false
+        h.clone = { components = copySlots(h.components), props = copySlots(h.props) }
+        if options.cloneMismatch then h.clone.components[2].drawable = 15 end
+        return 199
+    end
+    env.DeleteEntity = function(ped)
+        equal(ped, 199)
+        h.cloneDeleted = true
+    end
+    env.GetPedDrawableVariation = function(ped, component)
+        local value = stateFor(ped).components[component]
+        return value and value.drawable or 0
+    end
+    env.GetPedTextureVariation = function(ped, component)
+        local value = stateFor(ped).components[component]
+        return value and value.texture or 0
+    end
+    env.GetPedPaletteVariation = function(ped, component)
+        local value = stateFor(ped).components[component]
+        return value and value.palette or 0
+    end
+    env.SetPedComponentVariation = function(ped, component, drawable, texture, palette)
+        if ped == 99 then h.liveMutations = h.liveMutations + 1 end
+        stateFor(ped).components[component] = {
+            drawable = drawable, texture = texture, palette = palette
+        }
+    end
+    env.GetPedPropIndex = function(ped, prop)
+        local value = stateFor(ped).props[prop]
+        return value and value.drawable or -1
+    end
+    env.GetPedPropTextureIndex = function(ped, prop)
+        local value = stateFor(ped).props[prop]
+        return value and value.texture or 0
+    end
+    env.ClearPedProp = function(ped, prop)
+        if ped == 99 then h.liveMutations = h.liveMutations + 1 end
+        stateFor(ped).props[prop] = { drawable = -1, texture = 0 }
+    end
+    env.GetPedFaceFeature = function() return 0 end
+    env.Citizen = {
+        PointerValueIntInitialized = function(value) return value end,
+        PointerValueFloatInitialized = function(value) return value end,
+        InvokeNative = function() return true, 0, 0, 0, 0, 0, 0, 0.0, 0.0, 0.0 end
+    }
+    env.GetPedHeadOverlayData = function() return true, 255, 0, 0, 0, 0.0 end
+    env.GetPedEyeColor = function() return 0 end
+    env.GetPedHairColor = function() return 0 end
+    env.GetPedHairHighlightColor = function() return 0 end
+    env.GetBase64 = function(ped)
+        equal(ped, 199, "headshot must use the clone")
+        h.captureCount = h.captureCount + 1
+        if options.unloadDuringCapture then h.events["QBCore:Client:OnPlayerUnload"]() end
+        if options.switchDuringCapture then h.characterId = "QB-999" end
+        h.duringCapture = {
+            mask = h.clone.components[1].drawable,
+            hair = h.clone.components[2].drawable,
+            accessory = h.clone.components[7].drawable,
+            hat = h.clone.props[0].drawable,
+            glasses = h.clone.props[1].drawable,
+            ears = h.clone.props[2].drawable,
+            liveHat = h.props[0].drawable,
+            liveGlasses = h.props[1].drawable
+        }
+        if options.captureError then error("fixture capture failure") end
+        if options.liveHatChangeDuringCapture then
+            h.props[0] = { drawable = options.liveHatChangeDuringCapture, texture = 9 }
+        end
+        if options.liveMaskChangeDuringCapture then
+            h.components[1] = { drawable = options.liveMaskChangeDuringCapture, texture = 0, palette = 0 }
+        end
+        return { success = true, base64 = "data:image/png;base64,fixture" }
+    end
+    env.RegisterCommand = function() end
+    env.TriggerEvent = function() end
+    env.RegisterPlayerCommandHelp = function() end
+    env.RegisterNetEvent = function(name, callback) h.events[name] = callback end
+    env.AddEventHandler = function(name, callback) h.events[name] = callback end
+    env.RegisterNUICallback = function(name, callback) h.nuiCallbacks[name] = callback end
+    env.SetNuiFocus = function() end
+    env.SetNuiFocusKeepInput = function() end
+    env.SendNUIMessage = function() end
+    env.GetCurrentResourceName = function() return "sonorancad" end
+    env.TriggerServerEvent = function() end
+    env.TriggerLatentServerEvent = function(name, bandwidth, ...)
+        h.latent = { name = name, bandwidth = bandwidth, args = { ... } }
+    end
+    env.debugLog = function(message) h.lastDebug = message end
+
+    assert(loadfile("sonorancad/submodules/civreg/cl_civreg.lua", "t", env))()
+    if not options.skipReadiness then
+        h.loaded = true
+        h.events["QBCore:Client:OnPlayerLoaded"]()
+    end
+    return h
+end
+
+local function assertCloneCapture(h)
+    equal(h.duringCapture.mask, 0, "clone mask must be hidden")
+    equal(h.duringCapture.hair, 9, "clone hair must be preserved")
+    equal(h.duringCapture.accessory, 0, "clone accessory must be hidden")
+    equal(h.duringCapture.hat, -1, "clone hat must be hidden")
+    equal(h.duringCapture.glasses, -1, "clone glasses must be hidden")
+    equal(h.duringCapture.ears, -1, "clone ear prop must be hidden")
+    equal(h.duringCapture.liveHat, 8, "player hat must stay equipped")
+    equal(h.duringCapture.liveGlasses, 6, "player glasses must stay equipped")
+    equal(h.components[1].drawable, 12, "player mask must stay equipped")
+    equal(h.props[0].drawable, 8, "player hat must stay equipped")
+    equal(h.props[1].drawable, 6, "player glasses must stay equipped")
+    equal(h.liveMutations, 0, "capture must not change the player ped")
+    equal(h.cloneDeleted, true, "clone must be deleted")
+    equal(h.cloneMoved.z, -70.0, "clone must be moved out of view")
+    equal(h.cloneFrozen, true)
+    equal(h.cloneCollisionDisabled, true)
+end
+
+test("database portrait captures an uncovered clone without changing player gear", function()
+    local h = harness()
+    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-1" })
+    assertCloneCapture(h)
+    equal(h.latent.name, "SonoranCAD::civreg::DatabaseSyncMugshot")
+    equal(h.latent.args[1], "token-1")
+    equal(h.latent.args[2], "data:image/png;base64,fixture")
+end)
+
+test("manual portrait uses the same uncovered clone", function()
+    local h = harness()
+    local response
+    h.nuiCallbacks.civregTakeSelfie({}, function(value) response = value end)
+    assertCloneCapture(h)
+    equal(response.ok, true)
+    equal(response.image, "data:image/png;base64,fixture")
+end)
+
+test("capture errors delete the clone and leave player gear intact", function()
+    local h = harness({ captureError = true })
+    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-2" })
+    assertCloneCapture(h)
+    equal(h.latent.args[2], nil)
+end)
+
+test("a live hat removal during capture is preserved and rejects the stale image", function()
+    local h = harness({ liveHatChangeDuringCapture = -1 })
+    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-3" })
+    equal(h.props[0].drawable, -1)
+    equal(h.props[1].drawable, 6)
+    equal(h.liveMutations, 0)
+    equal(h.cloneDeleted, true)
+    equal(h.latent.args[2], nil)
+end)
+
+test("a live mask removal during capture is preserved and rejects the stale image", function()
+    local h = harness({ liveMaskChangeDuringCapture = 0 })
+    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-4" })
+    equal(h.components[1].drawable, 0)
+    equal(h.props[0].drawable, 8)
+    equal(h.liveMutations, 0)
+    equal(h.cloneDeleted, true)
+    equal(h.latent.args[2], nil)
+end)
+
+test("a clone with mismatched appearance is rejected before headshot capture", function()
+    local h = harness({ cloneMismatch = true })
+    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-5" })
+    equal(h.duringCapture, nil)
+    equal(h.latent.args[2], nil)
+    equal(h.cloneDeleted, true)
+    equal(h.liveMutations, 0)
+end)
+
+test("clone creation failure leaves the player unchanged", function()
+    local h = harness({ cloneFailure = true })
+    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "token-6" })
+    equal(h.duringCapture, nil)
+    equal(h.latent.args[2], nil)
+    equal(h.liveMutations, 0)
+end)
+test("headshot helper restores before conversion and cleans up restoration failures", function()
+    local order = {}
+    local now = 0
+    local registered = false
+    local env = setmetatable({}, { __index = _G })
+    env.PlayerPedId = function() return 99 end
+    env.DoesEntityExist = function() return true end
+    env.IsPedheadshotValid = function(handle) return registered and handle == 7 end
+    env.RegisterPedheadshot = function()
+        registered = true
+        return 7
+    end
+    env.IsPedheadshotReady = function() return true end
+    env.GetPedheadshotTxdString = function() return "fixture_txd" end
+    env.GetGameTimer = function() return now end
+    env.Wait = function(milliseconds) now = now + (milliseconds or 0) end
+    env.UnregisterPedheadshot = function() registered = false end
+    env.SendNUIMessage = function()
+        order[#order + 1] = "convert"
+    end
+    env.RegisterNUICallback = function() end
+    env.exports = function() end
+    env.AddEventHandler = function() end
+
+    assert(loadfile("sonorancad/core/headshots.lua", "t", env))()
+    local result = env.GetBase64(99, function()
+        order[#order + 1] = "restore"
+        return true
+    end)
+
+    equal(result.success, false, "fixture conversion should time out")
+    equal(order[1], "restore", "appearance must restore first")
+    equal(order[2], "convert", "conversion must start after restoration")
+
+    local restoreFailure = env.GetBase64(99, function()
+        order[#order + 1] = "restore-failed"
+        return false
+    end)
+    equal(restoreFailure.success, false)
+    equal(restoreFailure.error, "Could not restore character appearance.")
+    equal(order[3], "restore-failed")
+    equal(order[4], nil, "failed restoration must not start conversion")
+    equal(registered, false, "failed restoration must release the headshot")
+end)
+
+test("each completed automatic request captures the current appearance again", function()
+    local h = harness()
+    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "first", characterId = "QB-123" })
+    h.components[2].drawable = 15
+    h.events["QBCore:Client:OnPlayerLoaded"]()
+    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "second", characterId = "QB-123" })
+    equal(h.captureCount, 2)
+    equal(h.duringCapture.hair, 15)
+end)
+
+test("automatic requests cannot bypass character readiness", function()
+    local h = harness({ skipReadiness = true })
+    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "early", characterId = "QB-123" })
+    equal(h.captureCount, 0)
+    equal(h.latent.args[2], nil)
+end)
+
+test("delayed requests for the previous character cannot capture a new character", function()
+    local h = harness()
+    h.characterId = "QB-999"
+    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "stale", characterId = "QB-123" })
+    equal(h.captureCount, 0)
+end)
+
+test("appearance changes after readiness reject a delayed request", function()
+    local h = harness()
+    h.components[2].drawable = 15
+    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "stale", characterId = "QB-123" })
+    equal(h.captureCount, 0)
+end)
+
+test("character unload during conversion rejects the portrait", function()
+    local h = harness({ unloadDuringCapture = true })
+    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "unload", characterId = "QB-123" })
+    equal(h.latent.args[2], nil)
+    equal(h.cloneDeleted, true)
+end)
+
+test("character identity change on the same ped rejects the portrait", function()
+    local h = harness({ switchDuringCapture = true })
+    h.events["SonoranCAD::civreg::CaptureDatabaseSyncMugshot"]({ token = "switch", characterId = "QB-123" })
+    equal(h.latent.args[2], nil)
+    equal(h.cloneDeleted, true)
+end)
+
+test("manual selfies reject a hidden player", function()
+    local h = harness()
+    h.hidden = true
+    local response
+    h.nuiCallbacks.civregTakeSelfie({}, function(value) response = value end)
+    equal(response.ok, false)
+    equal(h.captureCount, 0)
+end)
+
+print(("%d CivReg portrait capture regression tests passed."):format(passed))
