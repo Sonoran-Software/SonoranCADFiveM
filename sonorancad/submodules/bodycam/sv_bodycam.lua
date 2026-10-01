@@ -536,10 +536,15 @@ CreateThread(function()
                     sendBodycamUploadConfig(tonumber(playerId))
                 end
             end)
-            RegisterCommand(pluginConfig.command, function(source, args, rawCommand)
-                if pluginConfig.forceOffAce == nil then
-                    pluginConfig.forceOffAce = "sonorancad.bodycam.forceoff"
+            local function canForceOffBodycam(src)
+                local ace = pluginConfig.forceOffAce
+                if ace == nil then
+                    ace = "sonorancad.bodycam.forceoff"
                 end
+                return src == 0 or ace == "" or IsPlayerAceAllowed(src, ace)
+            end
+
+            RegisterCommand(pluginConfig.command, function(source, args, rawCommand)
                 if #args == 0 then
                     if pluginConfig.requireUnitDuty and not getPlayerCadStatus(source, "Bodycam", { unit = true }).success then
                         return
@@ -554,11 +559,9 @@ CreateThread(function()
                 elseif args[1] == 'overlay' then
                     TriggerClientEvent('SonoranCAD::bodycam::ToggleOverlay', source)
                 elseif args[1] == 'forceoff' then
-                    if source ~= 0 and pluginConfig.forceOffAce ~= "" then
-                        if not IsPlayerAceAllowed(source, pluginConfig.forceOffAce) then
-                            sendClientError(source, "BODYCAM_FORCEOFF_PERMISSION")
-                            return
-                        end
+                    if not canForceOffBodycam(source) then
+                        sendClientError(source, "BODYCAM_FORCEOFF_PERMISSION")
+                        return
                     end
                     TriggerClientEvent('SonoranCAD::bodycam::Toggle', source, true, false, true)
                 end
@@ -619,7 +622,8 @@ CreateThread(function()
                     tostring(src), tostring(isManualActivation), tostring(wantsEnable), tostring(unit ~= nil)))
 
                 if not wantsEnable then
-                    TriggerClientEvent('SonoranCAD::bodycam::Toggle', src, isManualActivation, false)
+                    local canForceOff = isManualActivation and canForceOffBodycam(src) or false
+                    TriggerClientEvent('SonoranCAD::bodycam::Toggle', src, isManualActivation, false, false, canForceOff)
                     return
                 end
 
