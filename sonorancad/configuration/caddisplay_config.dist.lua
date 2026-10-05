@@ -38,6 +38,9 @@ local config = {
         worldSaveButton = "Save Station Display",
         worldCancelButton = "Cancel",
         worldNoDisplays = "No station displays configured",
+        worldPermissionDenied = "You do not have permission to manage station CAD displays.",
+        worldPermissionRequiredAce = "Required ACE: %s",
+        worldDisplaysDisabled = "Station CAD displays are disabled in the configuration.",
         worldDeletionCancelled = "Station display deletion cancelled",
         noDisplayFound = "No CAD display found in this vehicle!",
         modelComboBox = "Model:",
@@ -170,6 +173,29 @@ local config = {
         "FBI2",
         "SHERIFF",
         "SHERIFF2"
+    },
+
+    -- Live computer interaction. Corners are model-local metres in TL, TR, BR, BL order,
+    -- viewed from the front of the screen. Tune the starting laptop profile in-game.
+    -- Custom props can add their own model entry. For built-in vehicle screens, put
+    -- an interaction = { corners = {...} } profile on that builtinScreens entry;
+    -- those coordinates are relative to the vehicle, not a separate laptop prop.
+    -- Unconfigured models report a missing profile. /tablet open remains available.
+    -- /caddisplay calibrate shows a corner editor and prints a ready-to-paste profile in F8.
+    -- The standard laptop also has a hardcoded fallback when these settings are absent.
+    interaction = {
+        enabled = true,
+        transitionMs = 900,
+        models = {
+            prop_laptop_jimmy = {
+                corners = {
+                    { x = -0.162, y = 0.0774, z = 0.236 },
+                    { x =  0.158, y = 0.0774, z = 0.236 },
+                    { x =  0.158, y = 0.0316, z = 0.046 },
+                    { x = -0.162, y = 0.0316, z = 0.046 }
+                }
+            }
+        }
     },
 
     -- Interaction settings

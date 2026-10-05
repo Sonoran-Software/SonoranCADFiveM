@@ -47,6 +47,7 @@ CreateThread(function()
                     local sx = texW / 512.0
                     local sy = texH / 256.0
                     local cfg = {
+                        interaction = entry.interaction,
                         texture = screenTexture,
                         scale = { x = sx, y = sy, z = 1.0 },
                         model = veh,
@@ -77,41 +78,42 @@ CreateThread(function()
             local worldEditOriginal = nil
             local miscDisplayIndex = 1
             local spawnedDisplayIndex = 1
-            local displayMoveSpeed = 0.01
-            local displayPosition = { x = 0.0, y = 0.0, z = 0.0 }
-            local displayRotation = { x = 0.0, y = 0.0, z = 0.0 }
             local latestSpawnedDisplay = nil
-            local attachedDisplay = false
-            local displayScale = nil
             local isAdmin = false
             local screenDui = nil
             local duiObjs = {}
             local displayOwners = {}
             local activeRequests = {}
             local incomingRequest = nil
-            local claimedOnce = {}
             local worldAdmin = false
+            local placementEditing = false
+            local vehiclePreview, vehicleAnchor
+            local pendingInteraction = nil
+            local activeInteractionKey = nil
+            local interactionConfig = pluginConfig.interaction or {}
+            local interactionModels = {}
+            local interactionModelKeys = { [displayModelHash] = displayModel }
+            -- Existing local configs may predate the interaction settings.
+            local defaultLaptopProfile = {
+                corners = {
+                    { x = -0.162, y = 0.0774, z = 0.236 },
+                    { x =  0.158, y = 0.0774, z = 0.236 },
+                    { x =  0.158, y = 0.0316, z = 0.046 },
+                    { x = -0.162, y = 0.0316, z = 0.046 }
+                }
+            }
+            interactionModels[displayModelHash] = defaultLaptopProfile
+            for model, profile in pairs(interactionConfig.models or {}) do
+                local hash = type(model) == "number" and model or GetHashKey(model)
+                interactionModels[hash] = profile
+                interactionModelKeys[hash] = model
+            end
 
             local interactRange = pluginConfig.interactRange or 1.5
-            local interactControl = pluginConfig.interactControl or 47
             local interactKeybind = pluginConfig.interactKey or "G"
             local screenshotInterval = 5000
             local acceptKeybind = pluginConfig.requestAcceptKey or "Y"
             local denyKeybind = pluginConfig.requestDenyKey or "L"
-            local fallbackTabletCommand = tostring(GetConvar("sonorantablet_command", "tablet"))
-            fallbackTabletCommand = fallbackTabletCommand:match("^%s*/?([^%s/]+)") or "tablet"
-
-            local function getTabletViewCommand()
-                if GetResourceState("tablet") == "started" then
-                    local ok, command = pcall(function()
-                        return exports["tablet"]:GetTabletCommand()
-                    end)
-                    if ok and type(command) == "string" and command ~= "" then
-                        return "/" .. command:gsub("^/+", "") .. " open"
-                    end
-                end
-                return "/" .. fallbackTabletCommand .. " open"
-            end
 
             function getVehNetIdOrNil(veh)
                 if veh == nil or veh == 0 then
@@ -435,6 +437,17 @@ CreateThread(function()
             end
 
             function getDisplayPreviewTransform()
+                local ped=PlayerPedId()
+                local vehicle=GetVehiclePedIsIn(ped,false)
+                if vehicle ~= 0 then
+                    -- Start near the dashboard even when the gameplay camera is outside the car.
+                    local forward,right,up,origin=GetEntityMatrix(vehicle)
+                    local head=GetPedBoneCoords(ped,31086,0,0,0)
+                    local side=SonoranPlacementMath.dot(head-origin,right)
+                    local point=head+forward*.75+right*(side>0 and -.30 or .30)-up*.35
+                    -- This laptop's screen faces local -Y, toward the seated player.
+                    return {x=point.x,y=point.y,z=point.z},GetEntityHeading(vehicle)
+                end
                 local cameraPosition = GetGameplayCamCoord()
                 local cameraRotation = GetGameplayCamRot(2)
                 local pitch = math.rad(cameraRotation.x)
@@ -446,7 +459,7 @@ CreateThread(function()
                     x = cameraPosition.x - math.sin(yaw) * pitchScale * previewDistance,
                     y = cameraPosition.y + math.cos(yaw) * pitchScale * previewDistance,
                     z = cameraPosition.z + math.sin(pitch) * previewDistance
-                }, cameraRotation.z + 180.0
+                }, cameraRotation.z
             end
 
             function spawnDisplay(veh)
@@ -482,12 +495,6 @@ CreateThread(function()
                     "vehicleExists=%s prop=%s propExists=%s attachedTo=%s attachedToExpectedVehicle=%s bone=%s"):format(
                     tostring(veh), tostring(vehNet), tostring(vehicleExists), tostring(obj), tostring(propExists),
                     tostring(attachedTo), tostring(attachedTo == veh), tostring(bone)))
-            end
-
-            function marker(pos)
-                DrawMarker(0, pos.x, pos.y, pos.z + 2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.3, 0.2, 255, 255, 0, 255,
-                    true,
-                    false, 0, false, nil, nil, false)
             end
 
             function setIndex(veh, index)
@@ -590,6 +597,7 @@ CreateThread(function()
             end
 
             function beginWorldEdit(placement, isNew)
+                if placementEditing or (SonoranPlacementEditor and SonoranPlacementEditor.IsActive()) then return end
                 worldEditActive = true
                 worldEditIsNew = isNew
                 worldEditPlacementId = placement and placement.ID or nil
@@ -641,14 +649,32 @@ CreateThread(function()
                     local rot = GetEntityRotation(worldEditObject, 2)
                     worldEditPosition = { x = pos.x, y = pos.y, z = pos.z }
                     worldEditRotation = { x = rot.x, y = rot.y, z = rot.z }
+                    WarMenu.CloseMenu()
+                    placementEditing = true
+                    local opened, reason = SonoranPlacementEditor.Start({
+                        entity = worldEditObject, title = "Station display placement",
+                        actions = {{id = "save", label = "Save station display"}},
+                        onFinish = function(result)
+                            placementEditing = false
+                            if result.accepted then
+                                worldEditPosition, worldEditRotation = result.position, result.rotation
+                                saveWorldEdit()
+                            else
+                                cancelWorldEdit(true)
+                            end
+                        end
+                    })
+                    if not opened then placementEditing = false; cancelWorldEdit(); notify(reason) end
+                else
+                    cancelWorldEdit()
                 end
             end
 
-            function cancelWorldEdit()
+            function cancelWorldEdit(restored)
                 if worldEditObject and DoesEntityExist(worldEditObject) then
                     if worldEditIsNew then
                         DeleteObject(worldEditObject)
-                    elseif worldEditOriginal then
+                    elseif worldEditOriginal and not restored then
                         SetEntityCoordsNoOffset(worldEditObject, worldEditOriginal.position.x,
                             worldEditOriginal.position.y, worldEditOriginal.position.z, false, false, false)
                         SetEntityRotation(worldEditObject, worldEditOriginal.rotation.x, worldEditOriginal.rotation.y,
@@ -663,6 +689,114 @@ CreateThread(function()
                 worldEditDisplayModel = nil
                 worldEditScale = nil
                 worldEditOriginal = nil
+            end
+
+            function beginVehiclePlacementEditor(isNew)
+                if placementEditing or SonoranPlacementEditor.IsActive() then return end
+                local vehicle = GetVehiclePedIsIn(PlayerPedId(), false)
+                local record = vehicle ~= 0 and findVehicleRecord(vehicle) or nil
+                local object = record and record.prop
+                if vehicle == 0 or not object or not DoesEntityExist(object) then
+                    notify("Select a spawned laptop while seated in its vehicle.")
+                    return
+                end
+                if object == vehicle or GetEntityType(object) ~= 3 then
+                    notify("Built-in screens cannot be moved as props. Use screen corner calibration instead.")
+                    return
+                end
+                if NetworkGetEntityIsNetworked(object) and not NetworkHasControlOfEntity(object) then
+                    notify("This client does not control the laptop entity. Retry when it has network control.")
+                    return
+                end
+                if GetEntitySpeed(vehicle) > 0.05 then notify("Stop the vehicle before placing the display."); return end
+                local M = SonoranPlacementMath
+                local original = M.capture(object)
+                local parent = M.capture(vehicle)
+                local saved = getPlacementForVehicle(vehicle)
+                local bone = saved and saved.Bone or GetEntityBoneIndexByName(vehicle, "chassis")
+                local model = GetEntityModel(object)
+                vehiclePreview = CreateObjectNoOffset(model,original.p.x,original.p.y,original.p.z,false,false,false)
+                vehicleAnchor = CreateObjectNoOffset(model,parent.p.x,parent.p.y,parent.p.z,false,false,false)
+                local preview, anchor = vehiclePreview, vehicleAnchor
+                SetEntityCollision(preview,false,false)
+                FreezeEntityPosition(preview,true)
+                M.apply(preview,original)
+                SetEntityCollision(anchor,false,false)
+                SetEntityVisible(anchor,false,false)
+                AttachEntityToEntity(anchor,vehicle,bone,0,0,0,0,0,0,false,false,false,false,0,true)
+                placementEditing = true
+                WarMenu.CloseMenu()
+                local function cleanup(discardNew)
+                    if DoesEntityExist(preview) then DeleteObject(preview) end
+                    if DoesEntityExist(anchor) then DeleteObject(anchor) end
+                    vehiclePreview, vehicleAnchor, placementEditing = nil, nil, false
+                    if isNew and discardNew then
+                        local index = getSpawnedDisplayIndex(object)
+                        if index then removeDisplayAtIndex(index) end
+                    end
+                end
+                CreateThread(function()
+                    Wait(0) -- Let the anchor inherit the exact attachment-bone transform.
+                    if not DoesEntityExist(object) or not DoesEntityExist(vehicle) or not DoesEntityExist(anchor) then cleanup(true); return end
+                    local actions = {{id="apply",label="Apply to this vehicle"}}
+                    if isAdmin then actions[#actions+1] = {id="save",label="Save for this vehicle model"} end
+                    local minimum,maximum=GetModelDimensions(model)
+                    local focusOffset=(minimum+maximum)*.5
+                    -- Sample a fixed cabin viewpoint once. Keeping it between the front seats
+                    -- and behind the head avoids inheriting the gameplay camera's idle motion.
+                    local right,forward,up=M.unit(parent.r),M.unit(parent.f),M.unit(parent.u)
+                    local headOffset=GetPedBoneCoords(PlayerPedId(),31086,0,0,0)-parent.p
+                    local lateral=0 -- Models without both front-seat bones use the centerline.
+                    local driverSeat=GetEntityBoneIndexByName(vehicle,"seat_dside_f")
+                    local passengerSeat=GetEntityBoneIndexByName(vehicle,"seat_pside_f")
+                    if driverSeat >= 0 and passengerSeat >= 0 and driverSeat ~= passengerSeat then
+                        local driverPosition=GetWorldPositionOfEntityBone(vehicle,driverSeat)
+                        local passengerPosition=GetWorldPositionOfEntityBone(vehicle,passengerSeat)
+                        if #driverPosition > .001 and #passengerPosition > .001
+                            and math.abs(M.dot(passengerPosition-driverPosition,right)) > .1 then
+                            lateral=M.dot((driverPosition+passengerPosition)*.5-parent.p,right)
+                        end
+                    end
+                    local cameraOffset=vector3(lateral,M.dot(headOffset,forward)-.25,M.dot(headOffset,up)+.03)
+                    local cameraPosition=parent.p+right*cameraOffset.x+forward*cameraOffset.y+up*cameraOffset.z
+                    local focus=original.p+original.r*focusOffset.x+original.f*focusOffset.y+original.u*focusOffset.z
+                    local cameraRotation=M.lookRotation(focus-cameraPosition,up) or M.lookRotation(forward,up)
+                    print(('[placement] Cabin camera: vehicle=%d localOffset=%.3f/%.3f/%.3f fov=65')
+                        :format(vehicle,cameraOffset.x,cameraOffset.y,cameraOffset.z))
+                    local opened, reason = SonoranPlacementEditor.Start({
+                        entity=preview, title="Vehicle display placement", maxDistance=5, actions=actions,
+                        view={mode='cockpit',position=cameraPosition,rotation=cameraRotation,fov=65,up=up,hidePlayer=false},
+                        focusOffset=focusOffset,pivotOffset=focusOffset,
+                        validate=function()
+                            if not DoesEntityExist(object) or not DoesEntityExist(vehicle) or not DoesEntityExist(anchor)
+                                or GetVehiclePedIsIn(PlayerPedId(),false) ~= vehicle or GetEntitySpeed(vehicle) > .05 then return false end
+                            if NetworkGetEntityIsNetworked(object) and not NetworkHasControlOfEntity(object) then return false end
+                            local current=M.capture(vehicle)
+                            if #(current.p-parent.p) > .03 or #(current.r-parent.r) > .01 then return false end
+                            SetEntityLocallyInvisible(object)
+                            return true
+                        end,
+                        onFinish=function(result)
+                            if result.reason then notify(result.reason) end
+                            if result.accepted and DoesEntityExist(object) and DoesEntityExist(vehicle) and DoesEntityExist(anchor) then
+                                local relative=M.relative(M.capture(anchor),result.matrix)
+                                local rotation=M.rotation(relative,0)
+                                FreezeEntityPosition(object,false)
+                                AttachEntityToEntity(object,vehicle,bone,relative.p.x,relative.p.y,relative.p.z,
+                                    rotation.x,rotation.y,rotation.z,false,false,true,false,0,true)
+                                if result.action == "save" and isAdmin then
+                                    TriggerServerEvent("SonoranCAD::caddisplay::SavePlacement", {
+                                        position={x=relative.p.x,y=relative.p.y,z=relative.p.z},
+                                        rotation={x=rotation.x,y=rotation.y,z=rotation.z},bone=bone,
+                                        vehicle=GetDisplayNameFromVehicleModel(GetEntityModel(vehicle))
+                                    })
+                                end
+                            end
+                            cleanup(not result.accepted)
+                        end
+                    })
+                    if not opened then cleanup(true); notify(reason) end
+                end)
             end
 
             function saveWorldEdit()
@@ -691,132 +825,6 @@ CreateThread(function()
                 worldEditOriginal = nil
             end
 
-            function updateWorldEditControls()
-                if not worldEditActive or worldEditObject == nil or not DoesEntityExist(worldEditObject) then
-                    return
-                end
-
-                if IsControlPressed(0, 118) and GetLastInputMethod(0) then
-                    worldEditRotation.x = worldEditRotation.x + displayMoveSpeed
-                elseif IsControlPressed(0, 117) and GetLastInputMethod(0) then
-                    worldEditRotation.x = worldEditRotation.x - displayMoveSpeed
-                elseif IsControlPressed(0, 121) and GetLastInputMethod(0) then
-                    worldEditRotation.y = worldEditRotation.y + displayMoveSpeed
-                elseif IsControlPressed(0, 178) and GetLastInputMethod(0) then
-                    worldEditRotation.y = worldEditRotation.y - displayMoveSpeed
-                elseif IsControlPressed(0, 207) and GetLastInputMethod(0) then
-                    worldEditRotation.z = worldEditRotation.z + displayMoveSpeed
-                elseif IsControlPressed(0, 208) and GetLastInputMethod(0) then
-                    worldEditRotation.z = worldEditRotation.z - displayMoveSpeed
-                elseif IsControlPressed(0, 108) and GetLastInputMethod(0) then
-                    worldEditPosition.x = worldEditPosition.x + displayMoveSpeed
-                elseif IsControlPressed(0, 107) and GetLastInputMethod(0) then
-                    worldEditPosition.x = worldEditPosition.x - displayMoveSpeed
-                elseif IsControlPressed(0, 112) and GetLastInputMethod(0) then
-                    worldEditPosition.y = worldEditPosition.y + displayMoveSpeed
-                elseif IsControlPressed(0, 111) and GetLastInputMethod(0) then
-                    worldEditPosition.y = worldEditPosition.y - displayMoveSpeed
-                elseif IsControlPressed(0, 313) and GetLastInputMethod(0) then
-                    worldEditPosition.z = worldEditPosition.z + displayMoveSpeed
-                elseif IsControlPressed(0, 312) and GetLastInputMethod(0) then
-                    worldEditPosition.z = worldEditPosition.z - displayMoveSpeed
-                elseif IsControlJustReleased(0, 21) and GetLastInputMethod(0) then
-                    if displayMoveSpeed < 2.0 then
-                        displayMoveSpeed = displayMoveSpeed + 0.001
-                    else
-                        notify(pluginConfig.lang.cannotGoFaster)
-                    end
-                elseif IsControlJustReleased(0, 132) and GetLastInputMethod(0) then
-                    if displayMoveSpeed > 0.001 then
-                        displayMoveSpeed = displayMoveSpeed - 0.001
-                    else
-                        notify(pluginConfig.lang.cannotGoSlower)
-                    end
-                end
-
-                SetEntityCoordsNoOffset(worldEditObject, worldEditPosition.x, worldEditPosition.y, worldEditPosition.z, false,
-                    false, false)
-                SetEntityRotation(worldEditObject, worldEditRotation.x, worldEditRotation.y, worldEditRotation.z, 2, true)
-                marker(GetEntityCoords(worldEditObject))
-
-                if displayScale and HasScaleformMovieLoaded(displayScale) then
-                    BeginScaleformMovieMethod(displayScale, "CLEAR_ALL")
-                    EndScaleformMovieMethod()
-
-                    BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
-                    ScaleformMovieMethodAddParamInt(0)
-                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 108))
-                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 107))
-                    PushScaleformMovieMethodParameterString("Move X")
-                    EndScaleformMovieMethod()
-
-                    BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
-                    ScaleformMovieMethodAddParamInt(1)
-                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 112))
-                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 111))
-                    PushScaleformMovieMethodParameterString("Move Y")
-                    EndScaleformMovieMethod()
-
-                    BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
-                    ScaleformMovieMethodAddParamInt(6)
-                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 21))
-                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 36))
-                    PushScaleformMovieMethodParameterString("Change Speed")
-                    EndScaleformMovieMethod()
-
-                    BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
-                    ScaleformMovieMethodAddParamInt(2)
-                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 313))
-                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 312))
-                    PushScaleformMovieMethodParameterString("Move Z")
-                    EndScaleformMovieMethod()
-
-                    BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
-                    ScaleformMovieMethodAddParamInt(3)
-                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 118))
-                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 117))
-                    PushScaleformMovieMethodParameterString("Rotate X")
-                    EndScaleformMovieMethod()
-
-                    BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
-                    ScaleformMovieMethodAddParamInt(4)
-                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 121))
-                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 178))
-                    PushScaleformMovieMethodParameterString("Rotate Y")
-                    EndScaleformMovieMethod()
-
-                    BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
-                    ScaleformMovieMethodAddParamInt(5)
-                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 207))
-                    PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 208))
-                    PushScaleformMovieMethodParameterString("Rotate Z")
-                    EndScaleformMovieMethod()
-
-                    BeginScaleformMovieMethod(displayScale, "DRAW_INSTRUCTIONAL_BUTTONS")
-                    ScaleformMovieMethodAddParamInt(0)
-                    EndScaleformMovieMethod()
-                    DrawScaleformMovieFullscreen(displayScale, 255, 255, 255, 255, 0)
-                end
-            end
-
-            function refreshOffsetsForCurrentSelection()
-                local veh = GetVehiclePedIsIn(PlayerPedId(), false)
-                local prop = spawnedDisplays[spawnedDisplayIndex]
-                if veh ~= 0 and DoesEntityExist(prop) then
-                    local propCoords = GetEntityCoords(prop)
-                    local vehCoords = GetEntityCoords(veh)
-                    local offset = GetOffsetFromEntityGivenWorldCoords(veh, propCoords.x, propCoords.y, propCoords.z)
-                    displayPosition = { x = offset.x, y = offset.y, z = offset.z }
-                    local propRot = GetEntityRotation(prop, 2)
-                    local vehRot = GetEntityRotation(veh, 2)
-                    displayRotation = {
-                        x = propRot.x - vehRot.x,
-                        y = propRot.y - vehRot.y,
-                        z = propRot.z - vehRot.z
-                    }
-                end
-            end
-
             function spawningCadDisplay()
                 local modelNames = { pluginConfig.lang.objectName }
                 if WarMenu.ComboBox(pluginConfig.lang.modelComboBox, modelNames, miscDisplayIndex, miscDisplayIndex,
@@ -831,161 +839,15 @@ CreateThread(function()
                         notify(pluginConfig.lang.vehAlreadyDisplayNoti)
                         return
                     end
+                    if GetEntitySpeed(veh) > 0.05 then notify("Stop the vehicle before placing the display."); return end
                     spawnDisplay(veh)
-                    WarMenu.OpenMenu("caddisplay_attach_menu")
+                    beginVehiclePlacementEditor(true)
                 end
             end
 
             function attachingCadDisplay()
-                local attachType = pluginConfig.lang.vehicleBone
-                if WarMenu.ComboBox(pluginConfig.lang.object, spawnedDisplays, spawnedDisplayIndex, spawnedDisplayIndex,
-                        function(current)
-                            spawnedDisplayIndex = current
-                            local object = spawnedDisplays[current]
-                            if DoesEntityExist(object) then
-                                marker(GetEntityCoords(object))
-                            end
-                        end) then
-                    attachType = pluginConfig.lang.vehicleBone
-                elseif WarMenu.Button(pluginConfig.lang.attachButton) then
-                    local veh = GetVehiclePedIsIn(PlayerPedId(), false)
-                    if veh ~= 0 and spawnedDisplays[spawnedDisplayIndex] ~= nil then
-                        refreshOffsetsForCurrentSelection()
-                        FreezeEntityPosition(spawnedDisplays[spawnedDisplayIndex], false)
-                        AttachEntityToEntity(spawnedDisplays[spawnedDisplayIndex], veh,
-                            GetEntityBoneIndexByName(veh, "chassis"), displayPosition.x, displayPosition.y,
-                            displayPosition.z, displayRotation.x, displayRotation.y, displayRotation.z,
-                            false, false, true, false, 0, true)
-                        attachedDisplay = true
-                    end
-                elseif WarMenu.Button(pluginConfig.lang.detachButton) then
-                    if spawnedDisplays[spawnedDisplayIndex] ~= nil then
-                        DetachEntity(spawnedDisplays[spawnedDisplayIndex], false, false)
-                        attachedDisplay = false
-                    end
-                end
-
-                if isAdmin then
-                    if WarMenu.Button(pluginConfig.lang.confirmPlacementButton) then
-                        local veh = GetVehiclePedIsIn(PlayerPedId(), false)
-                        if veh ~= 0 and spawnedDisplays[spawnedDisplayIndex] ~= nil then
-                            local bone = GetEntityBoneIndexByName(veh, "chassis")
-                            local vehicle = GetDisplayNameFromVehicleModel(GetEntityModel(veh))
-                            local data = {
-                                position = displayPosition,
-                                rotation = displayRotation,
-                                bone = bone,
-                                vehicle = vehicle
-                            }
-                            TriggerServerEvent("SonoranCAD::caddisplay::SavePlacement", data)
-                            WarMenu.CloseMenu()
-                        end
-                    end
-                end
-
-                if attachedDisplay and spawnedDisplays[spawnedDisplayIndex] ~= nil then
-                    local veh = GetVehiclePedIsIn(PlayerPedId(), false)
-                    if IsControlPressed(0, 118) and GetLastInputMethod(0) then
-                        displayRotation.x = displayRotation.x + displayMoveSpeed
-                    elseif IsControlPressed(0, 117) and GetLastInputMethod(0) then
-                        displayRotation.x = displayRotation.x - displayMoveSpeed
-                    elseif IsControlPressed(0, 121) and GetLastInputMethod(0) then
-                        displayRotation.y = displayRotation.y + displayMoveSpeed
-                    elseif IsControlPressed(0, 178) and GetLastInputMethod(0) then
-                        displayRotation.y = displayRotation.y - displayMoveSpeed
-                    elseif IsControlPressed(0, 207) and GetLastInputMethod(0) then
-                        displayRotation.z = displayRotation.z + displayMoveSpeed
-                    elseif IsControlPressed(0, 208) and GetLastInputMethod(0) then
-                        displayRotation.z = displayRotation.z - displayMoveSpeed
-                    elseif IsControlPressed(0, 108) and GetLastInputMethod(0) then
-                        displayPosition.x = displayPosition.x + displayMoveSpeed
-                    elseif IsControlPressed(0, 107) and GetLastInputMethod(0) then
-                        displayPosition.x = displayPosition.x - displayMoveSpeed
-                    elseif IsControlPressed(0, 112) and GetLastInputMethod(0) then
-                        displayPosition.y = displayPosition.y + displayMoveSpeed
-                    elseif IsControlPressed(0, 111) and GetLastInputMethod(0) then
-                        displayPosition.y = displayPosition.y - displayMoveSpeed
-                    elseif IsControlPressed(0, 313) and GetLastInputMethod(0) then
-                        displayPosition.z = displayPosition.z + displayMoveSpeed
-                    elseif IsControlPressed(0, 312) and GetLastInputMethod(0) then
-                        displayPosition.z = displayPosition.z - displayMoveSpeed
-                    elseif IsControlJustReleased(0, 21) and GetLastInputMethod(0) then
-                        if displayMoveSpeed < 2.0 then
-                            displayMoveSpeed = displayMoveSpeed + 0.001
-                        else
-                            notify(pluginConfig.lang.cannotGoFaster)
-                        end
-                    elseif IsControlJustReleased(0, 132) and GetLastInputMethod(0) then
-                        if displayMoveSpeed > 0.001 then
-                            displayMoveSpeed = displayMoveSpeed - 0.001
-                        else
-                            notify(pluginConfig.lang.cannotGoSlower)
-                        end
-                    end
-
-                    AttachEntityToEntity(spawnedDisplays[spawnedDisplayIndex], veh,
-                        GetEntityBoneIndexByName(veh, "chassis"), displayPosition.x, displayPosition.y,
-                        displayPosition.z, displayRotation.x, displayRotation.y, displayRotation.z, false,
-                        false, true, false, 0, true)
-
-                    if displayScale and HasScaleformMovieLoaded(displayScale) then
-                        BeginScaleformMovieMethod(displayScale, "CLEAR_ALL")
-                        EndScaleformMovieMethod()
-
-                        BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
-                        ScaleformMovieMethodAddParamInt(0)
-                        PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 108))
-                        PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 107))
-                        PushScaleformMovieMethodParameterString("Move X")
-                        EndScaleformMovieMethod()
-
-                        BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
-                        ScaleformMovieMethodAddParamInt(1)
-                        PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 112))
-                        PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 111))
-                        PushScaleformMovieMethodParameterString("Move Y")
-                        EndScaleformMovieMethod()
-
-                        BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
-                        ScaleformMovieMethodAddParamInt(6)
-                        PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 21))
-                        PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 36))
-                        PushScaleformMovieMethodParameterString("Change Speed")
-                        EndScaleformMovieMethod()
-
-                        BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
-                        ScaleformMovieMethodAddParamInt(2)
-                        PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 313))
-                        PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 312))
-                        PushScaleformMovieMethodParameterString("Move Z")
-                        EndScaleformMovieMethod()
-
-                        BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
-                        ScaleformMovieMethodAddParamInt(3)
-                        PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 118))
-                        PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 117))
-                        PushScaleformMovieMethodParameterString("Rotate X")
-                        EndScaleformMovieMethod()
-
-                        BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
-                        ScaleformMovieMethodAddParamInt(4)
-                        PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 121))
-                        PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 178))
-                        PushScaleformMovieMethodParameterString("Rotate Y")
-                        EndScaleformMovieMethod()
-
-                        BeginScaleformMovieMethod(displayScale, "SET_DATA_SLOT")
-                        ScaleformMovieMethodAddParamInt(5)
-                        PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 207))
-                        PushScaleformMovieMethodParameterString(GetControlInstructionalButton(0, 208))
-                        PushScaleformMovieMethodParameterString("Rotate Z")
-                        EndScaleformMovieMethod()
-
-                        BeginScaleformMovieMethod(displayScale, "DRAW_INSTRUCTIONAL_BUTTONS")
-                        ScaleformMovieMethodAddParamInt(0)
-                        EndScaleformMovieMethod()
-                        DrawScaleformMovieFullscreen(displayScale, 255, 255, 255, 255, 0)
-                    end
+                if WarMenu.Button("Position this vehicle's display with mouse") then
+                    beginVehiclePlacementEditor()
                 end
             end
 
@@ -1041,13 +903,6 @@ CreateThread(function()
                 end
             end)
 
-            CreateThread(function()
-                displayScale = RequestScaleformMovie("INSTRUCTIONAL_BUTTONS")
-                while not HasScaleformMovieLoaded(displayScale) do
-                    Wait(0)
-                end
-            end)
-
             while WarMenu == nil do
                 Wait(50)
             end
@@ -1060,12 +915,7 @@ CreateThread(function()
                 WarMenu.CreateSubMenu("caddisplay_attach_menu", "caddisplay_menu", pluginConfig.lang.attachingSubMenu)
                 WarMenu.CreateSubMenu("caddisplay_delete_menu", "caddisplay_menu", pluginConfig.lang.deletionSubMenu)
                 WarMenu.CreateSubMenu("caddisplay_world_menu", "caddisplay_menu", pluginConfig.lang.worldMenuHeader)
-                WarMenu.CreateSubMenu("caddisplay_world_edit_menu", "caddisplay_world_menu",
-                    pluginConfig.lang.worldPlacementSubMenu)
                 while true do
-                    if worldEditActive and not WarMenu.IsMenuOpened("caddisplay_world_edit_menu") then
-                        cancelWorldEdit()
-                    end
                     if WarMenu.IsMenuOpened("caddisplay_menu") then
                         if WarMenu.MenuButton(pluginConfig.lang.spawnMenuButton, "caddisplay_spawn_menu") then
                         end
@@ -1115,7 +965,6 @@ CreateThread(function()
                                     local placement = getWorldPlacementByIndex(worldPlacementIndex)
                                     if placement then
                                         beginWorldEdit(placement, false)
-                                        WarMenu.OpenMenu("caddisplay_world_edit_menu")
                                     end
                                 end
                                 if WarMenu.Button(pluginConfig.lang.worldDeleteButton) then
@@ -1131,28 +980,17 @@ CreateThread(function()
 
                             if WarMenu.Button(pluginConfig.lang.worldSpawnButton) then
                                 beginWorldEdit(nil, true)
-                                WarMenu.OpenMenu("caddisplay_world_edit_menu")
                             end
 
                             WarMenu.Display()
                         end
-                    elseif WarMenu.IsMenuOpened("caddisplay_world_edit_menu") then
-                        updateWorldEditControls()
-                        if WarMenu.Button(pluginConfig.lang.worldSaveButton) then
-                            saveWorldEdit()
-                            WarMenu.OpenMenu("caddisplay_world_menu")
-                        end
-                        if WarMenu.Button(pluginConfig.lang.worldCancelButton) then
-                            cancelWorldEdit()
-                            WarMenu.OpenMenu("caddisplay_world_menu")
-                        end
-                        WarMenu.Display()
                     end
                     Wait(0)
                 end
             end)
 
             RegisterNetEvent("SonoranCAD::caddisplay::SyncPlacements", function(serverDb)
+                if placementEditing and not worldEditActive and SonoranPlacementEditor.IsActive() then SonoranPlacementEditor.Cancel() end
                 placementDb = serverDb or {}
                 for idx = #vehiclesWithDisplays, 1, -1 do
                     local car = vehiclesWithDisplays[idx]
@@ -1183,17 +1021,97 @@ CreateThread(function()
             end)
 
             RegisterNetEvent("SonoranCAD::caddisplay::SyncWorldPlacements", function(serverDb)
+                if worldEditActive and placementEditing then SonoranPlacementEditor.Cancel() end
                 syncWorldPlacements(serverDb or {})
             end)
 
+            local function openDisplayInteraction(target)
+                pendingInteraction = nil
+                local ped = PlayerPedId()
+                if not DoesEntityExist(target.entity) or IsEntityDead(ped)
+                    or GetVehiclePedIsIn(ped, false) ~= target.vehicle
+                    or #(GetEntityCoords(ped) - GetEntityCoords(target.entity)) > interactRange then return end
+                if GetResourceState("tablet") ~= "started" then
+                    notify("The tablet resource must be running to use this display.")
+                    return
+                end
+                local builtin = target.vehicle ~= 0 and target.entity == target.vehicle
+                    and getBuiltinScreenConfig(target.vehicle) or nil
+                local profile
+                if builtin then
+                    profile = builtin.interaction
+                else
+                    profile = interactionModels[GetEntityModel(target.entity)]
+                end
+                print(("[caddisplay] Laptop interaction: model=%s expectedLaptop=%s enabled=%s profile=%s"):format(
+                    tostring(GetEntityModel(target.entity)), tostring(displayModelHash),
+                    tostring(interactionConfig.enabled ~= false), tostring(profile ~= nil)))
+                if interactionConfig.enabled == false then
+                    notify("Laptop camera interaction is disabled. Set interaction.enabled = true in caddisplay_config.lua.")
+                    return
+                end
+                if not profile then
+                    local message = builtin
+                        and "This built-in vehicle screen needs interaction.corners configured in builtinScreens."
+                        or ("No laptop screen profile for model %s. Check interaction.models in caddisplay_config.lua."):format(
+                            tostring(GetEntityModel(target.entity)))
+                    print("[caddisplay] " .. message)
+                    notify(message)
+                    return
+                end
+                local ok, opened, reason = pcall(function()
+                    return exports["tablet"]:OpenDisplay({
+                        entity = target.entity, key = target.key, profile = profile,
+                        range = interactRange, transitionMs = interactionConfig.transitionMs
+                    })
+                end)
+                if ok and opened then
+                    activeInteractionKey = target.key
+                    print("[caddisplay] Laptop camera started; waiting for the aligned CAD surface.")
+                elseif not ok then
+                    -- Do not swallow the export/native error behind a generic notification.
+                    print(("[caddisplay] Failed to open laptop view: %s"):format(tostring(opened)))
+                    pcall(function() exports["tablet"]:CloseDisplay(true) end)
+                    notify("Unable to start the laptop view. Update both sonorancad and tablet; see F8 for the error.")
+                else
+                    notify(reason or "Unable to focus this display. Close the tablet or check its screen profile.")
+                end
+            end
+
+            local function requestDisplayInteraction(entity, vehicle, key)
+                if activeInteractionKey then return false end
+                local target = { entity = entity, vehicle = vehicle, key = key, expires = GetGameTimer() + 12000 }
+                if displayOwners[key] == GetPlayerServerId(PlayerId()) then
+                    openDisplayInteraction(target)
+                    return false
+                end
+                pendingInteraction = target
+                return true
+            end
+
+            AddEventHandler("SonoranCAD::Tablet::DisplayClosed", function(key)
+                if activeInteractionKey == key then activeInteractionKey = nil end
+            end)
+
             RegisterNetEvent("SonoranCAD::caddisplay::SyncOwners", function(serverOwners)
+                local previousOwners = displayOwners
                 displayOwners = serverOwners or {}
                 local me = GetPlayerServerId(PlayerId())
+                if activeInteractionKey and displayOwners[activeInteractionKey] ~= me then
+                    if GetResourceState("tablet") == "started" then exports["tablet"]:CloseDisplay() end
+                    activeInteractionKey = nil
+                end
+                if pendingInteraction then
+                    if GetGameTimer() > pendingInteraction.expires then
+                        pendingInteraction = nil
+                    elseif displayOwners[pendingInteraction.key] == me then
+                        openDisplayInteraction(pendingInteraction)
+                    end
+                end
                 for vehNet, owner in pairs(displayOwners) do
                     if owner ~= nil then
                         local key = tostring(vehNet)
-                        claimedOnce[key] = true
-                        if owner == me then
+                        if owner == me and previousOwners[key] ~= me then
                             notify("You now have control of the CAD display.")
                         end
                     end
@@ -1228,16 +1146,84 @@ CreateThread(function()
                     incomingRequest.requesterName or "someone", acceptKeybind, denyKeybind))
             end)
 
-            RegisterNetEvent("SonoranCAD::caddisplay::ControlRequestExpired", function()
+            RegisterNetEvent("SonoranCAD::caddisplay::ControlRequestExpired", function(key)
                 incomingRequest = nil
+                if pendingInteraction and tostring(key) == pendingInteraction.key then pendingInteraction = nil end
+            end)
+
+            RegisterNetEvent("SonoranCAD::caddisplay::Calibrate", function(adminFlag, worldFlag)
+                if placementEditing or worldEditActive or activeInteractionKey or pendingInteraction then
+                    notify("Close the display or placement editor before calibrating.")
+                    return
+                end
+                local ped = PlayerPedId()
+                local vehicle = GetVehiclePedIsIn(ped, false)
+                local entity, builtin
+                if vehicle == 0 then
+                    if not worldFlag or not isWorldDisplayEnabled() then
+                        notify("Station display administration permission is required to calibrate a station screen.")
+                        return
+                    end
+                    local _, object = getClosestWorldDisplay(GetEntityCoords(ped), 3.0)
+                    entity = object
+                else
+                    if not adminFlag then
+                        notify("Vehicle display administration permission is required to calibrate a vehicle screen.")
+                        return
+                    end
+                    local record = findVehicleRecord(vehicle)
+                    entity = record and record.prop
+                    builtin = entity == vehicle and getBuiltinScreenConfig(vehicle) or nil
+                end
+                if not entity or not DoesEntityExist(entity) then
+                    notify("No nearby CAD display found. Stand by a station display or sit in a vehicle with a display.")
+                    return
+                end
+                local model = GetEntityModel(entity)
+                WarMenu.CloseMenu()
+                local opened, reason = CadDisplayCalibration.Start({
+                    entity = entity, model = builtin and builtin.model or interactionModelKeys[model] or model,
+                    builtin = builtin ~= nil,
+                    range = vehicle == 0 and 3.0 or 5.0,
+                    profile = builtin and builtin.interaction or (not builtin and interactionModels[model] or nil),
+                    notify = notify,
+                    apply = function(profile)
+                        if builtin then builtin.interaction = profile else interactionModels[model] = profile end
+                    end
+                })
+                if not opened then notify(reason) end
             end)
 
             RegisterNetEvent("SonoranCAD::caddisplay::OpenMenu", function(adminFlag, worldFlag)
+                if placementEditing then notify("Apply or cancel the current placement first."); return end
+                if CadDisplayCalibration and CadDisplayCalibration.IsActive() then
+                    notify("Finish or cancel screen calibration before opening the placement menu.")
+                    return
+                end
                 isAdmin = adminFlag or false
                 worldAdmin = worldFlag or false
                 local veh = GetVehiclePedIsIn(PlayerPedId(), false)
-                if (veh ~= 0 and not isVehicleBlocked(veh)) or (isWorldDisplayEnabled() and worldAdmin) then
+                if veh ~= 0 and not isVehicleBlocked(veh) then
                     WarMenu.OpenMenu("caddisplay_menu")
+                elseif isWorldDisplayEnabled() then
+                    if worldAdmin then
+                        WarMenu.OpenMenu("caddisplay_world_menu")
+                    else
+                        local message = pluginConfig.lang.worldPermissionDenied
+                            or "You do not have permission to manage station CAD displays."
+                        if pluginConfig.permissionMode == "ace" then
+                            local perms = pluginConfig.acePerms or {}
+                            local permission = perms.aceWorldDisplayAdmin
+                            if permission == nil or permission == "" then permission = perms.aceObjectAdminUseMenu end
+                            if permission and permission ~= "" then
+                                message = message .. " " .. ((pluginConfig.lang.worldPermissionRequiredAce
+                                    or "Required ACE: %s"):format(permission))
+                            end
+                        end
+                        notify(message)
+                    end
+                elseif veh == 0 then
+                    notify(pluginConfig.lang.worldDisplaysDisabled or "Station CAD displays are disabled in the configuration.")
                 else
                     notify(pluginConfig.lang.vehNotCompatible)
                 end
@@ -1249,7 +1235,14 @@ CreateThread(function()
             end)
 
             AddEventHandler("onResourceStop", function(resource)
+                if resource == "tablet" then
+                    activeInteractionKey = nil
+                    pendingInteraction = nil
+                end
                 if resource == GetCurrentResourceName() then
+                    if placementEditing and SonoranPlacementEditor.IsActive() then SonoranPlacementEditor.Cancel() end
+                    if vehiclePreview and DoesEntityExist(vehiclePreview) then DeleteObject(vehiclePreview) end
+                    if vehicleAnchor and DoesEntityExist(vehicleAnchor) then DeleteObject(vehicleAnchor) end
                     while #spawnedDisplays > 0 do
                         removeDisplayAtIndex(1)
                     end
@@ -1260,11 +1253,16 @@ CreateThread(function()
 
             TriggerServerEvent("SonoranCAD::caddisplay::RequestPlacements")
             TriggerEvent("chat:addSuggestion", "/" .. pluginConfig.commands.cadDisplayMenu,
-                "Sonoran CAD Display: " .. pluginConfig.lang.addNewDisplayHelp)
+                "Sonoran CAD Display: " .. pluginConfig.lang.addNewDisplayHelp,
+                { { name = "action", help = "calibrate: edit the four screen corners (display administrators)" } })
             RegisterPlayerCommandHelp("caddisplay", pluginConfig.commands.cadDisplayMenu,
                 "Sonoran CAD Display: " .. pluginConfig.lang.addNewDisplayHelp)
 
             RegisterCommand("SonoranCAD::caddisplay::Interact", function()
+                print(("[caddisplay] G interaction (laptop camera): tablet=%s active=%s editing=%s"):format(
+                    GetResourceState("tablet"), tostring(activeInteractionKey), tostring(worldEditActive)))
+                if activeInteractionKey or worldEditActive or placementEditing
+                    or (CadDisplayCalibration and CadDisplayCalibration.IsActive()) then return end
                 local ped = PlayerPedId()
                 local veh = GetVehiclePedIsIn(ped, false)
                 if veh == 0 then
@@ -1279,8 +1277,9 @@ CreateThread(function()
                             notify("Move closer to the CAD display to interact.")
                             return
                         end
-                        TriggerEvent("SonoranCAD::Tablet::OpenCad")
-                        TriggerServerEvent("SonoranCAD::caddisplay::ClaimWorldDisplay", tonumber(displayId))
+                        if requestDisplayInteraction(displayObj, 0, getWorldDisplayKey(displayId)) then
+                            TriggerServerEvent("SonoranCAD::caddisplay::ClaimWorldDisplay", tonumber(displayId))
+                        end
                         return
                     end
                     notify(pluginConfig.lang.notInVeh)
@@ -1306,7 +1305,9 @@ CreateThread(function()
                 end
 
                 local seat = getSeatIndexForPed(veh, ped)
-                TriggerServerEvent("SonoranCAD::caddisplay::ClaimDisplay", vehNet, seat)
+                if requestDisplayInteraction(vehicleRecord.prop, veh, tostring(vehNet)) then
+                    TriggerServerEvent("SonoranCAD::caddisplay::ClaimDisplay", vehNet, seat)
+                end
             end, false)
 
             RegisterKeyMapping("SonoranCAD::caddisplay::Interact", "Interact with CAD Display", "keyboard",
@@ -1333,16 +1334,45 @@ CreateThread(function()
             end, false)
             RegisterKeyMapping("SonoranCAD::caddisplay::DenyRequest", "Deny CAD control request", "keyboard", denyKeybind)
 
-            -- Poll for CAD screenshots when the owner is seated in the vehicle and near the display
+            -- Draw only the current interaction target, including displays already claimed.
             CreateThread(function()
-                local drawInteractPrompt = false
+                while true do
+                    local object, key
+                    if not IsNuiFocused() and not worldEditActive then
+                        local ped = PlayerPedId()
+                        local vehicle = GetVehiclePedIsIn(ped, false)
+                        if vehicle ~= 0 then
+                            local record = findVehicleRecord(vehicle)
+                            if record then
+                                object, key = record.prop, tostring(record.vehNet)
+                            end
+                        elseif isWorldDisplayEnabled() then
+                            local id
+                            id, object = getClosestWorldDisplay(GetEntityCoords(ped), interactRange)
+                            if id then key = getWorldDisplayKey(id) end
+                        end
+                        if object and DoesEntityExist(object)
+                            and #(GetEntityCoords(ped) - GetEntityCoords(object)) <= interactRange then
+                            local owner = displayOwners[key]
+                            local action = owner and owner ~= GetPlayerServerId(PlayerId()) and "request control" or "use computer"
+                            drawWorldPrompt(GetEntityCoords(object) + vector3(0.0, 0.0, 0.3),
+                                ("Press %s to %s"):format(interactKeybind, action))
+                        else
+                            object = nil
+                        end
+                    end
+                    Wait(object and 0 or 250)
+                end
+            end)
+
+            -- Keep the existing screenshot broadcast for other players' world textures.
+            CreateThread(function()
                 while true do
                     Wait(1000)
                     if incomingRequest and incomingRequest.expires and GetGameTimer() > incomingRequest.expires then
                         incomingRequest = nil
                     end
                     local now = GetGameTimer()
-                    local ped = PlayerPedId()
                     local localServerId = GetPlayerServerId(PlayerId())
 
                     for _, car in ipairs(vehiclesWithDisplays) do
@@ -1356,25 +1386,6 @@ CreateThread(function()
                             local vehNet = getVehNetIdOrNil(veh)
                             local ownerId = vehNet and displayOwners[tostring(vehNet)] or nil
                             local prop = car.prop
-                            if not drawInteractPrompt and prop ~= nil and DoesEntityExist(prop) and ownerId == nil and hasAnyOccupant(veh) then
-                                local tabletViewCommand = getTabletViewCommand()
-                                CreateThread(function()
-                                    drawInteractPrompt = true
-                                    while drawInteractPrompt do
-                                        Wait(0)
-                                        local distPrompt = #(GetEntityCoords(ped) - GetEntityCoords(prop))
-                                        local promptKey = tostring(vehNet or prop)
-                                        if distPrompt <= interactRange + 0.5 and not claimedOnce[promptKey] then
-                                            drawWorldPrompt(GetEntityCoords(prop) + vector3(0.0, 0.0, 0.3),
-                                                ("Press %s to interact~n~%s to view"):format(interactKeybind,
-                                                    tabletViewCommand))
-                                        else
-                                            drawInteractPrompt = false
-                                        end
-                                    end
-                                end)
-                            end
-
                             if ownerId ~= nil and ownerId == localServerId then
                                 if prop ~= nil and DoesEntityExist(prop) then
                                     if (car._nextReq or 0) <= now then
@@ -1393,22 +1404,6 @@ CreateThread(function()
                             if obj ~= nil and DoesEntityExist(obj) then
                                 local key = getWorldDisplayKey(id)
                                 local ownerId = displayOwners[key]
-                                if not drawInteractPrompt and ownerId == nil then
-                                    CreateThread(function()
-                                        drawInteractPrompt = true
-                                        while drawInteractPrompt do
-                                            Wait(0)
-                                            local distPrompt = #(GetEntityCoords(ped) - GetEntityCoords(obj))
-                                            if distPrompt <= interactRange + 0.5 and not claimedOnce[key] then
-                                                drawWorldPrompt(GetEntityCoords(obj) + vector3(0.0, 0.0, 0.3),
-                                                    ("Press %s to interact"):format(interactKeybind))
-                                            else
-                                                drawInteractPrompt = false
-                                            end
-                                        end
-                                    end)
-                                end
-
                                 if ownerId ~= nil and ownerId == localServerId then
                                     if (worldDisplayNextReq[id] or 0) <= now then
                                         local reqId = ("caddisplay-world-%s-%d"):format(ownerId, now)
