@@ -11,11 +11,14 @@ Click **Rotate** for rotation rings, including an outer ring aligned to the view
 **Snap** enables 1 cm movement and 5 degree rotation increments. Station placement
 uses right-drag to orbit, middle-drag to pan, the wheel to move closer/farther, and
 **Frame object** to bring the object into view. **Original view** restores its camera.
-Vehicle placement uses a fixed scripted camera between the front seats, slightly
-behind the driver's head, aimed at the display. Right-drag looks around and
-middle-drag leans by up to 12 cm from the starting position. **Look at display**
+Vehicle placement starts with a scripted camera between the front seats, slightly
+behind the driver's head, aimed at the display. Right-drag looks around by default.
+Toggle **Orbit laptop** to make right-drag circle the display's current bounds
+center while keeping the same distance. Switching modes keeps the current camera
+pose. Middle-drag leans by up to 12 cm from the current camera anchor; orbiting or
+switching modes establishes a new anchor. **Look at display**
 aims toward the prop's bounds center without moving the camera; **Cabin view**
-restores the starting position, aim, and lens. The starting field of view is
+restores the starting position, aim, lens, and look-around mode. The starting field of view is
 65 degrees. The wheel adjusts the scripted lens between 35 and 85 degrees without
 moving the camera or prop. Gameplay camera motion and head animations do not move
 the editor camera, and the player remains visible by default.
@@ -101,12 +104,12 @@ All messages require the current numeric `session`. Browser messages are accepte
 only from the actual FiveM parent frame and its exact origin; stale sessions are ignored.
 
 * Game → UI `placement_editor`: `enabled`, `session`, and, when enabled, `title`,
-  `cameraMode` (`cockpit`/`orbit`), `cameraZoom`, `ready`, and `actions = [{id,label}]`.
+  `cameraMode` (`cockpit`/`orbit`), `cameraOrbit`, `cameraZoom`, `ready`, and `actions = [{id,label}]`.
   Camera mode selects the control hints/button labels. While `ready=false`, only
   Cancel is enabled. Hiding releases pointer state.
 * Game → UI `placement_frame`: `session`, `mode` (`move`/`rotate`), `space`
   (`local`/`world`), `snap`, world `position`/`rotation`, projected `pivot`, optional
-  `selected` handle ID, `cameraZoom`, `ready`, and `handles`. The scripted editor
+  `selected` handle ID, `cameraOrbit`, `cameraZoom`, `ready`, and `handles`. The scripted editor
   sends `ready=true` and `cameraZoom=true` from entry.
   Each handle has `id` (`x/y/z/xy/xz/yz/view`), `kind` (`axis/plane/ring`), and normalized
   projected `points`. `false` points are not visible and break rendered paths.
@@ -114,10 +117,12 @@ only from the actual FiveM parent frame and its exact origin; stale sessions are
   `value`; `space`, `snap`, `reset`, `focus`, `view`, `cancel`; `finish` with an advertised
   `choice`; `down` with `handle,x,y`; `drag` with `x,y`; `up`; and `camera` with
   normalized `dx,dy`, signed `zoom`, and optional `pan=true` for middle-drag.
-  In cockpit mode these control look, lens zoom, and bounded lean; `focus` changes
-  aim without moving the camera. Other sessions use orbit, dolly zoom, and pan.
+  In cockpit mode `orbit` toggles between looking around and circling the display;
+  `cameraOrbit` reports its current state (false by default). Camera input controls
+  look/orbit, lens zoom, and bounded lean; `focus` changes aim without moving the
+  camera. Other sessions use orbit, dolly zoom, and pan.
   `cameraZoom=false` disables the wheel.
-  `view` restores the initial camera. Callback replies `{ok:boolean}`. Pointer
+  `view` restores the initial camera and clears the cockpit orbit toggle. Callback replies `{ok:boolean}`. Pointer
   coordinates must be finite and in [0,1]; the server save path remains separate.
 
 Mouse events are ordered and coalesced under callback latency so stale drag events

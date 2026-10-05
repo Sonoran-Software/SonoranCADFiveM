@@ -118,7 +118,7 @@ local function frame(s)
                 view.fov,s.view.fov,depth))
     end
     SendNUIMessage({type='placement_frame',session=s.id,handles=handles,ready=true,
-        cameraZoom=true,mode=s.mode,space=s.space,
+        cameraZoom=true,cameraOrbit=s.orbit,mode=s.mode,space=s.space,
         snap=s.snap,selected=s.drag and s.drag.handle,pivot=depth>.02 and projected(pivot) or false,
         position=pack(matrix.p),rotation=pack(M.rotation(matrix,2))})
 end
@@ -151,6 +151,8 @@ function E.Start(options)
     s.view={position=p,rotation=r,fov=view and view.fov or GetFinalRenderedCamFov(),up=view and view.up}
     s.cockpit=view and view.mode=='cockpit'
     s.hidePlayer=s.cockpit and view.hidePlayer==true
+    s.orbit=false
+    s.lookAnchor=p
     s.lean=vector3(0,0,0)
     s.cam=CreateCam('DEFAULT_SCRIPTED_CAMERA',true)
     cameraPose(s,p,r,s.view.fov); SetCamNearClip(s.cam,.01)
@@ -161,7 +163,7 @@ function E.Start(options)
     if s.hidePlayer then SetEntityLocallyInvisible(s.ped) end
     RenderScriptCams(true,false,0,true,true)
     SendNUIMessage({type='placement_editor',enabled=true,session=s.id,title=options.title or 'Object placement',actions=s.actions,
-        ready=true,cameraZoom=true,cameraMode=s.cockpit and 'cockpit' or 'orbit'})
+        ready=true,cameraZoom=true,cameraOrbit=s.orbit,cameraMode=s.cockpit and 'cockpit' or 'orbit'})
     SetNuiFocus(true,true)
     SetNuiFocusKeepInput(false)
     CreateThread(function()
@@ -205,6 +207,12 @@ RegisterNUICallback('placementInput',function(data,cb)
         elseif data.action == 'mode' and (data.value == 'move' or data.value == 'rotate') then s.mode=data.value; s.drag=nil
         elseif data.action == 'space' then s.space=s.space == 'local' and 'world' or 'local'; s.drag=nil
         elseif data.action == 'snap' then s.snap=not s.snap
+        elseif data.action == 'orbit' and s.cockpit then
+            s.orbit=not s.orbit
+            s.drag=nil
+            -- Switching controls must not return an orbited camera to the seat.
+            s.lookAnchor=GetCamCoord(s.cam)
+            s.lean=vector3(0,0,0)
         elseif data.action == 'reset' then M.apply(s.entity,s.original); s.drag=nil
         elseif data.action == 'up' then s.drag=nil
         elseif data.action == 'down' and pointer(data) and type(data.handle) == 'string' then
@@ -246,6 +254,8 @@ RegisterNUICallback('placementInput',function(data,cb)
         elseif data.action == 'view' then
             s.drag=nil
             local view=s.view
+            s.orbit=false
+            s.lookAnchor=view.position
             s.lean=vector3(0,0,0)
             cameraPose(s,view.position,view.rotation,view.fov)
         elseif data.action == 'focus' or (data.action == 'camera' and finite(data.dx) and finite(data.dy) and finite(data.zoom)) then
@@ -256,24 +266,45 @@ RegisterNUICallback('placementInput',function(data,cb)
             local radius=math.max(.15,#offset)
             if s.cockpit then
                 if data.action=='focus' then
-                    -- Re-aim from the current seat position, never orbit behind the driver.
+                    -- Re-aim from the current position without moving the camera.
                     aimCamera(s,GetCamCoord(s.cam),center)
                     return
                 end
                 local rotation=GetCamRot(s.cam,2)
-                if data.pan then
+                local fov=math.max(35,math.min(85,GetCamFov(s.cam)*math.exp(math.max(-1,math.min(1,data.zoom))*.08)))
+                if s.orbit and not data.pan and (data.dx~=0 or data.dy~=0) then
+                    -- Orbit the current display center from the current camera position.
+                    -- Lens-only input never moves or re-aims the camera.
+                    if #offset>.02 then
+                        local up=M.unit(s.view.up or axes.z)
+                        local pose=M.cameraBasis(rotation)
+                        pose.p=GetCamCoord(s.cam)
+                        pose=M.rotate(pose,up,-math.max(-.1,math.min(.1,data.dx))*4,center)
+                        local direction=M.unit(pose.p-center)
+                        local elevation=math.asin(math.max(-1,math.min(1,M.dot(direction,up))))
+                        local pitchAxis=M.cross(direction,up)
+                        if #pitchAxis<.0001 then
+                            pitchAxis=M.cross(math.abs(up.z)<.9 and axes.z or axes.y,up)
+                        end
+                        local limit=math.rad(80)
+                        local pitch=math.max(-limit,math.min(limit,elevation+math.max(-.1,math.min(.1,data.dy))*3))
+                        pose=M.rotate(pose,M.unit(pitchAxis),pitch-elevation,center)
+                        rotation=M.lookRotation(center-pose.p,up) or rotation
+                        s.lookAnchor=pose.p
+                        s.lean=vector3(0,0,0)
+                    end
+                elseif data.pan then
                     local b=M.cameraBasis(rotation)
                     local height=math.min(radius,1)*math.tan(math.rad(GetCamFov(s.cam))*.5)*2
                     local lean=s.lean-b.r*(math.max(-.1,math.min(.1,data.dx))*height*GetAspectRatio(false))
                         +b.u*(math.max(-.1,math.min(.1,data.dy))*height)
-                    -- Bound total displacement, so repeated drags cannot leave the cockpit.
+                    -- Bound lean around the seat or most recent orbit position.
                     s.lean=#lean>.12 and M.unit(lean)*.12 or lean
-                else
+                elseif not s.orbit then
                     rotation=vector3(math.max(-80,math.min(80,rotation.x-data.dy*120)),rotation.y,
                         (rotation.z-data.dx*180+180)%360-180)
                 end
-                local fov=math.max(35,math.min(85,GetCamFov(s.cam)*math.exp(math.max(-1,math.min(1,data.zoom))*.08)))
-                cameraPose(s,s.view.position+s.lean,rotation,fov)
+                cameraPose(s,s.lookAnchor+s.lean,rotation,fov)
                 return
             end
             if data.pan then

@@ -111,6 +111,34 @@ local function harness()
 end
 local count=0
 local function test(name,callback) callback(); count=count+1; print('PASS '..name) end
+local function orbitHarness()
+    local s=harness();s.aspect=16/9
+    s.matrix=s.M.rotate(identity(),s.M.unit(v(1,2,3)),.4)
+    s.matrix.p=v(10,20,30);s.matrix.r=s.matrix.r*2;s.matrix.f=s.matrix.f*.7;s.matrix.u=s.matrix.u*1.2
+    local focus=v(.15,-.2,.1)
+    local center=s.matrix.p+s.matrix.r*focus.x+s.matrix.f*focus.y+s.matrix.u*focus.z
+    local up=s.M.unit(v(.2,-.15,1))
+    local horizontal=s.M.unit(s.M.cross(up,v(1,0,0)))
+    local eye=center-horizontal*1.5+up*.3
+    local view={mode='cockpit',position=eye,rotation=s.M.lookRotation(center-eye,up),fov=65,up=up}
+    assert(s:start({view=view,focusOffset=focus,pivotOffset=focus}))
+    function s:focusCenter()
+        local m=self.matrix
+        return m.p+m.r*focus.x+m.f*focus.y+m.u*focus.z
+    end
+    function s:assertAimedAtCenter()
+        local center=self:focusCenter()
+        near(self.M.cameraBasis(self.cameraRotation).f,self.M.unit(center-self.camera))
+        local projected=self.M.project(self.camera,self.cameraRotation,self.fov,self.aspect,center)
+        assert(projected and math.abs(projected.x-.5)<1e-6 and math.abs(projected.y-.5)<1e-6)
+    end
+    return s,view
+end
+
+local function nearMatrix(a,b)
+    near(a.p,b.p);near(a.r,b.r);near(a.f,b.f);near(a.u,b.u)
+end
+
 test('world and attachment rotation decompositions round trip combined rotations',function()
     local s=harness()
     for _,order in ipairs({0,2}) do
@@ -301,6 +329,109 @@ test('cockpit look and zoom preserve the eye anchor and bound the field of view'
     assert(#s.fovWrites>2,'zoom must update the owned scripted camera FOV directly')
 end)
 
+test('cockpit orbit toggles without a pose jump and circles the model center at a fixed radius',function()
+    local s,view=orbitHarness()
+    local object=s.matrix
+    assert(s.messages[1].cameraOrbit==false,'cockpit entry must advertise look mode')
+    s:frame();assert(s.messages[#s.messages].cameraOrbit==false)
+    local radius=#(s.camera-s:focusCenter())
+    s:input('orbit');s:frame()
+    assert(s.messages[#s.messages].cameraOrbit==true)
+    near(s.camera,view.position);near(s.cameraRotation,view.rotation);assert(s.fov==view.fov)
+    s:input('camera',{dx=.06,dy=.03,zoom=0})
+    assert(#(s.camera-view.position)>.05,'orbit drag must change camera position')
+    assert(math.abs(#(s.camera-s:focusCenter())-radius)<1e-6 and s.fov==view.fov)
+    s:assertAimedAtCenter();nearMatrix(s.matrix,object)
+    local orbited,rotation=s.camera,s.cameraRotation
+    s:input('orbit');s:frame()
+    assert(s.messages[#s.messages].cameraOrbit==false)
+    near(s.camera,orbited);near(s.cameraRotation,rotation);assert(s.fov==view.fov)
+    s:input('camera',{dx=.04,dy=-.02,zoom=0})
+    near(s.camera,orbited)
+    assert(#(s.cameraRotation-rotation)>.01,'look mode must rotate from the current orbit position')
+    nearMatrix(s.matrix,object)
+end)
+
+test('cockpit orbit and focus retarget the current transformed bounds center after the prop moves',function()
+    local s=orbitHarness()
+    s:input('orbit');s:input('camera',{dx=.05,dy=.02,zoom=0})
+    s.matrix=s.M.rotate(s.matrix,s.M.unit(v(2,-1,3)),.3)
+    s.matrix.p=s.matrix.p+v(.4,-.2,.15)
+    local moved=s.matrix
+    local position=s.camera
+    local radius=#(position-s:focusCenter())
+    s:input('camera',{dx=-.06,dy=.01,zoom=0})
+    assert(#(s.camera-position)>.05 and math.abs(#(s.camera-s:focusCenter())-radius)<1e-6)
+    s:assertAimedAtCenter();nearMatrix(s.matrix,moved)
+    s.matrix.p=s.matrix.p+v(-.15,.2,.1)
+    position=s.camera
+    s:input('focus');s:frame()
+    near(s.camera,position);s:assertAimedAtCenter()
+    assert(s.messages[#s.messages].cameraOrbit==true and s.fov==65)
+end)
+
+test('cockpit orbit uses vehicle up for yaw and stops before either pitch pole',function()
+    local s,view=orbitHarness()
+    s:input('orbit')
+    local center=s:focusCenter()
+    local radius=#(s.camera-center)
+    local height=s.M.dot(s.camera-center,view.up)
+    s:input('camera',{dx=.09,dy=0,zoom=0})
+    assert(math.abs(s.M.dot(s.camera-center,view.up)-height)<1e-6,'yaw must circle the vehicle up axis')
+    for _,direction in ipairs({-1,1}) do
+        for _=1,20 do s:input('camera',{dx=.02,dy=direction*.1,zoom=0}) end
+        local offset=s.camera-center
+        local pitch=math.deg(math.asin(s.M.dot(offset,view.up)/#offset))
+        assert(math.abs(pitch)<=80.00001 and math.abs(pitch)>70,'orbit pitch must stop near 80 degrees without crossing the pole')
+        assert(math.abs(#offset-radius)<1e-6 and s.fov==65)
+        s:assertAimedAtCenter()
+    end
+end)
+
+test('cockpit orbit wheel zoom changes only FOV after prop movement or a switch back to look',function()
+    local s=orbitHarness()
+    s:input('orbit');s:input('camera',{dx=.08,dy=.02,zoom=0})
+    s.matrix.p=s.matrix.p+v(.5,.2,.3)
+    local object=s.matrix
+    local position,rotation=s.camera,s.cameraRotation
+    for _=1,30 do s:input('camera',{dx=0,dy=0,zoom=1}) end
+    assert(s.fov==85);near(s.camera,position);near(s.cameraRotation,rotation)
+    for _=1,30 do s:input('camera',{dx=0,dy=0,zoom=-1}) end
+    assert(s.fov==35);near(s.camera,position);near(s.cameraRotation,rotation)
+    nearMatrix(s.matrix,object)
+    s:input('orbit');s:input('camera',{dx=.04,dy=-.03,zoom=0})
+    rotation=s.cameraRotation
+    s.matrix.p=s.matrix.p+v(-.3,.1,0)
+    s:input('camera',{dx=0,dy=0,zoom=1})
+    assert(s.fov>35);near(s.camera,position);near(s.cameraRotation,rotation)
+end)
+
+test('cockpit lean anchors to the orbit pose and Driver view restores the original look mode',function()
+    local s,view=orbitHarness()
+    local object=s.matrix
+    s:input('orbit');s:input('camera',{dx=.09,dy=.03,zoom=0})
+    local orbitPosition,orbitRotation=s.camera,s.cameraRotation
+    for _=1,50 do s:input('camera',{dx=.1,dy=.1,zoom=0,pan=true}) end
+    assert(#(s.camera-orbitPosition)>.01 and #(s.camera-orbitPosition)<=.120001)
+    near(s.cameraRotation,orbitRotation)
+    local leaned=s.camera
+    s:input('orbit')
+    near(s.camera,leaned)
+    s:input('camera',{dx=-.03,dy=.02,zoom=0,pan=true})
+    assert(#(s.camera-leaned)>0 and #(s.camera-leaned)<=.120001)
+    local lookPosition=s.camera
+    s:input('camera',{dx=.04,dy=.02,zoom=1})
+    near(s.camera,lookPosition)
+    s:input('orbit');s:input('view');s:frame()
+    assert(s.messages[#s.messages].cameraOrbit==false and s.fov==view.fov)
+    near(s.camera,view.position);near(s.cameraRotation,view.rotation)
+    s:input('camera',{dx=.03,dy=-.01,zoom=0})
+    near(s.camera,view.position)
+    s:input('camera',{dx=.03,dy=.02,zoom=0,pan=true})
+    assert(#(s.camera-view.position)>0 and #(s.camera-view.position)<=.120001)
+    nearMatrix(s.matrix,object)
+end)
+
 test('fixed cockpit pose and gizmo remain stable as the gameplay camera and animated head move',function()
     local s=harness();s.vehicle=3;s.aspect=16/9
     local view={mode='cockpit',position=v(0,-.5,.4),rotation=v(-8,0,0),fov=65}
@@ -434,6 +565,8 @@ test('generic station cameras still orbit and dolly with explicit rotations that
     local s=harness()
     local view={position=v(0,-2,2),rotation=v(-45,0,0),fov=70}
     assert(s:start({view=view}))
+    s:input('orbit')
+    near(s.camera,view.position);near(s.cameraRotation,view.rotation);assert(s.fov==70)
     s:input('camera',{dx=.05,dy=.03,zoom=0})
     assert(#(s.camera-view.position)>.1 and not s.cameraTarget)
     near(s.M.cameraBasis(s.env.GetCamRot()).f,s.M.unit(s.matrix.p-s.camera))

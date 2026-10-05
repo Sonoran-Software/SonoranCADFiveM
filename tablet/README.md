@@ -48,10 +48,12 @@ Station and vehicle placement use a mouse gizmo. Drag colored axes or plane hand
 to move in either direction; selected handles turn yellow. Click **Rotate** for
 rotation rings. Vehicle placement opens a fixed cabin view between the front seats,
 slightly behind the driver's head, aimed at the laptop. It stays still as the
-character and gameplay camera move. Right-drag looks around, the wheel zooms, and
-middle-drag leans a short distance. **Look at display** turns toward the laptop
+character and gameplay camera move. Right-drag looks around by default. Enable
+**Orbit laptop** to circle the laptop with right-drag instead; switching the toggle
+keeps the current viewpoint. The wheel zooms, and middle-drag leans a short
+distance. **Look at display** turns toward the laptop
 without moving the viewpoint; **Cabin view** restores the starting position, aim,
-and lens. The gizmo starts at the laptop's bounds center so its handles remain
+and lens, and returns to look-around mode. The gizmo starts at the laptop's bounds center so its handles remain
 close to the visible prop. New laptops start near the dashboard with the screen
 facing you. Placement uses its own camera and lens, leaving gameplay camera
 preferences unchanged. Station placement uses right-drag to orbit, middle-drag to

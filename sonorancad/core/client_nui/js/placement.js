@@ -2,7 +2,7 @@
     const style = document.createElement('style');
     style.textContent = `
         #placementEditor {position:fixed;inset:0;z-index:1600;color:#edf2fa;font:14px 'Segoe UI',sans-serif;user-select:none;touch-action:none}
-        #placementEditor[hidden] {display:none}
+        #placementEditor[hidden], #placementEditor [hidden] {display:none}
         #placementEditor svg {position:absolute;inset:0;width:100%;height:100%;overflow:hidden}
         #placementEditor [data-handle] {cursor:grab}
         #placementToolbar {position:absolute;top:18px;left:18px;width:max-content;max-width:calc(100vw - 36px);padding:10px 12px;border:1px solid #ffffff24;border-radius:7px;background:rgba(12,17,23,.78);box-shadow:0 3px 14px #0004}
@@ -28,6 +28,7 @@
         <h3></h3><div class="row">
         <button data-mode="move" aria-pressed="true">Move</button><button data-mode="rotate" aria-pressed="false">Rotate</button>
         <button data-action="space">Local axes</button><button data-action="snap" aria-pressed="false">Snap: off</button>
+        <button data-action="orbit" aria-pressed="false" hidden>Orbit laptop</button>
         <button data-action="view">Original view</button><button data-action="focus">Frame object</button><button data-action="reset">Reset</button>
         </div><p id="placementHelp"></p>
         <p id="placementValues"></p></div><div id="placementFinish"><span id="placementActions"></span><button data-action="cancel">Cancel</button></div>`;
@@ -37,10 +38,13 @@
     const gameOrigin = window.location.ancestorOrigins[0];
     let session = null, pointer = null, pending = null, scheduled = false, sending = false, hovered = null;
     let lastFrame = null;
-    let cameraMode = 'orbit', ready = true, cameraZoom = true;
+    let cameraMode = 'orbit', ready = true, cameraZoom = true, cameraOrbit = false;
     function updateCameraHelp() {
+        const orbit=root.querySelector('[data-action=orbit]');
+        orbit.hidden=cameraMode!=='cockpit';
+        orbit.setAttribute('aria-pressed',cameraOrbit);
         root.querySelector('#placementHelp').textContent=(cameraMode==='cockpit'
-            ? 'Drag arrows, squares, or rings · Right-drag look · Middle-drag lean'
+            ? `Drag arrows, squares, or rings · Right-drag ${cameraOrbit?'orbit laptop':'look'} · Middle-drag lean`
             : 'Drag arrows, squares, or rings · Right-drag orbit · Middle-drag pan')+(cameraZoom?' · Wheel zoom':'');
     }
     const outbound = [];
@@ -152,6 +156,7 @@
             if (data.enabled) {
                 root.querySelector('h3').textContent=data.title;
                 cameraMode=data.cameraMode || 'orbit'; ready=data.ready!==false; cameraZoom=data.cameraZoom!==false;
+                cameraOrbit=data.cameraOrbit===true;
                 const cockpit=cameraMode==='cockpit';
                 root.querySelector('[data-action=view]').textContent=cockpit?'Cabin view':'Original view';
                 root.querySelector('[data-action=focus]').textContent=cockpit?'Look at display':'Frame object';
@@ -165,7 +170,7 @@
                 root.querySelector('#placementValues').textContent=ready?'':'Preparing placement…';
             }
         } else if (data.type==='placement_frame' && session!==null && data.session===session) {
-            cameraZoom=data.cameraZoom!==false; updateCameraHelp(); render(data);
+            cameraZoom=data.cameraZoom!==false; cameraOrbit=data.cameraOrbit===true; updateCameraHelp(); render(data);
         }
     });
     root.addEventListener('contextmenu',event=>event.preventDefault());

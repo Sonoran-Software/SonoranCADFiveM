@@ -43,6 +43,24 @@ const server=createServer((req,res)=>{
             assert.match(await ui.locator('#placementHelp').textContent(),/Right-drag look/);
             assert.match(await ui.locator('#placementHelp').textContent(),/Middle-drag lean/);
             assert.match(await ui.locator('#placementHelp').textContent(),/Wheel zoom/);
+            const orbitToggle=ui.locator('[data-action=orbit]');
+            assert.equal(await orbitToggle.isVisible(),true);
+            assert.equal(await orbitToggle.textContent(),'Orbit laptop');
+            assert.equal(await orbitToggle.getAttribute('aria-pressed'),'false');
+            await orbitToggle.click();
+            await ui.waitForFunction(()=>events.some(e=>e.session===1&&e.action==='orbit'));
+            // Camera state belongs to the game: clicking alone cannot change the mode.
+            assert.equal(await orbitToggle.getAttribute('aria-pressed'),'false');
+            assert.match(await ui.locator('#placementHelp').textContent(),/Right-drag look/);
+            await send({...frame,cameraOrbit:true});
+            await ui.waitForFunction(()=>document.querySelector('[data-action=orbit]').getAttribute('aria-pressed')==='true');
+            assert.match(await ui.locator('#placementHelp').textContent(),/Right-drag orbit laptop · Middle-drag lean · Wheel zoom/);
+            await orbitToggle.click();
+            await ui.waitForFunction(()=>events.filter(e=>e.session===1&&e.action==='orbit').length===2);
+            assert.equal(await orbitToggle.getAttribute('aria-pressed'),'true');
+            await send({...frame,cameraOrbit:false});
+            await ui.waitForFunction(()=>document.querySelector('[data-action=orbit]').getAttribute('aria-pressed')==='false');
+            assert.match(await ui.locator('#placementHelp').textContent(),/Right-drag look/);
             assert.equal(await ui.locator('polygon[data-handle=x]').count(),2);
             await page.mouse.move(width*.54,height*.5);await page.mouse.down();
             // Game frames replace handles while the pointer stays captured by the root.
@@ -77,7 +95,14 @@ const server=createServer((req,res)=>{
             await ui.waitForFunction(()=>!document.querySelector('#placementHelp').textContent.includes('Wheel zoom'));
             await page.mouse.wheel(0,100);await page.waitForTimeout(75);
             assert.equal(await ui.evaluate(()=>events.filter(e=>e.action==='camera').length),afterCameraCount);
+            await send({...frame,cameraOrbit:true,cameraZoom:false});
+            await ui.waitForFunction(()=>document.querySelector('[data-action=orbit]').getAttribute('aria-pressed')==='true');
             await ui.locator('[data-action=view]').click();
+            await ui.waitForFunction(()=>events.some(e=>e.session===1&&e.action==='view'));
+            assert.equal(await orbitToggle.getAttribute('aria-pressed'),'true');
+            await send({...frame,cameraOrbit:false,cameraZoom:true});
+            await ui.waitForFunction(()=>document.querySelector('[data-action=orbit]').getAttribute('aria-pressed')==='false');
+            assert.match(await ui.locator('#placementHelp').textContent(),/Right-drag look · Middle-drag lean · Wheel zoom/);
             await ui.evaluate(()=>{
                 const child=document.createElement('iframe');child.style.display='none';document.body.appendChild(child);
                 child.contentWindow.parent.postMessage({type:'placement_editor',session:1,enabled:false},location.origin);
@@ -92,13 +117,16 @@ const server=createServer((req,res)=>{
             await ui.locator('[data-finish=apply]').click();
             await ui.waitForFunction(()=>events.some(e=>e.action==='finish'));
             const events=await ui.evaluate(()=>window.events);
-            for(const action of ['mode','space','snap','focus','reset','camera','view','finish']) assert(events.some(e=>e.action===action));
+            for(const action of ['mode','space','snap','focus','reset','camera','orbit','view','finish']) assert(events.some(e=>e.action===action));
             await send({type:'placement_editor',enabled:false,session:1});
             await ui.waitForSelector('#placementEditor',{state:'hidden'});
             await send({type:'placement_editor',enabled:true,session:2,title:'Second session',actions:[]});
             await send({type:'placement_editor',enabled:false,session:1});
             await ui.waitForFunction(()=>document.querySelector('[data-action=view]').textContent==='Original view');
             assert.equal(await ui.locator('[data-action=focus]').textContent(),'Frame object');
+            assert.equal(await orbitToggle.isVisible(),false);
+            assert.equal(await orbitToggle.evaluate(button=>getComputedStyle(button).display),'none');
+            assert.equal(await orbitToggle.getAttribute('aria-pressed'),'false');
             assert.match(await ui.locator('#placementHelp').textContent(),/Right-drag orbit/);
             await page.mouse.move(width*.3,height*.3);await page.mouse.down({button:'middle'});
             await page.mouse.move(width*.33,height*.32,{steps:5});await page.mouse.up({button:'middle'});
