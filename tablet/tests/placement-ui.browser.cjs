@@ -32,9 +32,17 @@ const server=createServer((req,res)=>{
             const ui=page.frames().find(f=>f.url().endsWith('/ui'));
             await ui.waitForSelector('#placementEditor',{state:'attached'});
             const send=data=>page.evaluate(data=>document.querySelector('iframe').contentWindow.postMessage(data,location.origin),data);
-            await send({type:'placement_editor',enabled:true,session:1,title:'Vehicle display placement',actions:[{id:'apply',label:'Apply to this vehicle'}]});
+            await send({type:'placement_editor',enabled:true,session:1,title:'Vehicle display placement',cameraMode:'cockpit',ready:false,actions:[{id:'apply',label:'Apply to this vehicle'}]});
+            await ui.waitForFunction(()=>document.querySelector('[data-finish=apply]')?.disabled);
+            assert.equal(await ui.locator('[data-action=cancel]').isEnabled(),true);
+            assert.match(await ui.locator('#placementValues').textContent(),/Preparing/);
             await send(frame);
             await ui.waitForSelector('[data-handle=x]',{state:'attached'});
+            assert.equal(await ui.locator('[data-action=focus]').textContent(),'Look at display');
+            assert.equal(await ui.locator('[data-action=view]').textContent(),'Cabin view');
+            assert.match(await ui.locator('#placementHelp').textContent(),/Right-drag look/);
+            assert.match(await ui.locator('#placementHelp').textContent(),/Middle-drag lean/);
+            assert.match(await ui.locator('#placementHelp').textContent(),/Wheel zoom/);
             assert.equal(await ui.locator('polygon[data-handle=x]').count(),2);
             await page.mouse.move(width*.54,height*.5);await page.mouse.down();
             // Game frames replace handles while the pointer stays captured by the root.
@@ -55,11 +63,20 @@ const server=createServer((req,res)=>{
             await ui.locator('[data-action=focus]').click();await ui.locator('[data-action=reset]').click();
             await page.mouse.move(width*.3,height*.25);await page.mouse.down({button:'right'});
             await page.mouse.move(width*.35,height*.28,{steps:5});await page.mouse.up({button:'right'});
+            await ui.waitForFunction(()=>events.filter(e=>e.action==='up').length>=3);
+            const cameraCount=await ui.evaluate(()=>events.filter(e=>e.action==='camera').length);
             await page.mouse.wheel(0,100);
-            await ui.waitForFunction(()=>events.some(e=>e.action==='camera'&&e.zoom>0));
+            await ui.waitForFunction(()=>events.some(e=>e.session===1&&e.action==='camera'&&e.zoom>0));
             await page.mouse.move(width*.3,height*.3);await page.mouse.down({button:'middle'});
             await page.mouse.move(width*.33,height*.32,{steps:5});await page.mouse.up({button:'middle'});
-            await ui.waitForFunction(()=>events.some(e=>e.action==='camera'&&e.pan===true&&e.dx>0));
+            await ui.waitForFunction(()=>events.some(e=>e.session===1&&e.action==='camera'&&e.pan===true&&e.dx>0));
+            await ui.waitForFunction(()=>events.filter(e=>e.action==='up').length>=4);
+            const afterCameraCount=await ui.evaluate(()=>events.filter(e=>e.action==='camera').length);
+            assert(afterCameraCount>cameraCount+1);
+            await send({...frame,cameraZoom:false});
+            await ui.waitForFunction(()=>!document.querySelector('#placementHelp').textContent.includes('Wheel zoom'));
+            await page.mouse.wheel(0,100);await page.waitForTimeout(75);
+            assert.equal(await ui.evaluate(()=>events.filter(e=>e.action==='camera').length),afterCameraCount);
             await ui.locator('[data-action=view]').click();
             await ui.evaluate(()=>{
                 const child=document.createElement('iframe');child.style.display='none';document.body.appendChild(child);
@@ -80,6 +97,14 @@ const server=createServer((req,res)=>{
             await ui.waitForSelector('#placementEditor',{state:'hidden'});
             await send({type:'placement_editor',enabled:true,session:2,title:'Second session',actions:[]});
             await send({type:'placement_editor',enabled:false,session:1});
+            await ui.waitForFunction(()=>document.querySelector('[data-action=view]').textContent==='Original view');
+            assert.equal(await ui.locator('[data-action=focus]').textContent(),'Frame object');
+            assert.match(await ui.locator('#placementHelp').textContent(),/Right-drag orbit/);
+            await page.mouse.move(width*.3,height*.3);await page.mouse.down({button:'middle'});
+            await page.mouse.move(width*.33,height*.32,{steps:5});await page.mouse.up({button:'middle'});
+            await page.mouse.wheel(0,100);
+            await ui.waitForFunction(()=>events.some(e=>e.session===2&&e.action==='camera'&&e.pan===true&&e.dx>0));
+            await ui.waitForFunction(()=>events.some(e=>e.session===2&&e.action==='camera'&&e.zoom>0));
             await ui.locator('[data-action=cancel]').click();
             await ui.waitForFunction(()=>events.some(e=>e.action==='cancel'&&e.session===2));
             assert.deepEqual(errors,[]);

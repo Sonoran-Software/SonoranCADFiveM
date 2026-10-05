@@ -463,12 +463,21 @@ for _,mode in ipairs({'save','cancel','new_cancel'}) do
         env.isVehicleBlocked=function() return false end
         s.events['SonoranCAD::caddisplay::OpenMenu'](true,true)
         local editor,created,deleted,attached= nil,9,{},{}
+        local v=env.vector3
         env.GetEntityType=function() return 3 end
         env.GetEntitySpeed=function() return 0 end
         env.GetEntityRotation=function() return env.vector3(0,0,30) end
-        env.GetPedBoneCoords=function() return env.vector3(0,0,1) end
+        local headReads=0
+        env.GetPedBoneCoords=function()
+            headReads=headReads+1
+            return v(-.35,.1,1.2)
+        end
+        env.GetModelDimensions=function(model)
+            assert(model=='prop_laptop_jimmy')
+            return v(-.4,-.1,-.2),v(.2,.5,.6)
+        end
         env.NetworkGetEntityIsNetworked=function() return false end
-        env.GetEntityBoneIndexByName=function() return 12 end
+        env.GetEntityBoneIndexByName=function(_,name) return name=='chassis' and 12 or -1 end
         env.GetDisplayNameFromVehicleModel=function() return 'POLICE' end
         env.CreateObjectNoOffset=function() created=created+1; return created end
         env.DeleteObject=function(entity) deleted[entity]=true end
@@ -485,7 +494,11 @@ for _,mode in ipairs({'save','cancel','new_cancel'}) do
         env.beginVehiclePlacementEditor(isNew)
         s:frame()
         assert(editor and editor.entity==10 and #editor.actions==2 and #attached==1 and attached[1][1]==11)
-        assert(editor.view and editor.view.rotation.x==-8 and editor.view.rotation.z==30 and editor.view.fov==65)
+        assert(editor.view and editor.view.mode=='cockpit' and editor.view.fov==65 and not editor.view.hidePlayer)
+        assert(#(editor.view.position-v(0,-.15,1.23))<1e-6,'missing seat bones must use the vehicle centerline')
+        assert(#(editor.focusOffset-v(-.1,.2,.2))<1e-6)
+        assert(#(editor.pivotOffset-editor.focusOffset)<1e-6)
+        assert(headReads==1)
         editor.onFinish({accepted=accept,action='save',matrix={p=env.vector3(11,2,3),r=env.vector3(1,0,0),f=env.vector3(0,1,0),u=env.vector3(0,0,1)}})
         assert(deleted[10] and deleted[11] and (deleted[2] == true) == isNew)
         if accept then
@@ -495,16 +508,146 @@ for _,mode in ipairs({'save','cancel','new_cancel'}) do
     end)
 end
 
-test('new vehicle preview starts inside from the seated player even with an exterior gameplay camera',function()
+test('vehicle placement captures a fixed camera between the front seats for either side of rotated cabins',function()
     local s=harness();withCadDisplay(s);s.vehicle=3
     local env=s.env
+    local v=env.vector3
     assert(loadfile('sonorancad/core/placement/math.lua','t',env))()
-    env.GetPedBoneCoords=function() return env.vector3(10,20,1) end
-    env.GetEntityMatrix=function() return env.vector3(0,1,0),env.vector3(1,0,0),env.vector3(0,0,1),env.vector3(10,20,0) end
-    env.GetEntityHeading=function() return 90 end
+    local M=env.SonoranPlacementMath
+    env.trackDisplayForVehicle(3,2);env.isVehicleBlocked=function() return false end
+    s.events['SonoranCAD::caddisplay::OpenMenu'](true,true)
+    local editor,head,headReads,parent,object,seatCase,created
+    created=9
+    env.GetEntityType=function() return 3 end
+    env.GetEntitySpeed=function() return 0 end
+    env.GetEntityRotation=function() return v(0,0,0) end
+    env.GetPedBoneCoords=function(ped,bone,x,y,z)
+        assert(ped==1 and bone==31086 and x==0 and y==0 and z==0)
+        headReads=headReads+1;return head
+    end
+    env.GetGameplayCamCoord=function() error('fixed cabin camera must not use the gameplay viewpoint') end
+    env.GetModelDimensions=function() return v(-.4,-.1,-.2),v(.2,.5,.6) end
+    env.NetworkGetEntityIsNetworked=function() return false end
+    env.GetDisplayNameFromVehicleModel=function() return 'POLICE' end
+    env.GetEntityBoneIndexByName=function(_,name)
+        if name=='chassis' then return 12 end
+        if seatCase=='missing' then return -1 end
+        if seatCase=='same bone' then return 20 end
+        return name=='seat_dside_f' and 20 or 21
+    end
+    env.GetWorldPositionOfEntityBone=function(_,bone)
+        if (seatCase=='zero driver position' and bone==20) or (seatCase=='zero passenger position' and bone==21) then
+            return v(0,0,0)
+        end
+        local x=bone==20 and -.55 or .75
+        if seatCase=='coincident positions' then x=.1 end
+        return parent.p+parent.r*x+parent.f*.2+parent.u*.3
+    end
+    env.CreateObjectNoOffset=function() created=created+1;return created end
+    env.DeleteObject=function() end
+    env.SetEntityCollision=function() end;env.SetEntityVisible=function() end
+    env.SetEntityLocallyInvisible=function(entity) assert(entity==2,'the seated player must stay visible') end
+    env.SetEntityMatrix=function() end;env.SetEntityCoordsNoOffset=function() end
+    env.AttachEntityToEntity=function() end
+    env.GetEntityMatrix=function(entity)
+        local m=entity==3 and parent or object
+        return m.f,m.r,m.u,m.p
+    end
+    env.SonoranPlacementEditor={IsActive=function() return false end,
+        Start=function(options) editor=options;return true end}
+    for _,yaw in ipairs({45,-120}) do
+        parent=M.cameraBasis(v(6,4,yaw));parent.p=v(100,200,30)
+        object=M.cameraBasis(v(0,0,yaw));object.p=parent.p+parent.f*.9+parent.u*.7
+        for _,side in ipairs({-1,1}) do
+            for _,case in ipairs({'valid','missing','same bone','coincident positions','zero driver position','zero passenger position'}) do
+                seatCase=case;headReads=0
+                head=parent.p+parent.r*(side*.4)+parent.f*.3+parent.u*1.1
+                env.beginVehiclePlacementEditor(false);s:frame()
+                assert(editor and editor.view.mode=='cockpit' and editor.view.fov==65 and not editor.view.hidePlayer)
+                local localEye=editor.view.position-parent.p
+                assert(math.abs(M.dot(localEye,parent.r)-(case=='valid' and .1 or 0))<1e-6)
+                assert(math.abs(M.dot(localEye,parent.f)-.05)<1e-6)
+                assert(math.abs(M.dot(localEye,parent.u)-1.13)<1e-6)
+                local center=object.p+object.r*editor.focusOffset.x+object.f*editor.focusOffset.y+object.u*editor.focusOffset.z
+                assert(#(M.cameraBasis(editor.view.rotation).f-M.unit(center-editor.view.position))<1e-6)
+                assert(#(editor.view.up-parent.u)<1e-6 and #(editor.pivotOffset-editor.focusOffset)<1e-6)
+                local fixed=editor.view.position
+                head=head+v(4,5,6)
+                assert(editor.validate() and editor.validate() and editor.validate())
+                assert(headReads==1 and #(editor.view.position-fixed)<1e-6,'the head is sampled once, never followed')
+                editor.onFinish({accepted=false})
+            end
+        end
+    end
+end)
+
+local function previewHarness()
+    local s=harness()
+    local interact,syncOwners=withCadDisplay(s)
+    local env=s.env
+    assert(loadfile('sonorancad/core/placement/math.lua','t',env))()
+    syncOwners({['world:7']=42});interact()
+    local corners=s.lastDisplayOptions.profile.corners
+    env.CloseCadDisplay(true)
+    local v,M=env.vector3,env.SonoranPlacementMath
+    local topLeft=v(corners[1].x,corners[1].y,corners[1].z)
+    local topRight=v(corners[2].x,corners[2].y,corners[2].z)
+    local bottomRight=v(corners[3].x,corners[3].y,corners[3].z)
+    local bottomLeft=v(corners[4].x,corners[4].y,corners[4].z)
+    -- Derive the visible screen side from the real interaction profile, not a heading convention.
+    local localNormal=M.unit(M.cross(topRight-topLeft,topLeft-bottomLeft))
+    local localCenter=(topLeft+bottomRight)/2
+    function s:assertScreenFaces(point,heading,viewer)
+        local basis=M.cameraBasis(v(0,0,heading))
+        local function worldVector(value) return basis.r*value.x+basis.f*value.y+basis.u*value.z end
+        local screenCenter=point+worldVector(localCenter)
+        local screenNormal=worldVector(localNormal)
+        assert(M.dot(screenNormal,M.unit(viewer-screenCenter))>.75,'the screen front must face the viewer, not its back')
+    end
+    return s
+end
+
+test('new vehicle previews face either seated viewer and clear their head in rotated cabin axes',function()
+    local s=previewHarness();s.vehicle=3
+    local env=s.env
+    local v,M=env.vector3,env.SonoranPlacementMath
     env.GetGameplayCamCoord=function() error('exterior camera used to spawn seated preview') end
-    local point,heading=env.getDisplayPreviewTransform()
-    assert(point.x==10.25 and point.y==20.55 and point.z==.75 and heading==270)
+    for _,yaw in ipairs({0,90,-135}) do
+        local frame=M.cameraBasis(v(7,-4,yaw));frame.p=v(10,20,30)
+        env.GetEntityMatrix=function() return frame.f,frame.r,frame.u,frame.p end
+        env.GetEntityHeading=function(entity) assert(entity==3);return yaw end
+        for _,side in ipairs({-1,1}) do
+            local head=frame.p+frame.r*(side*.45)+frame.u*.9
+            env.GetPedBoneCoords=function(ped,bone,x,y,z)
+                assert(ped==1 and bone==31086 and x==0 and y==0 and z==0)
+                return head
+            end
+            local point,heading=env.getDisplayPreviewTransform()
+            point=v(point.x,point.y,point.z)
+            local delta=point-head
+            assert(M.dot(delta,frame.f)>.65 and M.dot(delta,frame.f)<.9,'preview should sit forward near the dashboard')
+            assert(M.dot(delta,frame.r)*side<-.2 and M.dot(delta,frame.r)*side>-.4,'preview should move toward the cabin center')
+            assert(M.dot(delta,frame.u)<-.25 and M.dot(delta,frame.u)>-.45,'preview should sit below eye level')
+            assert(#delta>.8 and #delta<1,'preview must clear the seated viewer rather than fill the camera')
+            s:assertScreenFaces(point,heading,head)
+        end
+    end
+end)
+
+test('on-foot preview shows the screen front from the gameplay camera',function()
+    local s=previewHarness()
+    local env=s.env
+    local v,M=env.vector3,env.SonoranPlacementMath
+    local eye=v(10,20,30)
+    for _,yaw in ipairs({0,90,-135}) do
+        local rotation=v(-12,0,yaw)
+        env.GetGameplayCamCoord=function() return eye end
+        env.GetGameplayCamRot=function() return rotation end
+        local point,heading=env.getDisplayPreviewTransform()
+        point=v(point.x,point.y,point.z)
+        assert(M.dot(point-eye,M.cameraBasis(rotation).f)>.7)
+        s:assertScreenFaces(point,heading,eye)
+    end
 end)
 
 test('station administrators on foot open station management without a vehicle', function()

@@ -444,8 +444,9 @@ CreateThread(function()
                     local forward,right,up,origin=GetEntityMatrix(vehicle)
                     local head=GetPedBoneCoords(ped,31086,0,0,0)
                     local side=SonoranPlacementMath.dot(head-origin,right)
-                    local point=head+forward*.55+right*(side>0 and -.25 or .25)-up*.25
-                    return {x=point.x,y=point.y,z=point.z},GetEntityHeading(vehicle)+180.0
+                    local point=head+forward*.75+right*(side>0 and -.30 or .30)-up*.35
+                    -- This laptop's screen faces local -Y, toward the seated player.
+                    return {x=point.x,y=point.y,z=point.z},GetEntityHeading(vehicle)
                 end
                 local cameraPosition = GetGameplayCamCoord()
                 local cameraRotation = GetGameplayCamRot(2)
@@ -458,7 +459,7 @@ CreateThread(function()
                     x = cameraPosition.x - math.sin(yaw) * pitchScale * previewDistance,
                     y = cameraPosition.y + math.cos(yaw) * pitchScale * previewDistance,
                     z = cameraPosition.z + math.sin(pitch) * previewDistance
-                }, cameraRotation.z + 180.0
+                }, cameraRotation.z
             end
 
             function spawnDisplay(veh)
@@ -739,11 +740,33 @@ CreateThread(function()
                     if not DoesEntityExist(object) or not DoesEntityExist(vehicle) or not DoesEntityExist(anchor) then cleanup(true); return end
                     local actions = {{id="apply",label="Apply to this vehicle"}}
                     if isAdmin then actions[#actions+1] = {id="save",label="Save for this vehicle model"} end
-                    local vehicleRotation=GetEntityRotation(vehicle,2)
-                    local driverView={position=GetPedBoneCoords(PlayerPedId(),31086,0,.08,.06)+parent.f*.12,
-                        rotation=vector3(vehicleRotation.x-8,vehicleRotation.y,vehicleRotation.z),fov=65}
+                    local minimum,maximum=GetModelDimensions(model)
+                    local focusOffset=(minimum+maximum)*.5
+                    -- Sample a fixed cabin viewpoint once. Keeping it between the front seats
+                    -- and behind the head avoids inheriting the gameplay camera's idle motion.
+                    local right,forward,up=M.unit(parent.r),M.unit(parent.f),M.unit(parent.u)
+                    local headOffset=GetPedBoneCoords(PlayerPedId(),31086,0,0,0)-parent.p
+                    local lateral=0 -- Models without both front-seat bones use the centerline.
+                    local driverSeat=GetEntityBoneIndexByName(vehicle,"seat_dside_f")
+                    local passengerSeat=GetEntityBoneIndexByName(vehicle,"seat_pside_f")
+                    if driverSeat >= 0 and passengerSeat >= 0 and driverSeat ~= passengerSeat then
+                        local driverPosition=GetWorldPositionOfEntityBone(vehicle,driverSeat)
+                        local passengerPosition=GetWorldPositionOfEntityBone(vehicle,passengerSeat)
+                        if #driverPosition > .001 and #passengerPosition > .001
+                            and math.abs(M.dot(passengerPosition-driverPosition,right)) > .1 then
+                            lateral=M.dot((driverPosition+passengerPosition)*.5-parent.p,right)
+                        end
+                    end
+                    local cameraOffset=vector3(lateral,M.dot(headOffset,forward)-.25,M.dot(headOffset,up)+.03)
+                    local cameraPosition=parent.p+right*cameraOffset.x+forward*cameraOffset.y+up*cameraOffset.z
+                    local focus=original.p+original.r*focusOffset.x+original.f*focusOffset.y+original.u*focusOffset.z
+                    local cameraRotation=M.lookRotation(focus-cameraPosition,up) or M.lookRotation(forward,up)
+                    print(('[placement] Cabin camera: vehicle=%d localOffset=%.3f/%.3f/%.3f fov=65')
+                        :format(vehicle,cameraOffset.x,cameraOffset.y,cameraOffset.z))
                     local opened, reason = SonoranPlacementEditor.Start({
-                        entity=preview, title="Vehicle display placement", maxDistance=5, actions=actions,view=driverView,
+                        entity=preview, title="Vehicle display placement", maxDistance=5, actions=actions,
+                        view={mode='cockpit',position=cameraPosition,rotation=cameraRotation,fov=65,up=up,hidePlayer=false},
+                        focusOffset=focusOffset,pivotOffset=focusOffset,
                         validate=function()
                             if not DoesEntityExist(object) or not DoesEntityExist(vehicle) or not DoesEntityExist(anchor)
                                 or GetVehiclePedIsIn(PlayerPedId(),false) ~= vehicle or GetEntitySpeed(vehicle) > .05 then return false end
@@ -754,6 +777,7 @@ CreateThread(function()
                             return true
                         end,
                         onFinish=function(result)
+                            if result.reason then notify(result.reason) end
                             if result.accepted and DoesEntityExist(object) and DoesEntityExist(vehicle) and DoesEntityExist(anchor) then
                                 local relative=M.relative(M.capture(anchor),result.matrix)
                                 local rotation=M.rotation(relative,0)

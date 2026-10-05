@@ -24,6 +24,29 @@ function M.cameraRay(position, rotation, fov, aspect, x, y)
     local height=math.tan(math.rad(fov)*.5)
     return position, M.unit(b.f+b.r*((x*2-1)*height*aspect)+b.u*((1-y*2)*height))
 end
+function M.project(position, rotation, fov, aspect, point)
+    local b=M.cameraBasis(rotation)
+    local delta=point-position
+    local depth=M.dot(delta,b.f)
+    if depth<=.01 or aspect<=0 or fov<=0 or fov>=180 then return false end
+    local height=depth*math.tan(math.rad(fov)*.5)
+    local x,y=.5+M.dot(delta,b.r)/(2*height*aspect),.5-M.dot(delta,b.u)/(2*height)
+    if x~=x or y~=y or math.abs(x)>1e8 or math.abs(y)>1e8 then return false end
+    -- Keep offscreen coordinates: a segment may cross the viewport boundary.
+    return {x=x,y=y}
+end
+function M.transformPoint(m, point)
+    return m.p+m.r*point.x+m.f*point.y+m.u*point.z
+end
+function M.lookRotation(direction, up)
+    if #direction < 1e-8 then return nil end
+    local forward=M.unit(direction)
+    local right=M.cross(forward,up or vector3(0,0,1))
+    if #right < 1e-8 then right=M.cross(forward,vector3(0,1,0)) end
+    if #right < 1e-8 then right=M.cross(forward,vector3(1,0,0)) end
+    right=M.unit(right)
+    return M.rotation({r=right,f=forward,u=M.cross(right,forward)},2)
+end
 function M.relative(frame, m)
     local function localVector(v)
         return vector3(M.dot(v,frame.r)/M.dot(frame.r,frame.r),
@@ -50,10 +73,10 @@ function M.plane(origin, direction, point, normal)
     if t < 0 then return nil end
     return origin + direction*t
 end
-function M.rotate(m, axis, angle)
+function M.rotate(m, axis, angle, pivot)
     local c, s = math.cos(angle), math.sin(angle)
     local function rotate(v) return v*c + M.cross(axis,v)*s + axis*(M.dot(axis,v)*(1-c)) end
-    return { p = m.p, r = rotate(m.r), f = rotate(m.f), u = rotate(m.u) }
+    return { p = pivot and (pivot+rotate(m.p-pivot)) or m.p, r = rotate(m.r), f = rotate(m.f), u = rotate(m.u) }
 end
 function M.angle(a, b, normal)
     return math.atan(M.dot(normal,M.cross(a,b)), M.dot(a,b))

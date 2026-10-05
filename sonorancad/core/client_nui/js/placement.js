@@ -9,6 +9,7 @@
         #placementToolbar h3 {margin:0 0 8px;font-size:12px;font-weight:500;color:#cbd5e1}
         #placementToolbar .row {display:flex;gap:5px;flex-wrap:wrap;align-items:center}
         #placementEditor button {padding:6px 9px;border:1px solid #ffffff30;border-radius:4px;background:#1e293bcc;color:#edf2fa;cursor:pointer;font:12px 'Segoe UI',sans-serif}
+        #placementEditor button:disabled {opacity:.45;cursor:wait}
         #placementToolbar button:hover {background:#3b4f69}
         #placementToolbar button[aria-pressed=true] {border-color:#66c9ff;background:#175078}
         #placementToolbar button[data-finish] {background:#176447;border-color:#37966f}
@@ -28,7 +29,7 @@
         <button data-mode="move" aria-pressed="true">Move</button><button data-mode="rotate" aria-pressed="false">Rotate</button>
         <button data-action="space">Local axes</button><button data-action="snap" aria-pressed="false">Snap: off</button>
         <button data-action="view">Original view</button><button data-action="focus">Frame object</button><button data-action="reset">Reset</button>
-        </div><p>Drag arrows, squares, or rings · Right-drag orbit · Middle-drag pan · Wheel zoom</p>
+        </div><p id="placementHelp"></p>
         <p id="placementValues"></p></div><div id="placementFinish"><span id="placementActions"></span><button data-action="cancel">Cancel</button></div>`;
     document.body.appendChild(root);
     const svg = root.querySelector('svg');
@@ -36,6 +37,12 @@
     const gameOrigin = window.location.ancestorOrigins[0];
     let session = null, pointer = null, pending = null, scheduled = false, sending = false, hovered = null;
     let lastFrame = null;
+    let cameraMode = 'orbit', ready = true, cameraZoom = true;
+    function updateCameraHelp() {
+        root.querySelector('#placementHelp').textContent=(cameraMode==='cockpit'
+            ? 'Drag arrows, squares, or rings · Right-drag look · Middle-drag lean'
+            : 'Drag arrows, squares, or rings · Right-drag orbit · Middle-drag pan')+(cameraZoom?' · Wheel zoom':'');
+    }
     const outbound = [];
     async function pump() {
         if (sending) return;
@@ -81,6 +88,8 @@
     }
     function render(data) {
         lastFrame=data;
+        ready=data.ready!==false;
+        for (const button of root.querySelectorAll('button')) button.disabled=!ready && button.dataset.action!=='cancel';
         svg.setAttribute('viewBox',`0 0 ${innerWidth} ${innerHeight}`);
         const fragment = document.createDocumentFragment();
         for (const handle of data.handles || []) {
@@ -126,7 +135,9 @@
         const snap=root.querySelector('[data-action=snap]');
         snap.setAttribute('aria-pressed',data.snap); snap.textContent=data.snap?'Snap: 1 cm / 5°':'Snap: off';
         const format=v=>['x','y','z'].map(k=>Number(v[k]).toFixed(3)).join(' / ');
-        root.querySelector('#placementValues').textContent=`Position ${format(data.position)}   Rotation ${format(data.rotation)}`;
+        root.querySelector('#placementValues').textContent=ready
+            ? `Position ${format(data.position)}   Rotation ${format(data.rotation)}`
+            : 'Preparing placement…';
     }
     window.addEventListener('message',event=>{
         if (!gameOrigin || event.source!==window.parent || event.origin!==gameOrigin || !event.data) return;
@@ -140,14 +151,22 @@
             svg.replaceChildren();
             if (data.enabled) {
                 root.querySelector('h3').textContent=data.title;
-                root.querySelector('[data-action=view]').textContent=data.title.startsWith('Vehicle')?'Driver view':'Original view';
+                cameraMode=data.cameraMode || 'orbit'; ready=data.ready!==false; cameraZoom=data.cameraZoom!==false;
+                const cockpit=cameraMode==='cockpit';
+                root.querySelector('[data-action=view]').textContent=cockpit?'Cabin view':'Original view';
+                root.querySelector('[data-action=focus]').textContent=cockpit?'Look at display':'Frame object';
+                updateCameraHelp();
                 const actions=root.querySelector('#placementActions'); actions.replaceChildren();
                 for (const action of data.actions || []) {
                     const button=document.createElement('button'); button.dataset.finish=action.id;
                     button.textContent=action.label; actions.appendChild(button);
                 }
+                for (const button of root.querySelectorAll('button')) button.disabled=!ready && button.dataset.action!=='cancel';
+                root.querySelector('#placementValues').textContent=ready?'':'Preparing placement…';
             }
-        } else if (data.type==='placement_frame' && session!==null && data.session===session) render(data);
+        } else if (data.type==='placement_frame' && session!==null && data.session===session) {
+            cameraZoom=data.cameraZoom!==false; updateCameraHelp(); render(data);
+        }
     });
     root.addEventListener('contextmenu',event=>event.preventDefault());
     root.addEventListener('click',event=>{
@@ -158,6 +177,7 @@
         else send(button.dataset.action);
     });
     root.addEventListener('pointerdown',event=>{
+        if (!ready) return;
         const handle=event.target.closest('[data-handle]');
         if (event.target.closest('#placementToolbar, #placementFinish')) return;
         if (event.button!==2 && event.button!==1 && !(event.button===0 && handle)) return;
@@ -184,7 +204,7 @@
     root.addEventListener('pointerup',release); root.addEventListener('pointercancel',release);
     root.addEventListener('lostpointercapture',release);
     root.addEventListener('wheel',event=>{
-        event.preventDefault(); if (pointer) return;
+        event.preventDefault(); if (pointer || !ready || !cameraZoom) return;
         defer({action:'camera',dx:0,dy:0,zoom:Math.sign(event.deltaY)});
     },{passive:false});
 })();

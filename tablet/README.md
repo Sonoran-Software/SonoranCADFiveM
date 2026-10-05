@@ -46,10 +46,16 @@ Selected Display**. Station management does not require a compatible vehicle.
 
 Station and vehicle placement use a mouse gizmo. Drag colored axes or plane handles
 to move in either direction; selected handles turn yellow. Click **Rotate** for
-rotation rings, use the mouse wheel/right-drag to zoom/orbit, and middle-drag to
-pan. Vehicle editing starts from the driver's viewpoint with new props near the
-dashboard. **Driver view** returns to that camera; **Frame object** centers the
-prop from outside when needed. Click **Save station display** to
+rotation rings. Vehicle placement opens a fixed cabin view between the front seats,
+slightly behind the driver's head, aimed at the laptop. It stays still as the
+character and gameplay camera move. Right-drag looks around, the wheel zooms, and
+middle-drag leans a short distance. **Look at display** turns toward the laptop
+without moving the viewpoint; **Cabin view** restores the starting position, aim,
+and lens. The gizmo starts at the laptop's bounds center so its handles remain
+close to the visible prop. New laptops start near the dashboard with the screen
+facing you. Placement uses its own camera and lens, leaving gameplay camera
+preferences unchanged. Station placement uses right-drag to orbit, middle-drag to
+pan, and **Frame object** to center the prop. Click **Save station display** to
 finish station placement. Vehicle placement offers **Apply to this vehicle** and,
 for vehicle administrators, **Save for this vehicle model**. **Cancel** discards
 the preview. Stop the vehicle before editing. The reusable editor API is documented
