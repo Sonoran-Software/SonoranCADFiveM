@@ -146,21 +146,16 @@ test('Lua response validation accepts valid correlated request IDs', () => {
 test('every CAD navigation resets readiness before changing the iframe source', () => {
     const scriptSource = readFileSync(join(__dirname, '..', 'html', 'script.js'), 'utf8');
     const setUrlBlock = scriptSource.match(
-        /else if \(event\.data\.type == "setUrl"\)[\s\S]*?else if \(event\.data\.type == "regbar"\)/,
+        /else if \(event\.data\.type == "setUrl"\)[\s\S]*?(?=\n\s*else if)/,
     )?.[0];
     const refreshBlock = scriptSource.match(
         /else if \(event\.data\.type == "refresh"\)[\s\S]*?\n\s*\}\);/,
     )?.[0];
-    const linkCheckBlock = scriptSource.match(
-        /function runLinkCheck\(\)[\s\S]*?\n\}/,
-    )?.[0];
 
     assert.ok(setUrlBlock, 'setUrl handler should be present');
     assert.ok(refreshBlock, 'refresh handler should be present');
-    assert.ok(linkCheckBlock, 'runLinkCheck should be present');
     assert.ok(setUrlBlock.indexOf('markCadFrameNotReady();') < setUrlBlock.indexOf('.src ='));
     assert.ok(refreshBlock.indexOf('markCadFrameNotReady();') < refreshBlock.indexOf('.src ='));
-    assert.ok(linkCheckBlock.indexOf('markCadFrameNotReady();') < linkCheckBlock.indexOf('.src +='));
 });
 
 test('notepad sync requires both a community link and a responsive CAD session', () => {

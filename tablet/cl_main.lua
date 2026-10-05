@@ -308,11 +308,13 @@ function SetFocused(focused)
 end
 
 -- Remove NUI focus
-RegisterNUICallback('NUIFocusOff', function()
+RegisterNUICallback('NUIFocusOff', function(_, cb)
 	print('NUI Focus Off Received')
+	CloseCadDisplay()
 	DisplayModule("cad", false)
-	toggleTabletDisplay(false)
+	if usingTablet then toggleTabletDisplay(false) end
 	SetFocused(false)
+	cb({ ok = true })
 end)
 
 RegisterNetEvent("SonoranCAD::mini:OpenMini:Return")
@@ -403,8 +405,9 @@ local function setMiniCadRows(args)
 end
 
 local function openCadTablet()
+	if IsCadDisplayActive() then CloseCadDisplay() end
 	DisplayModule("cad", true)
-	toggleTabletDisplay(true)
+	if not usingTablet then toggleTabletDisplay(true) end
 	SetFocused(true)
 end
 
@@ -840,8 +843,8 @@ RegisterNetEvent("SonoranCAD::Tablet::LinkMissing")
 AddEventHandler('SonoranCAD::Tablet::LinkMissing', function()
 	isRegistered = false
 	SendNUIMessage({
-		type = "regbar",
-		show = true
+		type = "cad_link_status",
+		linked = false
 	})
 	publishNotepadSyncStatus()
 end)
@@ -850,8 +853,8 @@ RegisterNetEvent("SonoranCAD::Tablet::LinkFound")
 AddEventHandler("SonoranCAD::Tablet::LinkFound", function()
 	isRegistered = true
 	SendNUIMessage({
-		type = "regbar",
-		show = false
+		type = "cad_link_status",
+		linked = true
 	})
 	publishNotepadSyncStatus()
 end)
@@ -869,10 +872,6 @@ RegisterNUICallback('SetLinkInformation', function(data,cb)
 	end
 	requestTabletLinkStatus()
 	cb(true)
-end)
-
-RegisterNUICallback('runLinkCheck', function()
-	requestTabletLinkStatus()
 end)
 
 RegisterNUICallback('NotepadSyncSessionStatus', function(data, cb)

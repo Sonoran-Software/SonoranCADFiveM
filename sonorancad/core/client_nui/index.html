@@ -1,5 +1,6 @@
 <html>
 	<head>
+		<meta charset="utf-8">
 		<script src="nui://game/ui/jquery.js" type="text/javascript"></script>
 		<script src="js/http.js" type="text/javascript"></script>
 		<style>
@@ -262,6 +263,7 @@
 		</script>
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.1.1/howler.min.js" type="text/javascript"></script>
 		<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js" type="text/javascript"></script>
+		<script src="js/bodycam_viewers.js" type="text/javascript"></script>
 		<script>
 			var audioPlayer = null;
 			var bodycamOverlayVisible = false;
@@ -428,12 +430,16 @@
 					iceServers: [{ urls: "stun:134.199.247.110:3478" }],
 				},
 			};
-			const BODYCAM_PUBLISHER_BUILD = "2026-02-17-p2p-first-v1";
+			const BODYCAM_PUBLISHER_BUILD = "2026-09-30-viewer-cleanup-v2";
 
 			let peerInstance = null;
-			const MAX_BODYCAM_VIEWERS = 4;
-			const peerCalls = new Set();
-			const pendingCalls = new Set();
+			let streamGeneration = 0;
+			let streamStartPromise = null;
+			const bodycamViewers = new BodycamViewerConnections({
+				onWatchingChange: (state) => watchingNotifier.update(state),
+				onDiagnostic: (state) => console.debug("Bodycam viewer lifecycle:", state),
+				onError: (reason) => console.warn("Bodycam stream: ERR-CORE-906 viewer connection error. More: https://sonorancad.com/error/ERR-CORE-906", reason),
+			});
 			let peerReconnectTimer = null;
 			let peerReconnectAttempts = 0;
 			let wsProbe = null;
@@ -461,23 +467,14 @@
 				}).catch(function () {});
 			}
 
-			let watchingState = null;
-			function notifyWatchingState(watching) {
-				const next = !!watching;
-				if (watchingState === next) {
-					return;
-				}
-				watchingState = next;
+			const watchingNotifier = new BodycamWatchingNotifier((state, signal) =>
 				fetch(`https://${GetParentResourceName()}/bodycamWatching`, {
 					method: "POST",
 					headers: { "Content-Type": "application/json; charset=UTF-8" },
-					body: JSON.stringify({ watching: watchingState }),
-				}).catch(function () {});
-			}
-
-			function updateWatchingState() {
-				notifyWatchingState(peerCalls.size > 0 || pendingCalls.size > 0);
-			}
+					body: JSON.stringify(state),
+					signal,
+				})
+			);
 
 			function setCivregVisible(visible) {
 				civregContainer.style.display = visible ? "block" : "none";
@@ -677,10 +674,16 @@
 					console.warn("Bodycam stream: WRN-CORE-900 PeerJS not available; bodycam stream disabled. More: https://sonorancad.com/error/WRN-CORE-900");
 					return;
 				}
+				const generation = streamGeneration;
 				const options = await buildPeerOptions(peerConfig);
+				if (generation !== streamGeneration || peerInstance) return;
 				peerInstance = desiredPeerId ? new Peer(desiredPeerId, options) : new Peer(options);
+				const currentPeer = peerInstance;
 				startWsProbe(options);
 				peerInstance.on("open", function (id) {
+					if (peerInstance !== currentPeer) return;
+					clearTimeout(peerReconnectTimer);
+					peerReconnectTimer = null;
 					peerReconnectAttempts = 0;
 					notifyPeerId(id);
 					wsProbeEnabled = false;
@@ -696,139 +699,26 @@
 					}
 				});
 				peerInstance.on("call", function (call) {
-					if (peerCalls.size + pendingCalls.size >= MAX_BODYCAM_VIEWERS) {
-						try {
-							call.close();
-						} catch (err) {}
-						return;
-					}
-					if (peerCalls.has(call) || pendingCalls.has(call)) {
-						updateWatchingState();
-						return;
-					}
-					if (call.peerConnection) {
-						const startIceStatsLogger = function (pc) {
-							if (!pc || typeof pc.getStats !== "function") {
-								return;
-							}
-							let lastNoPairLogAt = 0;
-							let loggedTurnFallback = false;
-							let debugTimeout = null;
-							let timer = setInterval(async function () {
-								try {
-									const stats = await pc.getStats();
-									let selectedPairId = null;
-									stats.forEach(function (report) {
-										if (report.type === "transport" && report.selectedCandidatePairId) {
-											selectedPairId = report.selectedCandidatePairId;
-										}
-									});
-									if (!selectedPairId) {
-										const now = Date.now();
-										if (now - lastNoPairLogAt >= 10000) {
-											lastNoPairLogAt = now;
-										}
-										return;
-									}
-									const pair = stats.get(selectedPairId);
-									const local = pair && stats.get(pair.localCandidateId);
-									const remote = pair && stats.get(pair.remoteCandidateId);
-									if (!loggedTurnFallback) {
-										const localType = local && local.candidateType ? String(local.candidateType).toLowerCase() : "";
-										const remoteType = remote && remote.candidateType ? String(remote.candidateType).toLowerCase() : "";
-										const usingRelay = localType === "relay" || remoteType === "relay";
-										if (usingRelay) {
-											loggedTurnFallback = true;
-										}
-									}
-								} catch (err) {
-									console.warn("Bodycam stream: WRN-CORE-900 ICE stats failed. More: https://sonorancad.com/error/WRN-CORE-900", err);
-								}
-							}, 3000);
-
-							debugTimeout = setTimeout(async function () {
-								if (pc.connectionState === "connected" || pc.connectionState === "closed") {
-									return;
-								}
-								try {
-									const stats = await pc.getStats();
-									console.warn("Bodycam stream: WRN-CORE-900 ICE did not connect within 20s. More: https://sonorancad.com/error/WRN-CORE-900", {
-										iceConnectionState: pc.iceConnectionState,
-										iceGatheringState: pc.iceGatheringState,
-										connectionState: pc.connectionState,
-										candidates: summarizeIceCandidatesFromStats(stats),
-									});
-								} catch (err) {
-									console.warn("Bodycam stream: WRN-CORE-900 ICE timeout snapshot failed. More: https://sonorancad.com/error/WRN-CORE-900", err);
-								}
-							}, 20000);
-
-							pc.addEventListener("connectionstatechange", function () {
-								if (pc.connectionState === "connected" || pc.connectionState === "failed" || pc.connectionState === "closed") {
-									clearInterval(timer);
-									if (debugTimeout) {
-										clearTimeout(debugTimeout);
-										debugTimeout = null;
-									}
-								}
-							});
-						};
-						const pc = call.peerConnection;
-						pc.addEventListener("icecandidate", function (event) {
-							if (event && event.candidate) {
-								const cand = event.candidate.candidate || "";
-								const isMdns = cand.indexOf(".local") !== -1;
-								const typeMatch = cand.match(/\btyp\s([a-z0-9]+)/i);
-								const candType = typeMatch && typeMatch[1] ? typeMatch[1].toLowerCase() : "unknown";
-							}
-						});
-						pc.addEventListener("icecandidateerror", function (event) {
-							console.warn("Bodycam stream: WRN-CORE-900 ICE candidate error. More: https://sonorancad.com/error/WRN-CORE-900", {
-								errorCode: event && event.errorCode,
-								errorText: event && event.errorText,
-								url: event && event.url,
-								address: event && event.address,
-								port: event && event.port,
-							});
-						});
-						startIceStatsLogger(pc);
-					}
-					if (peerStream.mediaStream) {
-						try {
-							call.answer(peerStream.mediaStream);
-							peerCalls.add(call);
-						} catch (err) {
-							console.warn("Bodycam stream: ERR-CORE-906 failed to answer call. More: https://sonorancad.com/error/ERR-CORE-906");
-						}
-					} else {
-						pendingCalls.add(call);
-							console.warn("Bodycam stream: WRN-CORE-900 stream not ready; deferring answer. More: https://sonorancad.com/error/WRN-CORE-900");
-					}
-					updateWatchingState();
-					call.on("close", function () {
-						peerCalls.delete(call);
-						pendingCalls.delete(call);
-						updateWatchingState();
-					});
-					call.on("error", function (err) {
-						console.warn("Bodycam stream: ERR-CORE-906 PeerJS call error. More: https://sonorancad.com/error/ERR-CORE-906");
-						peerCalls.delete(call);
-						pendingCalls.delete(call);
-						updateWatchingState();
-					});
+					if (peerInstance !== currentPeer) return;
+					bodycamViewers.add(call, peerStream.mediaStream);
 				});
 				peerInstance.on("error", function (err) {
+					if (peerInstance !== currentPeer) return;
 					console.warn("Bodycam stream: ERR-CORE-906 PeerJS error. More: https://sonorancad.com/error/ERR-CORE-906");
 				});
 				peerInstance.on("disconnected", function () {
+					if (peerInstance !== currentPeer) return;
 					console.warn("Bodycam stream: WRN-CORE-900 PeerJS disconnected. More: https://sonorancad.com/error/WRN-CORE-900");
 					schedulePeerReconnect();
 				});
 				peerInstance.on("close", function () {
+					if (peerInstance !== currentPeer) return;
+					clearTimeout(peerReconnectTimer);
+					peerReconnectTimer = null;
+					peerReconnectAttempts = 0;
 					console.warn("Bodycam stream: WRN-CORE-900 PeerJS closed. More: https://sonorancad.com/error/WRN-CORE-900");
-					peerCalls.clear();
-					pendingCalls.clear();
-					updateWatchingState();
+					bodycamViewers.closeAll("peer_closed");
+					peerInstance = null;
 				});
 			}
 
@@ -871,32 +761,40 @@
 					console.warn("Bodycam stream: ERR-CORE-906 PeerJS reconnect attempts exceeded. More: https://sonorancad.com/error/ERR-CORE-906");
 					return;
 				}
+				const reconnectingPeer = peerInstance;
 				peerReconnectAttempts += 1;
 				peerReconnectTimer = setTimeout(function () {
 					peerReconnectTimer = null;
-					if (peerInstance && peerInstance.reconnect) {
-						peerInstance.reconnect();
+					if (peerInstance !== reconnectingPeer || reconnectingPeer.destroyed || !reconnectingPeer.disconnected) return;
+					try {
+						reconnectingPeer.reconnect();
+					} catch (err) {
+						console.warn("Bodycam stream: ERR-CORE-906 reconnect failed. More: https://sonorancad.com/error/ERR-CORE-906");
+						schedulePeerReconnect();
 					}
 				}, 5000);
 			}
 
-			async function startBodycamStream(payload) {
+			function startBodycamStream(payload) {
+				if (streamStartPromise) return streamStartPromise;
+				const generation = streamGeneration;
+				const attempt = startBodycamStreamAttempt(payload, generation).catch((err) => {
+					if (generation === streamGeneration) throw err;
+				});
+				const pending = attempt.finally(() => {
+					if (streamStartPromise === pending) streamStartPromise = null;
+				});
+				streamStartPromise = pending;
+				return pending;
+			}
+
+			async function startBodycamStreamAttempt(payload, generation) {
 				const remotePeerId = payload && payload.remotePeerId ? payload.remotePeerId : null;
 				if (!remotePeerId) {
 					console.warn("Bodycam stream: WRN-CORE-900 remotePeerId not configured. More: https://sonorancad.com/error/WRN-CORE-900");
 					notifyBodycamStreamState(false, "missing_remote_peer_id");
 					return;
 				}
-				if (peerStream.mediaStream) {
-					console.warn("Bodycam stream: WRN-CORE-900 capture already active. More: https://sonorancad.com/error/WRN-CORE-900");
-					peerStream.remotePeerId = remotePeerId;
-					if (window.BodycamRecordingManager) {
-						window.BodycamRecordingManager.setSourceStream(peerStream.mediaStream);
-					}
-					notifyBodycamStreamState(true, "already_active");
-					return;
-				}
-
 				const basePeerConfig = payload && payload.peerConfig ? payload.peerConfig : {};
 				const peerConfig = {
 					...basePeerConfig,
@@ -907,7 +805,20 @@
 					turnPort: payload && payload.turnPort ? payload.turnPort : basePeerConfig.turnPort,
 					relay: payload && typeof payload.relay !== "undefined" ? payload.relay : basePeerConfig.relay,
 				};
+				if (peerStream.mediaStream) {
+					console.warn("Bodycam stream: WRN-CORE-900 capture already active. More: https://sonorancad.com/error/WRN-CORE-900");
+					await ensurePeer(peerConfig, remotePeerId);
+					if (generation !== streamGeneration) return;
+					peerStream.remotePeerId = remotePeerId;
+					if (window.BodycamRecordingManager) {
+						window.BodycamRecordingManager.setSourceStream(peerStream.mediaStream);
+					}
+					notifyBodycamStreamState(true, "already_active");
+					return;
+				}
+
 				await ensurePeer(peerConfig, remotePeerId);
+				if (generation !== streamGeneration) return;
 
 				const fps = payload && payload.fps ? payload.fps : 30;
 				if (!window.BodycamGameRenderer) {
@@ -924,6 +835,7 @@
 
 				BodycamGameRenderer.start(fps);
 				const videoStream = canvas.captureStream(fps);
+				peerStream.videoStream = videoStream;
 				const videoTracks = videoStream.getVideoTracks();
 				if (!videoTracks.length) {
 					console.warn("Bodycam stream: ERR-CORE-906 no video tracks available from canvas. More: https://sonorancad.com/error/ERR-CORE-906");
@@ -933,32 +845,48 @@
 				BodycamGameRenderer.setVideoTrack(videoTracks[0]);
 
 				let audioTrack = null;
+				let audioContext = null;
+				let audioDestination = null;
+				let micStream = null;
 				const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
 				if (AudioContextCtor) {
 					try {
-						peerStream.audioContext = new AudioContextCtor();
-						peerStream.audioDestination = peerStream.audioContext.createMediaStreamDestination();
+						audioContext = new AudioContextCtor();
+						audioDestination = audioContext.createMediaStreamDestination();
+						// Let shutdown close the context while microphone permission is pending.
+						peerStream.audioContext = audioContext;
+						peerStream.audioDestination = audioDestination;
 						if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
 							try {
-								peerStream.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-								const micSource = peerStream.audioContext.createMediaStreamSource(peerStream.micStream);
-								micSource.connect(peerStream.audioDestination);
+								micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+								const micSource = audioContext.createMediaStreamSource(micStream);
+								micSource.connect(audioDestination);
 							} catch (err) {
 								console.warn("Bodycam stream: ERR-CORE-906 microphone capture failed. More: https://sonorancad.com/error/ERR-CORE-906");
 							}
 						} else {
 							console.warn("Bodycam stream: WRN-CORE-900 getUserMedia unavailable; continuing without audio. More: https://sonorancad.com/error/WRN-CORE-900");
 						}
-						if (peerStream.audioContext.state === "suspended") {
-							await peerStream.audioContext.resume();
+						if (audioContext.state === "suspended") {
+							await audioContext.resume();
 						}
-						audioTrack = peerStream.audioDestination.stream.getAudioTracks()[0] || null;
+						audioTrack = audioDestination.stream.getAudioTracks()[0] || null;
 					} catch (err) {
 						console.warn("Bodycam stream: ERR-CORE-906 audio setup failed. More: https://sonorancad.com/error/ERR-CORE-906");
 					}
 				} else {
 						console.warn("Bodycam stream: WRN-CORE-900 AudioContext unavailable; continuing without audio. More: https://sonorancad.com/error/WRN-CORE-900");
 				}
+
+				if (generation !== streamGeneration) {
+					videoStream.getTracks().forEach((track) => track.stop());
+					if (micStream) micStream.getTracks().forEach((track) => track.stop());
+					if (audioContext) await audioContext.close().catch(() => {});
+					return;
+				}
+				peerStream.audioContext = audioContext;
+				peerStream.audioDestination = audioDestination;
+				peerStream.micStream = micStream;
 
 				const tracks = [videoTracks[0]];
 				if (audioTrack) {
@@ -975,41 +903,18 @@
 
 				tracks.forEach((track) => {
 					track.onended = function () {
-						stopBodycamStream();
+						if (generation === streamGeneration) stopBodycamStream();
 					};
 				});
 
-				if (pendingCalls.size > 0) {
-					pendingCalls.forEach(function (call) {
-						try {
-							call.answer(peerStream.mediaStream);
-							peerCalls.add(call);
-						} catch (err) {
-							console.warn("Bodycam stream: ERR-CORE-906 failed to answer deferred call. More: https://sonorancad.com/error/ERR-CORE-906");
-						}
-					});
-					pendingCalls.clear();
-				}
-				updateWatchingState();
-
-				await ensurePeer(peerConfig, peerStream.remotePeerId);
+				bodycamViewers.answerPending(peerStream.mediaStream);
 			}
 
 			async function stopBodycamStream() {
+				streamGeneration += 1;
+				streamStartPromise = null;
 				notifyBodycamStreamState(false, "stopped");
-				peerCalls.forEach(function (call) {
-					try {
-						call.close();
-					} catch (err) {}
-				});
-				peerCalls.clear();
-				pendingCalls.forEach(function (call) {
-					try {
-						call.close();
-					} catch (err) {}
-				});
-				pendingCalls.clear();
-				updateWatchingState();
+				bodycamViewers.closeAll("stream_stopped");
 				if (window.BodycamGameRenderer) {
 					BodycamGameRenderer.stop();
 				}
@@ -1049,8 +954,9 @@
 				}
 				peerStream.remotePeerId = null;
 				if (peerInstance) {
-					peerInstance.destroy();
+					const closingPeer = peerInstance;
 					peerInstance = null;
+					closingPeer.destroy();
 				}
 				if (peerReconnectTimer) {
 					clearTimeout(peerReconnectTimer);
@@ -1156,5 +1062,6 @@
 				}
 			});
 		</script>
+		<script src="js/placement.js" type="text/javascript"></script>
 	</body>
 </html>

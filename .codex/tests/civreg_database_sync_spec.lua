@@ -392,4 +392,28 @@ test("missing SQL provider prevents portrait writes", function()
     equal(#h.queries, 0)
 end)
 
+test("completed portraits do not suppress a fresh selection request", function()
+    local h = harness()
+    local first = h:requestFrameworkCapture()
+    equal(first.payload.characterId, "QB-123")
+    h:submitCapture(first, PNG)
+    local second = h:requestFrameworkCapture()
+    assert(first.payload.token ~= second.payload.token)
+    h:submitCapture(second, PNG)
+    equal(#h.queries, 3)
+end)
+
+test("uploads are rejected if the player changed characters", function()
+    local options = { currentCharacterId = "QB-123" }
+    local h = harness(options)
+    local first = h:requestFrameworkCapture()
+    options.currentCharacterId = "QB-999"
+    h:submitCapture(first, PNG)
+    equal(#h.queries, 1)
+    local second = h:requestFrameworkCapture()
+    equal(second.payload.characterId, "QB-999")
+    h:submitCapture(second, PNG)
+    equal(#h.queries, 2)
+end)
+
 print(("%d civreg database sync regression tests passed."):format(passed))

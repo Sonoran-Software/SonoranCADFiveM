@@ -8,6 +8,7 @@ local weaponAutoTriggerLatched = false
 local lightsAutoTriggerLatched = false
 local pendingAutoRecordingTrigger = nil
 local watchingDisplayOn = false
+local lastWatchingSequence = 0
 local forceDisplayOff = false
 local bodycamDutyRevoked = false
 local showOverlay = true
@@ -593,6 +594,7 @@ CreateThread(function()
                 end
                 peerStreamActive = false
                 peerStreamReady = false
+                watchingDisplayOn = false
                 bodyCamOn = false
                 pendingRecordingStart = nil
                 pendingPeerStart = nil
@@ -657,7 +659,19 @@ CreateThread(function()
             end)
 
             RegisterNUICallback('bodycamWatching', function(data, cb)
+                local sequence = tonumber(data and data.sequence)
+                if not sequence or sequence ~= sequence or sequence == math.huge or
+                    sequence % 1 ~= 0 or sequence <= lastWatchingSequence then
+                    cb({ ok = true, ignored = true })
+                    return
+                end
+                lastWatchingSequence = sequence
                 local watching = data and data.watching == true
+                -- A late callback from a stopped stream cannot re-enable the display.
+                watching = watching and peerStreamActive and not bodycamDutyRevoked
+                debugLog(('Bodycam viewer state: watching=%s active=%s pending=%s reason=%s sequence=%s'):format(
+                    tostring(watching), tostring(data.active or 0), tostring(data.pending or 0),
+                    tostring(data.reason or 'unknown'), tostring(sequence)))
                 if watchingDisplayOn ~= watching then
                     watchingDisplayOn = watching
                     applyDisplayState()
@@ -994,7 +1008,7 @@ CreateThread(function()
                 PublishBodycamRuntime("initialized")
             end)
 
-            RegisterNetEvent('SonoranCAD::bodycam::Toggle', function(manualActivation, toggle, forceOff)
+            RegisterNetEvent('SonoranCAD::bodycam::Toggle', function(manualActivation, toggle, forceOff, canForceOff)
                 local isManualActivation = manualActivation == true
                 local shouldToggle = toggle == true
                 local isForceOff = forceOff == true
@@ -1026,7 +1040,14 @@ CreateThread(function()
                 end
 
                 if isManualActivation and not shouldToggle and watchingDisplayOn and not isForceOff then
-                    showClientError('BODYCAM_WATCH_ACTIVE')
+                    if canForceOff == true then
+                        showClientError('BODYCAM_WATCH_ACTIVE',
+                            'Bodycam cannot be turned off while it is being watched. To force it off, use /%s forceoff.',
+                            pluginConfig.command)
+                    else
+                        showClientError('BODYCAM_WATCH_ACTIVE',
+                            'Bodycam cannot be turned off while it is being watched. You do not have permission to force off your bodycam. Wait until all viewers stop watching, then try again.')
+                    end
                     return
                 end
 
