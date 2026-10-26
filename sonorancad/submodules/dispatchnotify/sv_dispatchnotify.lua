@@ -674,19 +674,59 @@ if pluginConfig.enabled then
         end
     end)
 
+    local NoteCooldowns = {}
+
+    AddEventHandler("playerDropped", function()
+        NoteCooldowns[source] = nil
+    end)
+
     RegisterNetEvent("SonoranCAD::dispatchnotify:AddNoteToCall")
     AddEventHandler("SonoranCAD::dispatchnotify:AddNoteToCall", function(callId, note)
         local source = source
-        debugLog(("Got note add request from %s, call id %s: %s"):format(source, callId, note))
+        callId = tonumber(callId)
+        if callId == nil or callId <= 0 or callId % 1 ~= 0 then
+            sendClientError(source, "FEATURE_UNAVAILABLE", "Invalid call ID.")
+            return
+        end
+        if type(note) ~= "string" or #note > 2000 then
+            sendClientError(source, "FEATURE_UNAVAILABLE", "Notes must contain 1 to 2000 bytes of text.")
+            return
+        end
+        note = note:gsub("%c", " "):match("^%s*(.-)%s*$")
+        if note == "" then
+            sendClientError(source, "FEATURE_UNAVAILABLE", "Note text cannot be empty.")
+            return
+        end
+
+        -- Reserve the cooldown before unit lookup or the API request can yield.
+        local now = GetGameTimer()
+        if NoteCooldowns[source] and now - NoteCooldowns[source] < 3000 then
+            sendClientError(source, "FEATURE_UNAVAILABLE", "Please wait before sending another call note.")
+            return
+        end
+        NoteCooldowns[source] = now
+
+        local unit = GetUnitByPlayerId(source)
         local call = GetCallCache()[callId]
-        if call == nil then
+        if unit == nil then
+            sendClientError(source, "PLAYER_NOT_IN_CAD")
+            return
+        end
+        if call == nil or call.dispatch == nil or call.dispatch.status == 2 then
             sendClientError(source, "FEATURE_UNAVAILABLE", "Unable to find call.")
-        else
-            local payload = { serverId = tonumber(Config.serverId), note = note, callId = callId }
-            local response = CadApiAddDispatchNote(payload)
-            if not response.success then
-                CadApiLogFailure("ADD_CALL_NOTE", response, payload)
-            end
+            return
+        end
+        -- The client call ID is untrusted; authorize against the server's attachment cache.
+        if not has_value(call.dispatch.idents, unit.id) then
+            sendClientError(source, "FEATURE_UNAVAILABLE", "You must be attached to this call to add notes.")
+            return
+        end
+
+        debugLog(("Got note add request from %s, call id %s: %s"):format(source, callId, note))
+        local payload = { serverId = tonumber(Config.serverId), note = note, callId = callId }
+        local response = CadApiAddDispatchNote(payload)
+        if not response.success then
+            CadApiLogFailure("ADD_CALL_NOTE", response, payload)
         end
     end)
     if isPluginLoaded("wraithv2") then
