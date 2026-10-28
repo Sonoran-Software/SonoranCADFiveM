@@ -44,7 +44,7 @@ env.CadApiCreateEmergencyCall = function()
     if restartDuringNextOffer then
         restartDuringNextOffer = false
         events.onResourceStop('night_ers')
-        events.onResourceStart('night_ers')
+        events.onServerResourceStart('night_ers')
     end
     return {success = true, callId = 123}
 end
@@ -90,7 +90,7 @@ events['SonoranCAD::ErsIntegration::BuildChars'](ped)
 assert(recordRequests == 2, 'character record should be created')
 
 events.onResourceStop('night_ers')
-events.onResourceStart('night_ers')
+events.onServerResourceStart('night_ers')
 events['ErsIntegration::OnIsOfferedCallout'](callout)
 events['ErsIntegration::OnAcceptedCalloutOffer'](callout)
 events['SonoranCAD::ErsIntegration::BuildVehs']({license_plate = 'TEST123', model = 'sedan'})

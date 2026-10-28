@@ -1185,8 +1185,9 @@ if pluginConfig.enabled then
         ersFailure("startup", ersHealth.status)
         errorLog("ERS_RESOURCE_NOT_STARTED", ersHealth.status)
     end
-    AddEventHandler('onResourceStart', function(resourceName)
-        if resourceName == 'night_ers' then
+    -- The immediate onResourceStart event still reports the resource as 'starting'.
+    AddEventHandler('onServerResourceStart', function(resourceName)
+        if resourceName == 'night_ers' and not ersHealth.ready then
             debugLog("night ERS resource started.")
             startErs()
         end
