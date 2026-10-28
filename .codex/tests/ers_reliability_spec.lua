@@ -73,7 +73,7 @@ assert(not env.GetErsIntegrationDiagnostics().ready)
 events['ErsIntegration::OnIsOfferedCallout']({Coordinates = {x = 1, y = 2}})
 assert(env.GetErsIntegrationDiagnostics().counters.offered == 0, 'events should not run while ERS is stopped')
 state = 'started'
-events.onResourceStart('night_ers')
+events.onServerResourceStart('night_ers')
 assert(handlerRegistrations == registrations, 'resource restart must not register duplicate handlers')
 assert(#threads == 2, 'resource restart should resync the catalog')
 threads[2]()
