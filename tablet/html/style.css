@@ -172,324 +172,472 @@
 	font-family: 'Trebuchet MS', 'Lucida Sans Unicode', 'Lucida Grande', 'Lucida Sans', Arial, sans-serif;
 }
 
-/* Mini-Cad Hud */
-a {
-	color: white;
-	text-decoration: none; /* no underline */
-	font-size: 14px;
-	transition: all 0.2s ease;
-}
-
-a:hover {
-	opacity: 0.8;
-}
-
-.control {
-	font-size: 16px;
-	padding: 0 5px;
-}
-
+/* Mini CAD: compact dispatch panel. */
 #hudDiv {
-	font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
-	position: absolute;
-	top: 3%;
-	left: 86%;
-	transform: translate(-50%, 0);
-	width: 360px;
-	height: auto;
-	border-radius: 8px;
-	overflow: hidden;
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-	background: #2c2c2c;
-	border: 1px solid #404040;
-	transition: opacity 0.15s ease;
+    box-sizing: border-box;
+    position: absolute;
+    top: 3%;
+    left: 86%;
+    transform: translate(-50%, 0);
+    display: flex;
+    flex-direction: column;
+    width: 360px;
+    height: auto;
+    min-height: min(190px, calc(100vh - var(--hud-top, 3vh) - 12px));
+    max-width: calc(100vw - 24px);
+    max-height: calc(100vh - var(--hud-top, 3vh) - 12px);
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: #242424;
+    color: #f3f3f3;
+    border: 1px solid #424242;
+    border-left: 3px solid #e74c3c;
+    border-radius: 5px;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.18);
+    transition: opacity 0.15s ease;
 }
 
-#hudFrame {
-	text-align: center;
+#hudDiv *,
+#hudDiv *::before,
+#hudDiv *::after {
+    box-sizing: border-box;
 }
 
-#hudFrame #hudHeader {
-	height: 44px;
-	background: #1a1a1a;
-	color: white;
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-	font-size: 13px;
-	padding: 0 16px;
-	border-bottom: 2px solid #e74c3c;
+#hudDiv button,
+#hudDiv input {
+    font-family: inherit;
 }
 
-#hudHeaderCalls {
-	font-weight: 600;
-	color: #ffffff;
-	background: #e74c3c;
-	padding: 4px 8px;
-	border-radius: 4px;
-	font-size: 12px;
+#hudDiv button {
+    cursor: pointer;
 }
 
-#hudHeaderTime {
-	font-weight: 500;
-	color: #b0b0b0;
+#hudDiv #hudFrame {
+    display: flex;
+    flex: 0 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 106px;
+    max-height: calc(100vh - var(--hud-top, 3vh) - 54px);
+    text-align: left;
 }
 
-#hudHeaderControls {
-	display: flex;
-	gap: 6px;
+#hudDiv #hudHeader {
+    display: flex;
+    flex: 0 0 34px;
+    align-items: center;
+    justify-content: flex-start;
+    height: 34px;
+    padding: 0 9px 0 13px;
+    gap: 10px;
+    background: #1c1c1c;
+    border-bottom: 1px solid #373737;
 }
 
-#hudHeaderControls .control {
-	width: 22px;
-	height: 22px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	border-radius: 4px;
-	background: #404040;
-	transition: all 0.2s ease;
+#hudDiv #hudHeaderTime {
+    order: 0;
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    line-height: 1;
+    font-weight: 750;
+    letter-spacing: 1.05px;
+    color: #ededed;
 }
 
-#hudHeaderControls .control:hover {
-	background: #e74c3c;
+#hudDiv #hudHeaderCalls {
+    order: 1;
+    color: #adadad;
+    font-size: 11px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
-#hudFrame #hudContent {
-	height: auto;
-	min-height: 110px;
-	background: #2c2c2c;
-	font-weight: 500;
-	color: white;
-	display: flex;
-	justify-content: space-evenly;
-	align-items: center;
-	flex-direction: column;
-	padding: 16px;
+#hudDiv #hudHeaderControls {
+    display: flex;
+    flex: 0 0 auto;
+    order: 2;
+    gap: 3px;
 }
 
-#hudFrame #hudContent #callCode {
-	font-size: 17px;
-	color: #e74c3c;
-	font-weight: 700;
-	margin-bottom: 6px;
-	letter-spacing: 0.3px;
+#hudDiv #hudHeaderControls .control {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 23px;
+    height: 23px;
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: #b8b8b8;
+    font-size: 16px;
+    line-height: 1;
+    font-weight: 400;
+    transition: background 0.15s ease, color 0.15s ease;
 }
 
-#hudFrame #hudContent #callTitle {
-	font-size: 14px;
-	margin-bottom: 6px;
-	color: #ffffff;
-	font-weight: 600;
-	line-height: 1.3;
-	max-width: 100%;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	display: block;
+#hudDiv #hudHeaderControls .control:first-child {
+    font-size: 12px;
 }
 
-#hudFrame #hudContent #callLocation {
-	font-size: 13px;
-	margin-bottom: 10px;
-	color: #b0b0b0;
-	background: #404040;
-	padding: 4px 8px;
-	border-radius: 4px;
-	max-width: 100%;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	display: block;
+#hudDiv #hudHeaderControls .control:hover {
+    background: #3b3b3b;
+    color: white;
 }
 
-#hudFrame #hudContent #callUnits {
-	font-size: 12px;
-	display: flex;
-	flex-direction: row;
-	flex-wrap: wrap;
-	justify-content: center;
-	align-items: center;
-	gap: 4px;
-	padding: 6px 0;
+#hudDiv #hudContent {
+    display: flex;
+    flex: 0 1 auto;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    min-width: 0;
+    min-height: 0;
+    padding: 11px 13px 21px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    background: #242424;
 }
 
-#hudFrame #hudContent #callUnits #nounits {
-	color: #e74c3c;
-	font-style: italic;
-	opacity: 0.9;
-	background: #1a1a1a;
-	padding: 3px 6px;
-	border-radius: 3px;
-	border: 1px solid #404040;
+#hudDiv:not(.details-open) #hudFrame,
+#hudDiv:not(.details-open) #hudContent {
+    flex-grow: 1;
 }
 
-#hudFrame #hudContent #callUnits .unit {
-	background: #e74c3c;
-	border-radius: 3px;
-	padding: 3px 6px;
-	font-size: 11px;
-	letter-spacing: 0.3px;
-	font-weight: 600;
-	max-width: 80px;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	display: inline-block;
+#hudDiv:not(.details-open) #hudFrame {
+    max-height: none;
 }
 
-#hudFrame #hudFooter {
-	height: 44px;
-	background: #1a1a1a;
-	color: white;
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-	padding: 0 12px;
-	border-top: 1px solid #404040;
+#hudDiv[data-empty="true"] #hudContent {
+    align-items: center;
+    justify-content: center;
+    padding: 18px 13px;
 }
 
-#hudFrame #hudFooter a {
-	padding: 6px 10px;
-	border-radius: 4px;
-	transition: all 0.2s ease;
-	font-weight: 500;
-	font-size: 12px;
-	background: #404040;
+#hudDiv[data-empty="true"] #callCode {
+    margin: 0;
+    color: #adadad;
+    font-size: 13px;
+    line-height: 18px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-align: center;
 }
 
-#hudFrame #hudFooter a:hover {
-	background: #e74c3c;
+#hudDiv[data-empty="true"] #callTitle,
+#hudDiv[data-empty="true"] #callLocation,
+#hudDiv[data-empty="true"] #callUnits {
+    display: none;
 }
 
-#hudFrame #hudFooter .hidden {
-	color: rgba(70, 70, 70, 0.3);
-	background: #2c2c2c;
-	border: 1px solid #404040;
-	cursor: not-allowed;
+#hudDiv #hudContent > span {
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: 100%;
 }
 
-#hudFrame #hudFooter .hidden:hover {
-	background: #2c2c2c;
+#hudDiv #callCode {
+    display: block;
+    color: #e74c3c;
+    font-size: 12px;
+    line-height: 14px;
+    font-weight: 750;
+    letter-spacing: 0.2px;
+    margin: 0 0 3px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
-#hudFrame #hudFooter a.active {
-	background: #e74c3c;
-	color: white;
+#hudDiv #callTitle {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    font-size: 16px;
+    font-weight: 650;
+    line-height: 20px;
+    color: #f7f7f7;
+    margin: 0 0 5px;
 }
 
-#hudFrame #hudFooter a.details-active {
-	background: #e74c3c;
-	color: white;
+#hudDiv #callLocation {
+    display: block;
+    color: #b9b9b9;
+    font-size: 12px;
+    line-height: 17px;
+    margin: 0 0 8px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
-#hudDetails {
-	padding: 12px 16px;
-	background: #262626;
-	font-weight: 500;
-	color: white;
-	display: block;
-	border-top: 1px solid #404040;
+#hudDiv.details-open {
+    min-height: min(280px, calc(100vh - var(--hud-top, 3vh) - 12px));
 }
 
-#hudDetails .label {
-	padding-bottom: 6px;
-	color: #e74c3c;
-	font-size: 12px;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.3px;
-	display: block;
-	margin-top: 8px;
+#hudDiv.details-open #hudContent {
+    max-height: 35vh;
 }
 
-#hudDetails .label:first-child {
-	margin-top: 0;
+#hudDiv.details-open #callCode,
+#hudDiv.details-open #callTitle,
+#hudDiv.details-open #callLocation {
+    display: block;
+    -webkit-line-clamp: unset;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    text-overflow: clip;
 }
 
-#hudDetails #callDescription {
-	font-size: 13px;
-	padding: 8px;
-	line-height: 1.4;
-	color: #e0e0e0;
-	background: #2c2c2c;
-	border-radius: 4px;
-	border: 1px solid #404040;
-	margin-bottom: 8px;
-	display: block;
-	word-wrap: break-word;
-	overflow-wrap: break-word;
-	max-width: 100%;
+#hudDiv #callUnits {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    align-content: flex-start;
+    justify-content: flex-start;
+    gap: 5px;
+    width: 100%;
+    max-height: 64px;
+    padding: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
-#hudDetails #callNotes {
-	display: block;
-	width: 100%;
+#hudDiv #callUnits .unit {
+    display: inline-block;
+    flex: 0 0 auto;
+    max-width: 110px;
+    height: 18px;
+    padding: 1px 5px;
+    border: 1px solid #484848;
+    border-radius: 3px;
+    background: #303030;
+    color: #cecece;
+    font-size: 10px;
+    line-height: 14px;
+    font-weight: 550;
+    letter-spacing: 0.2px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
-#hudDetails #callNotes span {
-	font-size: 12px;
-	padding: 6px 8px;
-	border-bottom: 1px solid #404040;
-	background: #2c2c2c;
-	border-radius: 3px;
-	line-height: 1.3;
-	display: block;
-	margin-bottom: 4px;
-	word-wrap: break-word;
-	overflow-wrap: break-word;
-	max-width: 100%;
+#hudDiv #callUnits #nounits {
+    color: #939393;
+    font-size: 11px;
+    line-height: 18px;
+    overflow-wrap: anywhere;
 }
 
-#hudDetails #callNotes span:last-child {
-	border-bottom: none;
-	margin-bottom: 0;
+#hudDiv #hudFooter {
+    display: flex;
+    flex: 0 0 38px;
+    align-items: center;
+    justify-content: space-between;
+    height: 38px;
+    padding: 0 9px;
+    gap: 6px;
+    background: #1c1c1c;
+    border-top: 1px solid #373737;
 }
 
-#hudInput {
-	height: 48px;
-	background: #1a1a1a;
-	color: white;
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-	padding: 0 12px;
-	border-top: 1px solid #404040;
-	gap: 8px;
+#hudDiv #hudFooter button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 25px;
+    min-width: 0;
+    padding: 0 8px;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    background: transparent;
+    color: #bcbcbc;
+    font-size: 11px;
+    font-weight: 550;
+    line-height: 1;
+    white-space: nowrap;
+    transition: background 0.15s ease, color 0.15s ease;
 }
 
-#hudInput input {
-	background: #2c2c2c;
-	color: white;
-	border: 1px solid #404040;
-	border-radius: 4px;
-	padding: 6px 10px;
-	transition: all 0.2s ease;
-	font-size: 13px;
+#hudDiv #hudFooter #btnAttach {
+    flex: 1;
+    background: #e74c3c;
+    color: white;
+    border-color: #e74c3c;
 }
 
-#hudInput input:focus {
-	outline: none;
-	border-color: #e74c3c;
-	background: #2c2c2c;
+#hudDiv #hudFooter #btnDetail {
+    flex: 1;
+    border-color: #484848;
 }
 
-#hudInput #newnote {
-	width: 85%;
-	font-size: 13px;
+#hudDiv #hudFooter button:hover {
+    background: #383838;
+    color: white;
 }
 
-#hudInput #addnote {
-	width: 15%;
-	background: #e74c3c;
-	cursor: pointer;
-	font-weight: bold;
-	color: white;
-	border: none;
-	border-radius: 4px;
-	transition: all 0.2s ease;
+#hudDiv #hudFooter #btnAttach:hover {
+    background: #ce4335;
+    border-color: #ce4335;
 }
 
-#hudInput #addnote:hover {
-	background: #c0392b;
+#hudDiv #hudFooter #btnAttach.active {
+    background: #333333;
+    border-color: #646464;
+    color: #f2f2f2;
+}
+
+#hudDiv #hudFooter #btnDetail[aria-pressed="true"] {
+    background: #3c3c3c;
+    border-color: #666666;
+    color: white;
+}
+
+#hudDiv #hudFooter button:disabled,
+#hudDiv #hudFooter button:disabled:hover {
+    background: transparent;
+    border-color: transparent;
+    color: #626262;
+    cursor: default;
+}
+
+#hudDiv #hudFooter #btnAttach:disabled,
+#hudDiv #hudFooter #btnAttach:disabled:hover,
+#hudDiv #hudFooter #btnDetail:disabled,
+#hudDiv #hudFooter #btnDetail:disabled:hover {
+    background: transparent;
+    border-color: #373737;
+    color: #626262;
+}
+
+#hudDiv #hudDetails {
+    display: block;
+    flex: 1 999 auto;
+    min-width: 0;
+    min-height: 80px;
+    max-height: min(45vh, 360px);
+    padding: 11px 13px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    background: #222222;
+    color: white;
+    border-top: 1px solid #3a3a3a;
+}
+
+#hudDiv #hudDetails .label {
+    display: block;
+    margin-top: 10px;
+    padding-bottom: 5px;
+    color: #b9b9b9;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.3;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+#hudDiv #hudDetails .label:first-child {
+    margin-top: 0;
+}
+
+#hudDiv #callDescription {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #dedede;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+#hudDiv #callNotes {
+    display: block;
+    width: 100%;
+}
+
+#hudDiv #callNotes span {
+    display: block;
+    max-width: 100%;
+    margin-bottom: 4px;
+    padding: 6px 0;
+    border-bottom: 1px solid #404040;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #bfbfbf;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+#hudDiv #callNotes span:last-child {
+    margin-bottom: 0;
+    border-bottom: 0;
+}
+
+#hudDiv #hudInput {
+    display: flex;
+    flex: 0 0 42px;
+    align-items: center;
+    justify-content: space-between;
+    height: 42px;
+    padding: 0 10px;
+    gap: 6px;
+    background: #1c1c1c;
+    color: white;
+    border-top: 1px solid #3a3a3a;
+}
+
+#hudDiv #hudInput input {
+    min-width: 0;
+    height: 27px;
+    padding: 5px 8px;
+    border: 1px solid #404040;
+    border-radius: 3px;
+    background: #2c2c2c;
+    color: white;
+    font-size: 12px;
+}
+
+#hudDiv #hudInput #newnote {
+    flex: 1;
+    width: auto;
+}
+
+#hudDiv #hudInput #addnote {
+    width: 30px;
+    background: #e74c3c;
+    border-color: #e74c3c;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+#hudDiv #hudInput #addnote:hover {
+    background: #ce4335;
+    border-color: #ce4335;
+}
+
+#hudDiv button:focus-visible,
+#hudDiv input:focus-visible,
+#hudDiv [tabindex="0"]:focus-visible {
+    outline: 2px solid #e74c3c;
+    outline-offset: -2px;
+}
+
+#hudDiv #hudDetails::-webkit-scrollbar,
+#hudDiv #hudContent::-webkit-scrollbar,
+#hudDiv #callUnits::-webkit-scrollbar {
+    display: block;
+    width: 4px;
+}
+
+#hudDiv #hudDetails::-webkit-scrollbar-thumb,
+#hudDiv #hudContent::-webkit-scrollbar-thumb,
+#hudDiv #callUnits::-webkit-scrollbar-thumb {
+    background: #565656;
+    border-radius: 2px;
 }

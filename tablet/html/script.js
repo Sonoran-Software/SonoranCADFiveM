@@ -191,18 +191,82 @@ const KeyMaps = {
 var currCall = 0;
 
 function toggleDetail() {
-	$("#hudDetails")[0].style.display = ($("#hudDetails")[0].style.display === "" ? "none": "")
-	// Not Yet Implemented!
-	//$("#hudInput")[0].style.display = ($("#hudInput")[0].style.display === "" ? "none":"");
+	if (!CallCache.active[currCall]?.dispatch) return;
+	setDetailVisible(document.getElementById("hudDetails").style.display === "none");
 }
 
 function setupHud() {
-	$("#hudHeaderTime")[0].innerText = "Sonoran Mini-CAD";
+	document.getElementById("hudHeaderTime").textContent = "SONORAN";
 }
 
-function buttonShow(name, visible, label) {
-	$(name)[0].style.color = (visible? '': 'rgb(70,70,70)');
-	if (label) $(name)[0].innerText = label;
+function buttonShow(name, enabled, label) {
+	const button = $(name)[0];
+	button.disabled = !enabled;
+	button.setAttribute("aria-disabled", String(!enabled));
+	if (label !== undefined) button.textContent = label;
+}
+
+function setDetailVisible(visible) {
+	document.getElementById("hudDetails").style.display = visible ? "" : "none";
+	document.getElementById("hudDiv").classList.toggle("details-open", visible);
+	const button = document.getElementById("btnDetail");
+	button.setAttribute("aria-pressed", String(visible));
+	button.classList.toggle("active", visible);
+	updateHudBounds();
+}
+
+function setHudText(id, value, tooltip = false) {
+	const element = document.getElementById(id);
+	const text = value == null ? "" : String(value);
+	element.textContent = text;
+	if (tooltip) element.title = text;
+}
+
+function appendHudText(parent, className, text, tooltip = false) {
+	const element = document.createElement("span");
+	element.className = className;
+	element.textContent = text;
+	if (tooltip) element.title = text;
+	parent.appendChild(element);
+	return element;
+}
+
+function formatCallNote(note) {
+	if (!note || typeof note !== "object" || note.type == null || note.time == null) {
+		return note == null ? "" : String(note);
+	}
+	const label = note.label == null ? "" : String(note.label);
+	if (note.type === "text") {
+		const content = note.content == null ? "" : String(note.content);
+		return note.time + " | " + (label === "Sonoran CAD" ? "" : label + ": ") + content;
+	}
+	return note.time + " | " + label + ": (" + note.type + " attachment.)";
+}
+
+function updateHudBounds() {
+	const hud = document.getElementById("hudDiv");
+	if (!hud || typeof hud.getBoundingClientRect !== "function") return;
+	const bounds = hud.getBoundingClientRect();
+	const margin = 12;
+	if (Number.isFinite(window.innerWidth) && Number.isFinite(bounds.width) && Number.isFinite(bounds.left)) {
+		const left = Math.min(Math.max(margin, bounds.left), Math.max(margin, window.innerWidth - margin - bounds.width));
+		if (left !== bounds.left) hud.style.left = (hud.offsetLeft + left - bounds.left) + "px";
+	}
+	if (Number.isFinite(window.innerHeight) && Number.isFinite(bounds.top)) {
+		// Reserve the same minimum usable panel height as the CSS before constraining its scrollers.
+		const minimumHeight = Math.min(hud.classList.contains("details-open") ? 280 : 190,
+			Math.max(0, window.innerHeight - margin * 2));
+		const top = Math.min(Math.max(margin, bounds.top), Math.max(margin, window.innerHeight - margin - minimumHeight));
+		if (top !== bounds.top) hud.style.top = (hud.offsetTop + top - bounds.top) + "px";
+	}
+	const top = hud.getBoundingClientRect().top;
+	if (Number.isFinite(top)) hud.style.setProperty("--hud-top", Math.max(0, top) + "px");
+}
+
+function hudPixelDimension(value) {
+	if (typeof value !== "number" && typeof value !== "string") return null;
+	const pixels = Number(typeof value === "string" ? value.trim().replace(/px$/i, "") : value);
+	return Number.isFinite(pixels) && pixels > 0 ? pixels + "px" : null;
 }
 
 function setHotkeys(keyMap) {
@@ -215,130 +279,88 @@ function setHotkeys(keyMap) {
 
 function refreshCall() {
 	setupHud();
-
-	let activeCall = true;
-
-	if (CallCache.active.length === 0) activeCall = false;
-	if (currCall > CallCache.active.length) currCall = 0;
+	if (!Number.isInteger(currCall) || currCall < 0 || currCall >= CallCache.active.length) currCall = 0;
+	const currentCall = CallCache.active[currCall]?.dispatch;
+	document.getElementById("hudDiv").dataset.empty = String(!currentCall);
 
 	buttonShow("#btnPrevCall", false);
 	buttonShow("#btnAttach", false, "Attach");
 	buttonShow("#btnDetail", false, "Details");
 	buttonShow("#btnNextCall", false);
 
-	if (!activeCall) {
-		$("#hudHeaderCalls")[0].innerText = '';
-		$("#callCode")[0].innerText = 'No Active Calls';
-		$("#callTitle")[0].innerText = 'There are currently no active calls';
-		$("#callLocation")[0].innerText = '';
-		$("#callDescription")[0].innerText = '';
-		$("#callNotes")[0].innerHTML = '';
-		$("#callUnits")[0].innerHTML = '';
-		$("#hudDetails")[0].style.display = "none";
+	if (!currentCall) {
+		setHudText("hudHeaderCalls", "");
+		setHudText("callCode", "No active calls", true);
+		setHudText("callTitle", "", true);
+		setHudText("callLocation", "", true);
+		setHudText("callDescription", "");
+		setHudText("callNotes", "");
+		setHudText("callUnits", "");
+		setDetailVisible(false);
 	} else {
-		let currentCall = CallCache?.active[currCall]?.dispatch;
-		if (!currentCall) return;
-		buttonShow("#btnAttach", true);
-		if (isAttached(CallCache.active[currCall])) {
-			buttonShow("#btnAttach", true, "Detach");
-		} else {
-			buttonShow("#btnAttach", true, "Attach");
-		}
+		buttonShow("#btnAttach", true, isAttached(CallCache.active[currCall]) ? "Detach" : "Attach");
 		buttonShow("#btnDetail", true);
 		buttonShow("#btnPrevCall", hasPrevCall());
 		buttonShow("#btnNextCall", hasNextCall());
-		$("#hudHeaderCalls")[0].innerText = (currCall + 1) + "/" + CallCache.active.length;
-		//$("#hudHeaderCalls")[0].innerText = "Call #" + currentCall.callId;
-		$("#callCode")[0].innerText = currentCall.code;
-		$("#callTitle")[0].innerText = currentCall.title;
-		$("#callLocation")[0].innerText = (currentCall.postal != "" ? currentCall.postal + " ": "") + currentCall.address;
-		$("#callDescription")[0].innerText = currentCall.description;
-		$("#callNotes")[0].innerHTML = '';
-		if (currentCall.notes) {
-			if (currentCall.notes.length > maxrows) {
-				$("#callNotes")[0].innerHTML += '<span class="callnote">** NOTE: ' + (currentCall.notes.length - maxrows) +' notes hidden. (Use /minicadrows) ***</span>';
-			}
-			for (var i = (currentCall.notes.length-1 > maxrows ? maxrows : currentCall.notes.length-1); i>=0; i--) {
-				let callnote = "";
-				if (currentCall.notes[i].content == null || currentCall.notes[i].type == null || currentCall.notes[i].time == null) {
-					callnote = currentCall.notes[i].toString();
-				} else {
-					switch (currentCall.notes[i].type) {
-						case "text":
-							if (currentCall.notes[i].label == "Sonoran CAD") {
-								callnote = currentCall.notes[i].time + " | " + currentCall.notes[i].content;
-							} else {
-								callnote = currentCall.notes[i].time + " | " + currentCall.notes[i].label + ": " + currentCall.notes[i].content;
-							}
-							break;
-						default:
-							callnote = currentCall.notes[i].time + " | " + currentCall.notes[i].label + ": " + "(" + currentCall.notes[i].type + " attachment.)";
-							break;
-					}
-				}
-				$("#callNotes")[0].innerHTML += '<span class="callnote">' + callnote + '</span>';
-			}
+		setHudText("hudHeaderCalls", (currCall + 1) + "/" + CallCache.active.length);
+		setHudText("callCode", currentCall.code, true);
+		setHudText("callTitle", currentCall.title, true);
+		const location = [currentCall.postal, currentCall.address]
+			.filter(value => value != null && String(value) !== "").join(" ");
+		setHudText("callLocation", location, true);
+		setHudText("callDescription", currentCall.description);
+		setHudText("callNotes", "");
+		const notes = Array.isArray(currentCall.notes) ? currentCall.notes : [];
+		const rows = Number(maxrows);
+		// Lua stores /tablet mini rows N as N - 1; the original loop was inclusive.
+		const rowLimit = Number.isFinite(rows) && rows >= 0 ? Math.floor(rows) + 1 : 11;
+		const firstNote = Math.max(0, notes.length - rowLimit);
+		const notesElement = document.getElementById("callNotes");
+		if (firstNote > 0) {
+			appendHudText(notesElement, "callnote", firstNote + " older notes hidden.");
 		}
-		if (currentCall.units?.length > 0) {
-			$("#callUnits")[0].innerHTML = '';
-			for (var i = 0; i<currentCall.units.length; i++) {
-				//console.log(currentCall.units[i].status);
-				let style = "unit";
-				// Not Yet Implemented!
-				// switch (currentCall.units[i].status) {
-				// 	case 0:
-				// 		style += " unavailable"
-				// 		break;
-				// 	case 1:
-				// 		style += " busy"
-				// 		break;
-				// 	case 2:
-				// 		style += " available"
-				// 		break;
-				// 	case 3:
-				// 		style += " enroute"
-				// 		break;
-				// 	case 4:
-				// 		style += " onscene"
-				// 		break;
-				// }
-				$("#callUnits")[0].innerHTML += '<span class="' + style + '">' + currentCall.units[i].data.unitNum + '</span>'
-
-			}
+		for (let i = notes.length - 1; i >= firstNote; i--) {
+			appendHudText(notesElement, "callnote", formatCallNote(notes[i]));
+		}
+		setHudText("callUnits", "");
+		const unitsElement = document.getElementById("callUnits");
+		const units = Array.isArray(currentCall.units) ? currentCall.units : [];
+		if (units.length > 0) {
+			for (const unit of units) appendHudText(unitsElement, "unit", String(unit?.data?.unitNum ?? ""), true);
 		} else {
-			$("#callUnits")[0].innerHTML = '<span id="nounits">No units are attached to this call.</span>';
+			appendHudText(unitsElement, "", "No units are attached to this call.").id = "nounits";
 		}
-
+		setDetailVisible(document.getElementById("hudDetails").style.display !== "none");
 	}
 }
 
 function prevCall() {
-	if (currCall === 0) return;
+	if (!hasPrevCall()) return;
 	currCall -= 1;
 	refreshCall();
 }
 
 function nextCall() {
-	if (currCall === CallCache.active.length - 1) return;
+	if (!hasNextCall()) return;
 	currCall += 1;
 	refreshCall();
 }
 
 const hasPrevCall = () => {
-	if (currCall === 0) return false;
-	return true;
+	return !!CallCache.active[currCall]?.dispatch && currCall > 0;
 }
 
 const hasNextCall = () => {
-	if (currCall === CallCache.active.length - 1) return false;
-	return true;
+	return !!CallCache.active[currCall]?.dispatch && currCall < CallCache.active.length - 1;
 }
 
 const isAttached = (call) => {
-	return call.dispatch.idents.includes(myident);
+	return Array.isArray(call?.dispatch?.idents) && call.dispatch.idents.includes(myident);
 }
 
 function attach() {
+	const currentCall = CallCache.active[currCall]?.dispatch;
+	if (!currentCall) return;
 	// Don't reattach to the same call.
 	if (isAttached(CallCache.active[currCall])) {
 		for (const call of CallCache.active) {
@@ -357,18 +379,20 @@ function attach() {
 			}
 		}
 		// Attach to the current call.
-		nui('AttachToCall', {callId: CallCache.active[currCall].dispatch.callId});
+		nui('AttachToCall', {callId: currentCall.callId});
 	}
 }
 
-function moduleVisible(module, visible) {
+function moduleVisible(module, visible, notifyLua = true) {
 	const el = $("#" + module + "Div");
 	if (visible) {
 		el.css({ opacity: 1, pointerEvents: "auto" });
+		if (module === "hud") updateHudBounds();
 	} else {
 		el.css({ opacity: 0, pointerEvents: "none" });
 	}
-	nui('VisibleEvent', { state: visible, module: module });
+	// Lua already tracks game-driven displays; only report direct UI changes.
+	if (notifyLua) nui('VisibleEvent', { state: visible, module: module });
 }
 
 function showHelp() {
@@ -380,7 +404,7 @@ $(function () {
 		if (!event.data || typeof event.data !== "object") return;
 		handleCadAccountLinkMessage(event);
 		if (event.data.type == "display") {
-			moduleVisible(event.data.module, event.data.enabled)
+			moduleVisible(event.data.module, event.data.enabled, false)
 			if (event.data.apiCheck) {
 				currentlyCheckingLink = true;
 			}
@@ -419,14 +443,8 @@ $(function () {
 		else if (event.data.type == "callSync") {
 			myident = event.data.ident;
 			CallCache.active = [];
-			for (const [key, call] of Object.entries(event.data.activeCalls)) {
-				if (call != null) {
-					if (call.dispatch_type) {
-						if (call.dispatch_type != "CALL_CLOSE") CallCache.active.push(call);
-					} else {
-						CallCache.active.push(call);
-					}
-				}
+			for (const call of Object.values(event.data.activeCalls || {})) {
+				if (call?.dispatch && call.dispatch_type !== "CALL_CLOSE") CallCache.active.push(call);
 			}
 			CallCache.emergency = event.data.emergencyCalls;
 			refreshCall();
@@ -456,10 +474,12 @@ $(function () {
 				document.getElementById('cadDiv').style.width = event.data.newWidth;
 				document.getElementById('cadDiv').style.height = event.data.newHeight;
 			} else if (event.data.module == "hud") {
-				document.getElementById('hudFrame').width = event.data.newWidth;
-				document.getElementById('hudFrame').height = event.data.newHeight;
-				document.getElementById('hudDiv').style.width = event.data.newWidth;
-				document.getElementById('hudDiv').style.height = event.data.newHeight;
+				const hud = document.getElementById('hudDiv');
+				const width = hudPixelDimension(event.data.newWidth);
+				const height = hudPixelDimension(event.data.newHeight);
+				if (width) hud.style.width = width;
+				if (height) hud.style.height = height;
+				updateHudBounds();
 			}
 		}
 		else if (event.data.type == "refresh") {
@@ -495,6 +515,7 @@ $(function () {
 
 	dragElement(document.getElementById("cadDiv"));
 	dragElement(document.getElementById("hudDiv"));
+	window.addEventListener('resize', updateHudBounds);
 
 	document.addEventListener('mousedown', function(e) {
 		const draggingElements = document.querySelectorAll('.dragging');
@@ -544,17 +565,15 @@ function dragElement(elmnt) {
 	var isDragging = false;
 	var dragOverlay = null;
 
-	if (document.getElementById(elmnt.id + "header")) {
-		// if present, the header is where you move the DIV from:
-		document.getElementById(elmnt.id + "header").onmousedown = dragMouseDown;
-	} else {
-		// otherwise, move the DIV from anywhere inside the DIV:
-		elmnt.onmousedown = dragMouseDown;
-	}
+	const isHud = elmnt.id === "hudDiv";
+	const handle = isHud ? document.getElementById("hudHeader")
+		: document.getElementById(elmnt.id + "header") || elmnt;
+	if (handle) handle.onmousedown = dragMouseDown;
 
 	function dragMouseDown(e) {
 		if (elmnt.classList.contains('display-surface')) return;
 		e = e || window.event;
+		if (isHud && e.target?.closest?.('button, input, textarea, select, a, [contenteditable="true"]')) return;
 		e.preventDefault();
 		e.stopPropagation();
 
@@ -587,6 +606,7 @@ function dragElement(elmnt) {
 		// set the element's new position:
 		elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
 		elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+		if (isHud) updateHudBounds();
 	}
 
 	function closeDragElement() {

@@ -103,12 +103,16 @@ CreateThread(function()
     end
 
     RegisterServerEvent("SonoranCAD::mini:OpenMini")
-    AddEventHandler("SonoranCAD::mini:OpenMini", function ()
+    AddEventHandler("SonoranCAD::mini:OpenMini", function(requestId)
+        -- Older clients omit this optional correlation ID; authorization is unchanged.
+        if type(requestId) ~= "number" or requestId < 1 or requestId % 1 ~= 0 then
+            requestId = nil
+        end
         local ident, communityUserId = getLinkedUnitContext(source)
-        if ident == nil then TriggerClientEvent("SonoranCAD::mini:OpenMini:Return", source, false) return end
-        if communityUserId == nil then TriggerClientEvent("SonoranCAD::mini:OpenMini:Return", source, false) return end
+        if ident == nil then TriggerClientEvent("SonoranCAD::mini:OpenMini:Return", source, false, nil, requestId) return end
+        if communityUserId == nil then TriggerClientEvent("SonoranCAD::mini:OpenMini:Return", source, false, nil, requestId) return end
         TriggerClientEvent("SonoranCAD::mini:CallSync", source, CallCache, EmergencyCache)
-        TriggerClientEvent("SonoranCAD::mini:OpenMini:Return", source, true, ident.id)
+        TriggerClientEvent("SonoranCAD::mini:OpenMini:Return", source, true, ident.id, requestId)
     end)
 
     RegisterServerEvent("SonoranCAD::mini:AttachToCall")

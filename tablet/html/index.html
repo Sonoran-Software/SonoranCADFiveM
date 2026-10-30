@@ -20,18 +20,17 @@
             <div id="hudFrame">
                 <div id="hudHeader">
                     <div id="hudHeaderCalls">0/0</div>
-                    <div id="hudHeaderTime">loading data...</div>
+                    <div id="hudHeaderTime">SONORAN</div>
                     <div id="hudHeaderControls">
-                        <!--<a href="#" class="control">&#8211;</a>-->
-                        <a href="javascript:void;" class="control" onclick="showHelp();">?</a>
-                        <a href="javascript:void;" class="control" onclick="moduleVisible('hud', false);">&times;</a>
+                        <button type="button" class="control" aria-label="Mini CAD help" onclick="showHelp();">?</button>
+                        <button type="button" class="control" aria-label="Close Mini CAD" onclick="moduleVisible('hud', false);">&times;</button>
                     </div>
                 </div>
-                <div id="hudContent">
+                <div id="hudContent" tabindex="0" aria-label="Call summary">
                     <span id="callCode">loading data...</span>
                     <span id="callTitle">loading data...</span>
                     <span id="callLocation">loading data...</span>
-                    <span id="callUnits">
+                    <span id="callUnits" tabindex="0" aria-label="Attached units">
                         <span id="nounits">No units are attached to this call.</span>
                         <!-- <span class="unit">103</span>
                         <span class="unit">105</span>
@@ -45,21 +44,21 @@
                     </span>
                 </div>
                 <div id="hudFooter">
-                    <a id="btnPrevCall" href="javascript:void;" onclick="prevCall();">[&#9664;] Prev</a>
-                    <a id="btnAttach" href="javascript:void;" onclick="attach();">Attach</a>
-                    <a id="btnDetail" href="javascript:void;" onclick="toggleDetail();">Details</a>
-                    <a id="btnNextCall" href="javascript:void;" onclick="nextCall();">Next [&#9654;]</a>
+                    <button id="btnPrevCall" type="button" aria-label="Previous call" disabled onclick="prevCall();">&#8249; Prev</button>
+                    <button id="btnAttach" type="button" disabled onclick="attach();">Attach</button>
+                    <button id="btnDetail" type="button" aria-controls="hudDetails" aria-pressed="false" disabled onclick="toggleDetail();">Details</button>
+                    <button id="btnNextCall" type="button" aria-label="Next call" disabled onclick="nextCall();">Next &#8250;</button>
                 </div>
             </div>
-            <div id="hudDetails" style="display: none;">
+            <div id="hudDetails" tabindex="0" aria-label="Call details" style="display: none;">
                 <span class="label">Description:</span>
                 <span id="callDescription">loading...</span>
                 <span class="label">Call Notes:</span>
                 <span id="callNotes"></span>
             </div>
             <div id="hudInput" style="display: none;">
-                <input type="text" id="newnote" />
-                <input type="button" id="addnote" value=">" />
+                <input type="text" id="newnote" aria-label="New call note" />
+                <input type="button" id="addnote" aria-label="Add note" value=">" />
             </div>
         </div>
 

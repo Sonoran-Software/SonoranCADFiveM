@@ -3,6 +3,30 @@ View your CAD in-game with our tablet resource!
 
 The tablet command defaults to `/tablet`. To change it, add `setr sonorantablet_command "yourcommand"` to your server configuration.
 
+## Mini CAD controls
+
+Use `/tablet mini open` to show Mini CAD, `/tablet mini close` to hide it, or
+`/tablet mini toggle` to switch between the two. Closing Mini CAD leaves your
+call attachment and handheld or laptop CAD view unchanged.
+
+The optional **Mini CAD** keybind also toggles the overlay. It has no default key;
+assign one in **Settings > Key Bindings > FiveM** under `tablet`. Existing assigned
+keys continue to work. The Mini CAD **?** button and `/tablet mini help` list the
+controls. To move the overlay with the cursor, first run `/tablet open`.
+Substitute your configured tablet command if it differs from `/tablet`.
+
+Long custom codes and locations use an ellipsis; call titles show up to two lines.
+Hover to read the full value, or open **Details** / press **L** to expand the full
+code, title, and location. Long descriptions and notes wrap and scroll. Unit names
+use individual ellipses, and lists longer than three rows scroll without removing
+units. Use `/tablet mini rows <count>` to choose how many of the newest notes appear.
+Saved dimensions are kept, with a minimum usable height and screen bounds to keep
+the close and call controls reachable.
+
+Open the handheld CAD with `/tablet open`, then use **Close tablet** below the
+screen to return to the game, including after clicking or typing inside CAD.
+Escape also closes it when the tablet area outside CAD has keyboard focus.
+
 ## Installation
 
 [Click to view the installation guide.](https://info.sonorancad.com/integration-submodules/integration-submodules/available-submodules/tablet)
@@ -146,8 +170,14 @@ profiles, disabled interaction, and a camera that starts but fails to display CA
 ### Validation
 
 From the repository root, run `node --test tablet/tests/*.test.js` and
-`lua tablet/tests/display-session.test.lua`. These cover projection math, NUI
-lifecycle, and mocked camera/input cleanup. They do not validate FiveM rendering.
+`lua tablet/tests/display-session.test.lua`. Run `lua tablet/tests/mini-cad.test.lua`
+for Mini CAD commands, keybind toggling, authorization races, and help. These cover
+projection math, NUI lifecycle, and mocked camera/input cleanup. They do not validate FiveM rendering.
+
+`node tablet/tests/mini-cad-ui.browser.cjs` checks the actual tablet HTML/CSS/JS
+with synthetic calls at four widths and 720p/1080p. Set `PLAYWRIGHT_MODULE`,
+`PLAYWRIGHT_EXECUTABLE`, and `JQUERY_SOURCE` if those dependencies are not available
+at their defaults. Set `TABLET_SCREENSHOT_DIR` to capture the scenario screenshots.
 The regression tests also cover FiveM's parent-window message delivery and the
 G-command ownership flow for station and vehicle displays.
 

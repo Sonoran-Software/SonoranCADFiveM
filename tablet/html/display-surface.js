@@ -31,8 +31,14 @@
     // Chromium supplies the immediate parent's origin, including legacy nui:// URLs.
     const gameOrigin = root.location.ancestorOrigins[0];
     let enabled = false;
+    let handheldVisible = false;
     let corners = null;
     let width = 1280, height = 640;
+    function renderExit() {
+        exit.hidden = !enabled && !handheldVisible;
+        exit.textContent = enabled ? 'Exit computer' : 'Close tablet';
+    }
+    renderExit();
     function render() {
         if (!enabled || !corners) return;
         const pixels = corners.map(p => ({ x: p.x * innerWidth, y: p.y * innerHeight }));
@@ -44,7 +50,10 @@
         if (!gameOrigin || root.parent === root || event.source !== root.parent
             || event.origin !== gameOrigin || !event.data) return;
         const data = event.data;
-        if (data.type === 'display_surface') {
+        if (data.type === 'display' && data.module === 'cad') {
+            handheldVisible = data.enabled === true;
+            renderExit();
+        } else if (data.type === 'display_surface') {
             enabled = data.enabled === true;
             corners = null;
             surface.classList.toggle('display-surface', enabled);
@@ -59,7 +68,7 @@
                 surface.style.removeProperty('--display-width');
                 surface.style.removeProperty('--display-height');
             }
-            exit.hidden = !enabled;
+            renderExit();
         } else if (data.type === 'display_surface_frame' && enabled) {
             if (!Array.isArray(data.corners) || data.corners.length !== 4
                 || !data.corners.every(p => p && Number.isFinite(p.x) && Number.isFinite(p.y))) return;

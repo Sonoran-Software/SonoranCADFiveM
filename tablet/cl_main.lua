@@ -3,6 +3,10 @@ isRegistered = false
 usingTablet = false
 myident = nil
 isMiniVisible = false
+local miniCadDesiredOpen = false
+local miniCadOpenPendingId = nil
+local miniCadOpenSequence = 0
+local miniCadOpenRequestedAt = 0
 local caddisplayEnabled = true
 local tabletCommand = tostring(GetConvar("sonorantablet_command", "tablet"))
 tabletCommand = tabletCommand:match("^%s*/?([^%s/]+)") or "tablet"
@@ -318,7 +322,11 @@ RegisterNUICallback('NUIFocusOff', function(_, cb)
 end)
 
 RegisterNetEvent("SonoranCAD::mini:OpenMini:Return")
-AddEventHandler('SonoranCAD::mini:OpenMini:Return', function(authorized, ident)
+AddEventHandler('SonoranCAD::mini:OpenMini:Return', function(authorized, ident, requestId)
+	if not miniCadOpenPendingId or requestId ~= miniCadOpenPendingId then return end
+	miniCadOpenPendingId = nil
+	-- A close or another toggle may have arrived while authorization was pending.
+	if not miniCadDesiredOpen then return end
 	myident = ident
 	if authorized then
 		DisplayModule("hud", true)
@@ -327,6 +335,7 @@ AddEventHandler('SonoranCAD::mini:OpenMini:Return', function(authorized, ident)
 			SetResourceKvp("shownTutorial", "yes")
 		end
 	else
+		miniCadDesiredOpen = false
 		PrintChatMessage("You are not logged into the CAD or your account is not linked. Run /link first.")
 	end
 end)
@@ -341,11 +350,41 @@ CreateThread(function()
 end)
 
 function ShowHelpMessage()
-	PrintChatMessage("Keybinds: Attach/Detach [K], Details [L], Previous/Next [LEFT/RIGHT], changable in settings!")
+	PrintChatMessage(("Close Mini CAD: /%s mini close. Toggle it: /%s mini toggle, or press your Mini CAD keybind again (assign it in FiveM settings).")
+		:format(tabletCommand, tabletCommand))
+	PrintChatMessage("Keybinds: Attach/Detach [K], Details [L], Previous/Next [LEFT/RIGHT], changeable in settings!")
+end
+
+local function expireMiniCadOpenRequest()
+	-- The server handler may not exist yet if the CAD resource is still starting.
+	if miniCadOpenPendingId and GetGameTimer() - miniCadOpenRequestedAt >= 10000 then
+		miniCadOpenPendingId = nil
+		miniCadDesiredOpen = isMiniVisible
+	end
 end
 
 local function openMiniCad()
-	TriggerServerEvent("SonoranCAD::mini:OpenMini")
+	expireMiniCadOpenRequest()
+	miniCadDesiredOpen = true
+	if isMiniVisible or miniCadOpenPendingId then return end
+	miniCadOpenSequence = miniCadOpenSequence + 1
+	miniCadOpenPendingId = miniCadOpenSequence
+	miniCadOpenRequestedAt = GetGameTimer()
+	TriggerServerEvent("SonoranCAD::mini:OpenMini", miniCadOpenPendingId)
+end
+
+local function closeMiniCad()
+	miniCadDesiredOpen = false
+	DisplayModule("hud", false)
+end
+
+local function toggleMiniCad()
+	expireMiniCadOpenRequest()
+	if miniCadDesiredOpen or isMiniVisible then
+		closeMiniCad()
+	else
+		openMiniCad()
+	end
 end
 
 local function miniCadPrev()
@@ -443,7 +482,7 @@ end
 local function showTabletCommandHelp()
 	PrintChatMessage(("Tablet commands: /%s open | /%s refresh | /%s size <width> <height> | /%s checklink")
 		:format(tabletCommand, tabletCommand, tabletCommand, tabletCommand))
-	PrintChatMessage(("Mini CAD: /%s mini open | help | prev | attach | detail | next | refresh | size <width> <height> | rows <count>")
+	PrintChatMessage(("Mini CAD: /%s mini open | close | toggle | help | prev | attach | detail | next | refresh | size <width> <height> | rows <count>")
 		:format(tabletCommand))
 end
 
@@ -456,6 +495,10 @@ local function handleTabletMiniCommand(args)
 
 	if miniAction == "open" then
 		openMiniCad()
+	elseif miniAction == "close" then
+		closeMiniCad()
+	elseif miniAction == "toggle" then
+		toggleMiniCad()
 	elseif miniAction == "help" then
 		ShowHelpMessage()
 	elseif miniAction == "prev" then
@@ -504,7 +547,7 @@ RegisterCommand(tabletCommand, function(source, args, rawCommand)
 end, false)
 
 RegisterCommand("SonoranTablet::MiniOpen", function()
-	openMiniCad()
+	toggleMiniCad()
 end, false)
 RegisterKeyMapping("SonoranTablet::MiniOpen", "Mini CAD", "keyboard", "")
 
@@ -535,7 +578,7 @@ RegisterKeyMapping("SonoranTablet::Open", "CAD Tablet", "keyboard", "")
 
 TriggerEvent("chat:addSuggestion", "/" .. tabletCommand, "Manage the Sonoran tablet and Mini CAD.", {
 	{ name = "action", help = "open, refresh, size, checklink, mini, or help" },
-	{ name = "args", help = "subcommands: mini open|help|prev|attach|detail|next|refresh|size|rows" }
+	{ name = "args", help = "subcommands: mini open|close|toggle|help|prev|attach|detail|next|refresh|size|rows" }
 })
 
 local activeTablet = nil
@@ -800,11 +843,15 @@ RegisterNUICallback('DetachFromCall', function(data, cb)
 	cb({ ok = true })
 end)
 
-RegisterNUICallback("ShowHelp", function() ShowHelpMessage() end)
+RegisterNUICallback("ShowHelp", function(_, cb)
+	ShowHelpMessage()
+	cb({ ok = true })
+end)
 
 RegisterNUICallback("VisibleEvent", function(data, cb)
-	if data.module == "hud" then
+	if data.module == "hud" and type(data.state) == "boolean" then
 		isMiniVisible = data.state
+		miniCadDesiredOpen = data.state
 	end
 	cb({ ok = true })
 end)
