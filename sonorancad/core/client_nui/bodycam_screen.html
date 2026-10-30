@@ -2,6 +2,7 @@
 <html>
 	<head>
 		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<style>
 			html,
 			body {
@@ -13,14 +14,58 @@
 				background: transparent;
 			}
 
-			img {
+			body {
+				display: grid;
+				place-items: center;
+			}
+
+			#bodycam {
+				position: relative;
+				width: min(100vw, 150vh);
+				aspect-ratio: 3 / 2;
+			}
+
+			#bodycamHousing {
 				display: block;
 				width: 100%;
 				height: 100%;
 			}
+
+			/* All positions share the housing's 1536 x 1024 canvas. */
+			#bodycamLogo {
+				position: absolute;
+				left: 67.32%;
+				top: 38.87%;
+				width: 16.41%;
+				height: 24.61%;
+				object-fit: contain;
+			}
+
+			#bodycamLight {
+				position: absolute;
+				left: 21.22%;
+				top: 35.45%;
+				width: 2.08%;
+				height: 3.125%;
+				transform: translate(-50%, -50%);
+				border-radius: 50%;
+				background: radial-gradient(circle at 40% 35%, #fff3ef 0%, #ff5147 25%, #ed1c24 55%, #a40008 100%);
+				box-shadow: 0 0 0.6vmin rgba(237, 28, 36, 0.65);
+				animation: bodycamLightBlink 1s steps(1, end) infinite;
+			}
+
+			@keyframes bodycamLightBlink {
+				0%, 79.999% { opacity: 1; }
+				80%, 100% { opacity: 0; }
+			}
 		</style>
 	</head>
 	<body>
-		<img src="./img/bodycam_overlay.png" alt="Bodycam overlay" />
+		<div id="bodycam" role="img" aria-label="Body camera enabled">
+			<img id="bodycamHousing" src="./img/bodycam_overlay.png" alt="" />
+			<!-- This optional file is never shipped, so automatic updates preserve it. -->
+			<img id="bodycamLogo" src="./img/bodycam_logo.png" alt="" onerror="this.onerror = null; this.src = './img/bodycam_logo_gold.png';" />
+			<span id="bodycamLight" aria-hidden="true"></span>
+		</div>
 	</body>
 </html>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Exact Sonoran CAD icon paths extracted from the official branding EPS.
+     Source: https://sonoransoftware.com/assets/images/logos/CAD_VECTOR.eps
+     Original: Adobe Illustrator, John Trent, May 13, 2020.
+     Standard icon uses official CAD red #ED1C24 outside and a white arrow. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="282" height="282" viewBox="0 0 67.427 67.427">
+  <g fill="#ED1C24">
+    <path d="M62.6492 64.9691 C65.5472 62.7685 67.427 59.2968 67.427 55.3773 L67.427 12.0497 C67.427 5.39492 62.032 -0.0000957527 55.3772 -0.0000957527 L35.347 -0.0000957527 L62.6492 64.9691 Z"/>
+    <path d="M20.2107 -0.0000957527 L12.0496 -0.0000957527 C5.39482 -0.0000957527 -0.000201236 5.39492 -0.000201236 12.0497 L-0.000201236 48.0937 L20.2107 -0.0000957527 Z"/>
+    <path d="M27.7786 53.6288 L7.55058 66.5502 C8.94169 67.1107 10.4578 67.4271 12.0496 67.4271 L49.3802 67.4271 L27.7786 53.6288 Z"/>
+  </g>
+  <path fill="#FFFFFF" d="M27.7786 37.3651 L39.2644 44.7025 L27.7786 17.3695 L16.2933 44.7025 L27.7786 37.3651 Z"/>
+</svg>

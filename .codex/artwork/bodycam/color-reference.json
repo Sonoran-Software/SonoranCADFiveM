@@ -1,0 +1,11 @@
+{
+  "checked": "2026-10-30",
+  "ourGold": "#C89B3C",
+  "ourRed": "#ED1C24",
+  "referencePage": "https://www.axon.com/trademarks",
+  "referenceImage": "https://a.storyblok.com/f/133181/841x567/c2757f7cd8/yelllow.png",
+  "referenceImageDominantYellow": "#FFD700",
+  "referenceYellowPixelCount": 259352,
+  "method": "Count exact RGB values in the published color-mark illustration; compare with fully opaque pixels in bodycam_logo_gold.png.",
+  "limitation": "This confirms a difference from the referenced digital illustration. Sampled image colors do not define the legal scope of a trademark and do not establish clearance."
+}

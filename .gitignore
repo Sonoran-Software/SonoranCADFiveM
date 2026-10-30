@@ -4,3 +4,5 @@ wk_wars2x/config.lua
 tablet/config.lua
 sonoran_updatehelper/run.lock
 filestore/**/*
+# Optional bodycam logo override; never include it in an automatic update.
+sonorancad/core/client_nui/img/bodycam_logo.png

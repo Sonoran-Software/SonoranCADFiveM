@@ -216,12 +216,6 @@
 					class="bodycamOverlayLayer"
 					title="Bodycam screen"
 				></iframe>
-				<iframe
-					src=""
-					id="bodycamLightFrame"
-					class="bodycamOverlayLayer"
-					title="Bodycam light"
-				></iframe>
 			</div>
 		</div>
 		<canvas id="bodycamStreamCanvas" width="1" height="1"></canvas>
@@ -278,7 +272,6 @@
 			const overlayContainer = document.getElementById("bodycamOverlayContainer");
 			const overlayFrame = document.getElementById("bodycamOverlayFrame");
 			const bodycamScreenFrame = document.getElementById("bodycamScreenFrame");
-			const bodycamLightFrame = document.getElementById("bodycamLightFrame");
 			const recordPrinterFrame = document.createElement("iframe");
 			const civregFrame = document.createElement("iframe");
 			const cadLinkState = {
@@ -293,7 +286,6 @@
 				allowClose: true,
 			};
 			bodycamScreenFrame.src = `https://cfx-nui-${GetParentResourceName()}/core/client_nui/bodycam_screen.html`;
-			bodycamLightFrame.src = `https://cfx-nui-${GetParentResourceName()}/core/client_nui/bodycam_light.html`;
 			recordPrinterFrame.src = `https://cfx-nui-${GetParentResourceName()}/submodules/recordPrinter/html/ui.html`;
 			recordPrinterFrame.style.position = "absolute";
 			recordPrinterFrame.style.top = "0px";
