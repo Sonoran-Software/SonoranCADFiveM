@@ -12,8 +12,8 @@ CreateThread(function() Config.LoadPlugin("localcallers", function(pluginConfig)
                 street = 'Unknown'
             end
             local postal = "Unknown"
-            if isPluginLoaded("postals") then
-                postal = getPostalFromVector3(coords)
+            if isPluginLoaded("postals") and type(getPostalFromVector3) == "function" then
+                postal = getPostalFromVector3(coords) or "Unknown"
             else
                 postal = "Unknown"
             end
