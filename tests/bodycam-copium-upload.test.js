@@ -11,7 +11,7 @@ const source = fs.readFileSync(path.join(root, 'sonorancad/submodules/bodycam/sv
 const WEBM = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 1, 2, 3, 4]);
 
 // Loads the server script with FiveM's natives stubbed, and returns what it did.
-function load({ copium = { enabled: true }, copiumState = 'started', copiumUpload, registerStatus = 201 } = {}) {
+function load({ copium = null, copiumState = 'started', copiumUpload, registerStatus = 201 } = {}) {
 	const resourceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bodycam-copium-'));
 	const handlers = {};
 	const calls = { uploads: [], fetches: [], results: [], logs: [] };
@@ -19,7 +19,7 @@ function load({ copium = { enabled: true }, copiumState = 'started', copiumUploa
 	exportsFn.sonorancad = {
 		getPlayerCommunityUserId: () => 'cu-42',
 		GetUnitByPlayerId: () => ({ id: 7, location: 'Legion Square', data: { unitNum: '1A-12' } }),
-		GetPluginConfig: (name) => (name === 'bodycam' ? { recording: { copium } } : null),
+		GetPluginConfig: (name) => (name === 'bodycam' ? { recording: copium === null ? {} : { copium } } : null),
 	};
 	exportsFn.copium = {
 		UploadFile: (filePath, opts, cb) => {
@@ -55,15 +55,17 @@ function load({ copium = { enabled: true }, copiumState = 'started', copiumUploa
 	context.globalThis.fetch = context.fetch;
 	vm.runInContext(source, context);
 	const clip = path.join(resourceDir, 'clip.webm');
-	fs.writeFileSync(clip, WEBM);
-	const send = () => handlers['SonoranCAD::bodycam::UploadSavedRecording'](3, { uploadId: 'u1', fileName: 'clip.webm', durationMs: 42000, trigger: 'panic' }, clip);
-	return { calls, send, clip };
+	const send = () => {
+		fs.writeFileSync(clip, WEBM);
+		return handlers['SonoranCAD::bodycam::UploadSavedRecording'](3, { uploadId: 'u1', fileName: 'clip.webm', durationMs: 42000, trigger: 'panic' }, clip);
+	};
+	return { calls, send, clip, setCopiumState: (state) => { copiumState = state; } };
 }
 
 const cadUploads = (calls) => calls.fetches.filter((f) => f.url.endsWith('/v2/general/bodycam-recordings'));
 const registrations = (calls) => calls.fetches.filter((f) => f.url.endsWith('/v2/general/bodycam-recordings/external'));
 
-test('with Copium on, the clip is saved to Copium as public evidence and its link registered with the CAD', async () => {
+test('an older config automatically saves clips to running Copium and registers their links with the CAD', async () => {
 	const { calls, send, clip } = load();
 	await send();
 	assert.equal(calls.uploads.length, 1);
@@ -92,7 +94,7 @@ test('with Copium on, the clip is saved to Copium as public evidence and its lin
 });
 
 test('evidence can be turned off', async () => {
-	const { calls, send } = load({ copium: { enabled: true, evidence: false, path: 'cams' } });
+	const { calls, send } = load({ copium: { evidence: false, path: 'cams' } });
 	await send();
 	assert.equal(calls.uploads[0].opts.evidence, false);
 	assert.equal(calls.uploads[0].opts.path, 'cams/1A-12');
@@ -115,12 +117,43 @@ test('a failed CAD registration falls back to the normal CAD upload', async () =
 });
 
 test('Copium turned off, or its resource not running: the CAD upload is unchanged', async () => {
-	// (null: an older bodycam_config.lua with no copium section)
-	for (const options of [{ copium: { enabled: false } }, { copium: null }, { copiumState: 'stopped' }]) {
+	for (const options of [
+		{ copium: { enabled: false } },
+		{ copiumState: 'stopped' },
+		{ copiumState: 'missing' },
+		{ copiumState: 'starting' },
+		{ copium: { enabled: true }, copiumState: 'stopped' },
+	]) {
 		const { calls, send } = load(options);
 		await send();
 		assert.equal(calls.uploads.length, 0);
 		assert.equal(registrations(calls).length, 0);
 		assert.equal(cadUploads(calls).length, 1);
+		assert.equal(calls.logs.some((entry) => entry.level === 'warn'), false);
 	}
+});
+
+test('default and explicitly enabled settings both auto-detect Copium', async () => {
+	for (const copium of [{}, { enabled: true }]) {
+		const { calls, send } = load({ copium });
+		await send();
+		assert.equal(calls.uploads.length, 1);
+		assert.equal(registrations(calls).length, 1);
+		assert.equal(cadUploads(calls).length, 0);
+	}
+});
+
+test('resource starts, stops and restarts are detected for each clip', async () => {
+	const { calls, send, setCopiumState } = load({ copiumState: 'stopped' });
+	await send();
+	setCopiumState('started');
+	await send();
+	setCopiumState('stopped');
+	await send();
+	setCopiumState('started');
+	await send();
+	assert.equal(calls.uploads.length, 2);
+	assert.equal(registrations(calls).length, 2);
+	assert.equal(cadUploads(calls).length, 2);
+	assert.deepEqual(calls.results.map((result) => result.ok), [true, true, true, true]);
 });

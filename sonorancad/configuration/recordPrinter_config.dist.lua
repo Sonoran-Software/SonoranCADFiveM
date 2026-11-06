@@ -37,10 +37,10 @@ local config = {
 	},
     -- Copium (https://copium.pics): save each printed record to your Copium team's storage and print the Copium link,
     -- which keeps working. CAD print links expire after 24 hours, so older printouts, inventory items and documents
-    -- placed in the world would stop opening. Needs the copium resource started, with a Copium team key in its
+    -- placed in the world would stop opening. Automatically used while the copium resource is started, with a Copium team key in its
     -- config.lua. If saving to Copium fails, the CAD link is printed as usual.
     copium = {
-        enabled = false,
+        enabled = true, -- Set false to always print the CAD link, even when Copium is running.
         -- Lock each record in the team's evidence locker (when the team has it turned on).
         evidence = false,
         -- Folder in the team's storage.

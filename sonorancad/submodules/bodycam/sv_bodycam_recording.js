@@ -164,12 +164,19 @@ function wait(ms) {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Copium (https://copium.pics) settings from bodycam_config.lua (`recording.copium`), or null while it is turned off.
+// Detect Copium on each upload, including for older configs without `recording.copium`.
+// An explicit enabled = false keeps uploads on the CAD even when Copium is running.
 function getCopiumSettings() {
+	if (GetResourceState(COPIUM_RESOURCE) !== "started") {
+		return null;
+	}
 	try {
 		const plugin = exports[GetCurrentResourceName()].GetPluginConfig("bodycam");
-		const settings = plugin && plugin.recording && plugin.recording.copium;
-		return settings && settings.enabled === true ? settings : null;
+		if (!plugin || plugin.enabled === false) {
+			return null;
+		}
+		const settings = (plugin.recording && plugin.recording.copium) || {};
+		return settings.enabled === false ? null : settings;
 	} catch (err) {
 		return null;
 	}
@@ -233,7 +240,6 @@ function uploadClipToCopium(session, settings, details) {
 // to the normal CAD upload.
 async function saveClipToCopium(src, session, settings, apiKey, details) {
 	if (GetResourceState(COPIUM_RESOURCE) !== "started") {
-		log("warn", `Copium is turned on in the bodycam config but the ${COPIUM_RESOURCE} resource isn't started; uploading to the CAD instead.`);
 		return false;
 	}
 	const fileUrl = await uploadClipToCopium(session, settings, details);

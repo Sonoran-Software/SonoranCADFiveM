@@ -22,6 +22,23 @@ The FiveM resource now uses the CAD link flow on API v2.
 - Third-party resources can read the CAD community ID, server ID, and linked `communityUserId` through exports documented in [sonorancad/LINKING_V2.md](sonorancad/LINKING_V2.md).
 - Tablet/iframe integrations can forward SSO data through the server events documented in [sonorancad/LINKING_V2.md](sonorancad/LINKING_V2.md).
 
+## Copium storage
+
+Bodycam clips and printed record PDFs automatically use a running `copium`
+resource. Install Copium from copium.pics → Apps → FiveM, configure its
+`Config.Token` with a Copium team key, and start it. The CAD checks for Copium
+on each upload and uses its normal storage or print link when Copium is stopped
+or saving fails.
+
+Optional settings remain in `configuration/bodycam_config.lua`
+(`recording.copium`) and `configuration/recordPrinter_config.lua` (`copium`).
+These set the storage folder and evidence-locking options. Set the relevant
+`copium.enabled = false` to opt out. Older configs without these sections
+auto-detect Copium; an existing explicit `false` must be changed to `true` to
+enable it. See the [bodycam guide](sonorancad/submodules/bodycam/README.md#save-clips-to-copium)
+for clip limits and public-link behavior. Printed PDFs also use public links
+so players can open them without a Copium account.
+
 ## Development Bounties
 Get PAID to contribute to the open source project!!!
 

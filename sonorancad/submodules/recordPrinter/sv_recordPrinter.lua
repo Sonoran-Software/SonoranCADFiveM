@@ -10,16 +10,17 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         NotifyPlayer(target, ApplyPluginNotificationOverrides(pluginConfig, payload))
     end
 
+    -- Expose the automatic default through GetPluginConfig too, so the companion Copium resource knows this
+    -- printer handles its own uploads and does not archive a second copy. Preserve an explicit opt-out.
+    if type(pluginConfig.copium) ~= 'table' then pluginConfig.copium = {} end
+    if pluginConfig.copium.enabled == nil then pluginConfig.copium.enabled = true end
+
     -- Copium (copium.pics): upload the saved PDF and return its link, which keeps working after the CAD's print link
     -- expires (24 hours). Returns nil - and the CAD link is printed - when Copium is off or the upload fails.
     local COPIUM_UPLOAD_TIMEOUT_MS = 130000 -- longer than the copium resource's own 120-second upload limit
     local function saveRecordToCopium(path, filename, identId)
         local settings = pluginConfig.copium
-        if type(settings) ~= 'table' or settings.enabled ~= true then return nil end
-        if GetResourceState('copium') ~= 'started' then
-            warnLog("Record printer: Copium is turned on in the record printer config but the copium resource isn't started; printing the CAD link.")
-            return nil
-        end
+        if settings.enabled == false or GetResourceState('copium') ~= 'started' then return nil end
         local p = promise.new()
         local settled = false
         local function finish(url, err)
