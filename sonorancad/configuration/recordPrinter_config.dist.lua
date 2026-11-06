@@ -35,6 +35,17 @@ local config = {
 		use_quasar_inventory = false, -- Use Quasar inventory
 		use_qbcore = false -- Use the QBCore framework
 	},
+    -- Copium (https://copium.pics): save each printed record to your Copium team's storage and print the Copium link,
+    -- which keeps working. CAD print links expire after 24 hours, so older printouts, inventory items and documents
+    -- placed in the world would stop opening. Needs the copium resource started, with a Copium team key in its
+    -- config.lua. If saving to Copium fails, the CAD link is printed as usual.
+    copium = {
+        enabled = false,
+        -- Lock each record in the team's evidence locker (when the team has it turned on).
+        evidence = false,
+        -- Folder in the team's storage.
+        path = "records",
+    },
     translations = {
         placedInPocketPutCamAway = 'Document placed in pocket!',
         placedInPocket = 'Document placed in pocket!',

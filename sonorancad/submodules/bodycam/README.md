@@ -42,6 +42,29 @@ The housing, logo, and light share a single 1536 × 1024 coordinate system in
 `core/client_nui/bodycam_screen.html`. This keeps them aligned at every HUD size
 and screen corner. The old separate `light_off.png` layer is no longer used.
 
+## Save clips to Copium
+
+Recorded clips normally go to the CAD, which keeps them for 24 hours. With
+[Copium](https://copium.pics), clips are saved to your Copium team's storage
+instead and their links are registered with the CAD, so they stay attached to
+records and don't use the CAD's daily recording allowance.
+
+1. Install and start the `copium` resource (copium.pics → Apps → FiveM).
+2. In Copium, make a team key (Teams → your server → Integrations) and paste it
+   into the copium resource's `config.lua` as `Config.Token`.
+3. In `configuration/bodycam_config.lua`, set `recording.copium.enabled = true`
+   and restart.
+
+By default each clip is also locked in the team's evidence locker (when the team
+has it turned on); set `recording.copium.evidence = false` to skip that. Clips
+are filed under `bodycam/<unit number>` in the team's storage. Their links stay
+public, because CAD viewers don't have Copium accounts.
+
+If the copium resource isn't running, or saving or registering a clip fails,
+the clip is uploaded to the CAD as usual and the server console says why. The
+clip limits (120 seconds, 6 MB) are the same either way. Older
+`bodycam_config.lua` files without a `copium` section keep uploading to the CAD.
+
 ## Artwork sources
 
 Both logo variants are rendered from the exact icon paths in the official

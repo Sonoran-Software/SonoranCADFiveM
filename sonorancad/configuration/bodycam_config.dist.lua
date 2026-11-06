@@ -115,6 +115,18 @@ local config = {
         keybinds = {
             toggleRecording = "",
         },
+
+        -- Copium (https://copium.pics): save clips to your Copium team's storage instead of the CAD's 24-hour
+        -- storage, so they stay attached to records and don't use the daily recording allowance.
+        -- Needs the copium resource started, with a Copium team key in its config.lua.
+        -- If saving to Copium fails, the clip is uploaded to the CAD as usual.
+        copium = {
+            enabled = false,
+            -- Lock clips in the team's evidence locker (when the team has it turned on).
+            evidence = true,
+            -- Folder in the team's storage. Each unit gets its own subfolder.
+            path = "bodycam",
+        },
     },
 
     -- Automaticlly enable bodycam when lights are enabled / disabled
