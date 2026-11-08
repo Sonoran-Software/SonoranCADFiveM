@@ -117,7 +117,7 @@ local config = {
         },
 
         -- Copium (https://copium.pics): save clips to your Copium team's storage instead of the CAD's 24-hour
-        -- storage, so they stay attached to records and don't use the daily recording allowance.
+        -- storage, so they stay attached to records.
         -- Automatically used while the copium resource is started, with a Copium team key in its config.lua.
         -- If saving to Copium fails, the clip is uploaded to the CAD as usual.
         copium = {

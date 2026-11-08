@@ -25,6 +25,7 @@ class RecordPrinterCopiumTests(unittest.TestCase):
             function GetUnitCache() return {{id = 7}} end
             function GetUnitIdentityValues(unit) return unit end
             function GetSourceByCadIdentity(_) return 3 end
+            function GetPlayerCommunityUserId(source) return 'cu-' .. source end
             function debugLog(...) end
             function warnLog(message) table.insert(warnings, message) end
             function SetTimeout(_, fn) timeout = fn end
@@ -73,6 +74,16 @@ class RecordPrinterCopiumTests(unittest.TestCase):
         self.assertEqual(options.path, 'records')
         self.assertTrue(options.public)
         self.assertFalse(options.evidence)
+        self.assertEqual(dict(options.metadata), {'source': 'sonorancad-record-printer', 'identId': 7, 'communityUserId': 'cu-3'})
+
+    def test_records_upload_without_a_linked_cad_account(self):
+        for stub in ('GetPlayerCommunityUserId = nil', "function GetPlayerCommunityUserId() error('not linked') end"):
+            with self.subTest(stub=stub):
+                lua, g = self.runtime()
+                lua.execute(stub)
+                self.print_record(lua, g)
+                self.assertEqual(g.queued[1], COPIUM_URL)
+                self.assertIsNone(g.uploads[1].options.metadata.communityUserId)
 
     def test_auto_detection_preserves_custom_options(self):
         lua, g = self.runtime({'path': 'case-files', 'evidence': True})

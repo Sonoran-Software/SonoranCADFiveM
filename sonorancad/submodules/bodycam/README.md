@@ -47,7 +47,7 @@ and screen corner. The old separate `light_off.png` layer is no longer used.
 Recorded clips normally go to the CAD, which keeps them for 24 hours. With
 [Copium](https://copium.pics), clips are saved to your Copium team's storage
 instead and their links are registered with the CAD, so they stay attached to
-records and don't use the CAD's daily recording allowance.
+records.
 
 1. Install and start the `copium` resource (copium.pics → Apps → FiveM).
 2. In Copium, make a team key (Teams → your server → Integrations) and paste it
@@ -58,8 +58,9 @@ starts or stops after the CAD resource. No CAD configuration change is needed.
 
 By default each clip is also locked in the team's evidence locker (when the team
 has it turned on); set `recording.copium.evidence = false` to skip that. Clips
-are filed under `bodycam/<unit number>` in the team's storage. Their links stay
-public, because CAD viewers don't have Copium accounts.
+are filed under `bodycam/<unit number>` in the team's storage and tagged with
+the officer's CAD account (`communityUserId`). Their links stay public, because
+CAD viewers don't have Copium accounts.
 
 If the copium resource isn't running, the clip is uploaded to the CAD as usual.
 Saving or registration failures also fall back to the CAD and log the reason.

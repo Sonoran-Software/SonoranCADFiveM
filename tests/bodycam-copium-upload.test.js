@@ -11,14 +11,14 @@ const source = fs.readFileSync(path.join(root, 'sonorancad/submodules/bodycam/sv
 const WEBM = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 1, 2, 3, 4]);
 
 // Loads the server script with FiveM's natives stubbed, and returns what it did.
-function load({ copium = null, copiumState = 'started', copiumUpload, registerStatus = 201 } = {}) {
+function load({ copium = null, copiumState = 'started', copiumUpload, registerStatus = 201, unitNum = '1A-12' } = {}) {
 	const resourceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bodycam-copium-'));
 	const handlers = {};
 	const calls = { uploads: [], fetches: [], results: [], logs: [] };
 	const exportsFn = () => {};
 	exportsFn.sonorancad = {
 		getPlayerCommunityUserId: () => 'cu-42',
-		GetUnitByPlayerId: () => ({ id: 7, location: 'Legion Square', data: { unitNum: '1A-12' } }),
+		GetUnitByPlayerId: () => ({ id: 7, location: 'Legion Square', data: { unitNum } }),
 		GetPluginConfig: (name) => (name === 'bodycam' ? { recording: copium === null ? {} : { copium } } : null),
 	};
 	exportsFn.copium = {
@@ -75,6 +75,7 @@ test('an older config automatically saves clips to running Copium and registers 
 	assert.equal(opts.evidence, true, 'evidence locker by default');
 	assert.equal(opts.path, 'bodycam/1A-12');
 	assert.equal(opts.mimeType, 'video/webm');
+	assert.deepEqual({ ...opts.metadata }, { source: 'sonorancad-bodycam', communityUserId: 'cu-42', unitNumber: '1A-12', identId: 7, durationMs: 42000, trigger: 'panic' });
 
 	assert.equal(cadUploads(calls).length, 0);
 	const [register] = registrations(calls);
@@ -98,6 +99,15 @@ test('evidence can be turned off', async () => {
 	await send();
 	assert.equal(calls.uploads[0].opts.evidence, false);
 	assert.equal(calls.uploads[0].opts.path, 'cams/1A-12');
+});
+
+test('unit numbers become folder names Copium accepts', async () => {
+	for (const [unitNum, folder] of [['2-ADAM-12', 'bodycam/2-ADAM-12'], ['1A/12', 'bodycam/1A-12'], ['#12 ★', 'bodycam/12'], ['..', 'bodycam'], ['★', 'bodycam']]) {
+		const { calls, send } = load({ unitNum });
+		await send();
+		assert.equal(calls.uploads[0].opts.path, folder, unitNum);
+		assert.equal(calls.uploads[0].opts.title, `Bodycam - ${unitNum}`, 'the title keeps the unit number as written');
+	}
 });
 
 test('a failed Copium upload falls back to the normal CAD upload', async () => {

@@ -18,7 +18,7 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
     -- Copium (copium.pics): upload the saved PDF and return its link, which keeps working after the CAD's print link
     -- expires (24 hours). Returns nil - and the CAD link is printed - when Copium is off or the upload fails.
     local COPIUM_UPLOAD_TIMEOUT_MS = 130000 -- longer than the copium resource's own 120-second upload limit
-    local function saveRecordToCopium(path, filename, identId)
+    local function saveRecordToCopium(path, filename, identId, communityUserId)
         local settings = pluginConfig.copium
         if settings.enabled == false or GetResourceState('copium') ~= 'started' then return nil end
         local p = promise.new()
@@ -38,7 +38,8 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
                 -- Players and CAD viewers have no Copium account, so the link must stay public.
                 public = true,
                 evidence = settings.evidence == true,
-                metadata = { source = 'sonorancad-record-printer', identId = identId },
+                -- communityUserId: the CAD account that printed it, so the CAD can find it again.
+                metadata = { source = 'sonorancad-record-printer', identId = identId, communityUserId = communityUserId },
             }, function(url, result)
                 finish(url, result and result.error)
             end)
@@ -156,7 +157,10 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         end
         debugLog(('Record printer saved PDF: identity=%s path=%s'):format(identId, savedPath))
 
-        local copiumUrl = saveRecordToCopium(savedPath, filename, printData.identId)
+        local okUser, communityUserId = pcall(function()
+            return GetPlayerCommunityUserId ~= nil and GetPlayerCommunityUserId(unitSource) or nil
+        end)
+        local copiumUrl = saveRecordToCopium(savedPath, filename, printData.identId, okUser and communityUserId or nil)
         TriggerClientEvent('SonoranCAD::recordPrinter:PrintQueue', unitSource, copiumUrl or printData.url)
 
     end)

@@ -186,6 +186,11 @@ function optionalString(value) {
 	return value !== undefined && value !== null && value !== "" ? String(value) : undefined;
 }
 
+// A unit number as one folder name Copium accepts (letters, digits, spaces, . _ -); other characters become "-".
+function folderName(value) {
+	return String(value).replace(/[^\w.\- ]+/g, "-").replace(/^[.\s-]+|[.\s-]+$/g, "");
+}
+
 function optionalInteger(value) {
 	const number = Number(value);
 	return value !== undefined && value !== null && value !== "" && Number.isInteger(number) && number >= 0 ? number : undefined;
@@ -212,17 +217,20 @@ function uploadClipToCopium(session, settings, details) {
 		};
 		timer = setTimeout(() => finish(null, { error: "timed out" }), COPIUM_UPLOAD_TIMEOUT_MS);
 		const basePath = optionalString(settings.path) || "bodycam";
+		const unitFolder = details.unitNumber ? folderName(details.unitNumber) : "";
 		try {
 			exports[COPIUM_RESOURCE].UploadFile(session.filePath, {
 				title: details.unitNumber ? `Bodycam - ${details.unitNumber}` : "Bodycam clip",
 				filename: session.fileName,
 				mimeType: "video/webm",
-				path: details.unitNumber ? `${basePath}/${details.unitNumber}` : basePath,
+				path: unitFolder ? `${basePath}/${unitFolder}` : basePath,
 				// CAD viewers have no Copium account, so the link must stay public.
 				public: true,
 				evidence: settings.evidence !== false,
 				metadata: {
 					source: "sonorancad-bodycam",
+					// The officer's CAD account, so the CAD can find the clips they recorded.
+					communityUserId: optionalString(details.communityUserId) || null,
 					unitNumber: details.unitNumber || null,
 					identId: details.identId === undefined ? null : details.identId,
 					durationMs: details.durationMs,
@@ -235,8 +243,8 @@ function uploadClipToCopium(session, settings, details) {
 	});
 }
 
-// Saves the clip to Copium and registers its link with the CAD (clips registered this way don't expire and don't use
-// the CAD's daily recording allowance). Returns false, having told the player nothing, when the caller should fall back
+// Saves the clip to Copium and registers its link with the CAD, which keeps the link instead of storing the file, so the
+// clip doesn't expire after 24 hours. Returns false, having told the player nothing, when the caller should fall back
 // to the normal CAD upload.
 async function saveClipToCopium(src, session, settings, apiKey, details) {
 	if (GetResourceState(COPIUM_RESOURCE) !== "started") {
