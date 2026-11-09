@@ -16,6 +16,9 @@ local config = {
     lang = {
         addNewDisplayHelp = "Open the menu to begin placing a CAD display",
         vehNotCompatible = "This vehicle is not compatible with the CAD display placement system!",
+        vehNotAllowlisted = 'CAD laptop blocked. Add "%s" to allowlistedCars in caddisplay_config.lua.',
+        vehNotAllowlistedUnknown = "CAD laptop blocked. Add this vehicle's spawn code (modelName in vehicles.meta) to allowlistedCars in caddisplay_config.lua.",
+        vehBlacklisted = "CAD laptop blocked. Remove this vehicle's spawn code from allowlistedCars in caddisplay_config.lua (blacklist mode).",
         vehAlreadyDisplay = "This vehicle already has a CAD display placement!",
         menuHeader = "Sonoran CAD Display",
         creditsPanel = "Made by",
@@ -92,6 +95,7 @@ local config = {
     },
 
     general = {
+        useAllowlist = true, -- Set false to allow CAD displays in all vehicles, ignoring blacklist mode too
         useAllowlistAsBlacklist = false -- If true, allowlistedCars is treated as a blacklist
     },
 
@@ -154,6 +158,7 @@ local config = {
     },
 
     -- Vehicles with built-in laptop screens you want to skin with the CAD DUI
+    -- These vehicles must also pass allowlistedCars when general.useAllowlist is enabled.
     -- Each entry needs:
     --   vehicle         - spawn code (model name) for the vehicle
     --   screenTexture   - texture name on the built-in laptop model to replace with the DUI
@@ -164,6 +169,7 @@ local config = {
         -- {vehicle = "POLICE", screenTexture = "laptop_screen", textureWidth = 512, textureHeight = 256}
     },
 
+    -- Vehicle spawn codes (model names), not display names. Used when general.useAllowlist is enabled.
     allowlistedCars = {
         "POLICE",
         "POLICE2",

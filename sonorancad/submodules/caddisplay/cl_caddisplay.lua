@@ -126,11 +126,11 @@ CreateThread(function()
                 return net
             end
 
-            function notify(message)
+            function notify(message, notificationType)
                 NotifyClient(ApplyPluginNotificationOverrides(pluginConfig, {
                     title = "CAD Display",
                     message = message,
-                    type = "info"
+                    type = notificationType or "info"
                 }))
             end
 
@@ -167,18 +167,36 @@ CreateThread(function()
             end
 
             function isVehicleBlocked(veh)
-                local modelHash = GetEntityModel(veh)
-                if builtinScreensByHash and builtinScreensByHash[modelHash] then
+                local general = pluginConfig.general or {}
+                -- Missing settings retain filtering for existing configurations.
+                if general.useAllowlist == false then
                     return false
                 end
-                if allowlistHashes and allowlistHashes[modelHash] then
-                    if pluginConfig.general.useAllowlistAsBlacklist then
-                        return true
-                    else
-                        return false
-                    end
+                local listed = allowlistHashes[GetEntityModel(veh)] == true
+                if general.useAllowlistAsBlacklist then
+                    return listed
                 end
-                return not pluginConfig.general.useAllowlistAsBlacklist
+                return not listed
+            end
+
+            function notifyVehicleBlocked(veh)
+                local lang = pluginConfig.lang
+                if (pluginConfig.general or {}).useAllowlistAsBlacklist then
+                    notify(lang.vehBlacklisted or
+                        "CAD laptop blocked. Remove this vehicle's spawn code from allowlistedCars in caddisplay_config.lua (blacklist mode).", "error")
+                    return
+                end
+
+                -- Display labels can differ from spawn codes, especially on add-on vehicles.
+                local spawnCode = GetEntityArchetypeName(veh)
+                if type(spawnCode) == "string" and spawnCode ~= "" and
+                    GetHashKey(spawnCode) == GetEntityModel(veh) then
+                    notify((lang.vehNotAllowlisted or
+                        'CAD laptop blocked. Add "%s" to allowlistedCars in caddisplay_config.lua.'):format(spawnCode), "error")
+                else
+                    notify(lang.vehNotAllowlistedUnknown or
+                        "CAD laptop blocked. Add this vehicle's spawn code (modelName in vehicles.meta) to allowlistedCars in caddisplay_config.lua.", "error")
+                end
             end
 
             function isWorldDisplayEnabled()
@@ -463,6 +481,15 @@ CreateThread(function()
             end
 
             function spawnDisplay(veh)
+                veh = veh or GetVehiclePedIsIn(PlayerPedId(), false)
+                if veh == 0 then
+                    notify(pluginConfig.lang.notInVeh)
+                    return nil
+                end
+                if isVehicleBlocked(veh) then
+                    notifyVehicleBlocked(veh)
+                    return nil
+                end
                 ensureModel(displayModelHash)
                 local previewPosition, previewHeading = getDisplayPreviewTransform()
                 local obj = CreateObjectNoOffset(displayModelHash, previewPosition.x, previewPosition.y, previewPosition.z,
@@ -471,7 +498,7 @@ CreateThread(function()
                 SetEntityCollision(obj, false, false)
                 FreezeEntityPosition(obj, true)
                 latestSpawnedDisplay = obj
-                trackDisplayForVehicle(veh or GetVehiclePedIsIn(PlayerPedId(), false), obj)
+                trackDisplayForVehicle(veh, obj)
                 ensureDui()
                 return obj
             end
@@ -694,6 +721,11 @@ CreateThread(function()
             function beginVehiclePlacementEditor(isNew)
                 if placementEditing or SonoranPlacementEditor.IsActive() then return end
                 local vehicle = GetVehiclePedIsIn(PlayerPedId(), false)
+                if vehicle ~= 0 and isVehicleBlocked(vehicle) then
+                    notifyVehicleBlocked(vehicle)
+                    WarMenu.CloseMenu()
+                    return
+                end
                 local record = vehicle ~= 0 and findVehicleRecord(vehicle) or nil
                 local object = record and record.prop
                 if vehicle == 0 or not object or not DoesEntityExist(object) then
@@ -834,18 +866,29 @@ CreateThread(function()
                         notify(pluginConfig.lang.notInVeh)
                         return
                     end
+                    if isVehicleBlocked(veh) then
+                        notifyVehicleBlocked(veh)
+                        return
+                    end
                     local placement = getPlacementForVehicle(veh)
                     if placement then
                         notify(pluginConfig.lang.vehAlreadyDisplayNoti)
                         return
                     end
                     if GetEntitySpeed(veh) > 0.05 then notify("Stop the vehicle before placing the display."); return end
-                    spawnDisplay(veh)
-                    beginVehiclePlacementEditor(true)
+                    if spawnDisplay(veh) then
+                        beginVehiclePlacementEditor(true)
+                    end
                 end
             end
 
             function attachingCadDisplay()
+                local currentVeh = GetVehiclePedIsIn(PlayerPedId(), false)
+                if currentVeh ~= 0 and isVehicleBlocked(currentVeh) then
+                    notifyVehicleBlocked(currentVeh)
+                    WarMenu.CloseMenu()
+                    return
+                end
                 if WarMenu.Button("Position this vehicle's display with mouse") then
                     beginVehiclePlacementEditor()
                 end
@@ -893,7 +936,9 @@ CreateThread(function()
                                         trackDisplayForVehicle(vehPedIn, existingDisplay)
                                     else
                                         local obj = spawnDisplay(vehPedIn)
-                                        attachDisplayToVehicle(obj, vehPedIn, placement)
+                                        if obj then
+                                            attachDisplayToVehicle(obj, vehPedIn, placement)
+                                        end
                                     end
                                 end
                                 ensureDui()
@@ -1205,7 +1250,7 @@ CreateThread(function()
                 local veh = GetVehiclePedIsIn(PlayerPedId(), false)
                 if veh ~= 0 and not isVehicleBlocked(veh) then
                     WarMenu.OpenMenu("caddisplay_menu")
-                elseif isWorldDisplayEnabled() then
+                elseif isWorldDisplayEnabled() and (veh == 0 or worldAdmin) then
                     if worldAdmin then
                         WarMenu.OpenMenu("caddisplay_world_menu")
                     else
@@ -1222,6 +1267,8 @@ CreateThread(function()
                         end
                         notify(message)
                     end
+                elseif veh ~= 0 then
+                    notifyVehicleBlocked(veh)
                 elseif veh == 0 then
                     notify(pluginConfig.lang.worldDisplaysDisabled or "Station CAD displays are disabled in the configuration.")
                 else
