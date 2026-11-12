@@ -1,10 +1,5 @@
-ApiUrls = {
-    production = "https://api.sonorancad.com/",
-    development = "https://staging-api.dev.sonorancad.com/"
-}
-
 function getApiUrl()
-    return Config.apiUrl or GetCadConfigurationBootstrapUrl()
+    return GetCadApiUrl(Config.mode) or GetCadConfigurationBootstrapUrl()
 end
 
 local function validateBundledCfgPermissions()

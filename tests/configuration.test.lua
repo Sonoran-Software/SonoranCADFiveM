@@ -71,19 +71,19 @@ local function runUntil(predicate, limit)
     end
 end
 local function document()
-    return {core = {communityID='test', branch='production', apiUrl='https://api.sonorancad.com/', primaryIdentifier='license', postTime=5000, apiSendEnabled=true, debugMode=false},
+    return {core = {communityID='test', mode='production', primaryIdentifier='license', postTime=5000, apiSendEnabled=true, debugMode=false},
         plugins = {kick = {pluginName='kick', configVersion='1.0', enabled=true}},
         updaterIgnore={ignore={}}, vehicleModels={car={type='SEDAN'}}, callTemplates={}}
 end
 local legacy = 'local config = {enabled=true, pluginName="kick", configVersion="1.0"}\n' ..
     'if config.enabled then Config.RegisterPluginConfig(config.pluginName, config) end'
-local function setup(status, data, cached, rootConfig, legacyServerId)
+local function setup(status, data, cached, rootConfig, legacyServerId, legacyMode)
     notices = {}
     files, convars, handlers, threads, logs, now, writes, archiveCalls = {}, {}, {}, {}, {}, 0, 0, 0
     Config, Plugins, replies = nil, nil, nil
     convars.sonoran_communityID='test'; convars.sonoran_apiKey='secret'; convars.sonoran_serverId='1'
     convars.sonoran_debugMode='true' -- CAD must override this ordinary setting.
-    files['configuration/config.json'] = json.encode({communityID='test', apiKey='secret', serverId=legacyServerId or 1,
+    files['configuration/config.json'] = json.encode({communityID='test', apiKey='secret', serverId=legacyServerId or 1, mode=legacyMode,
         primaryIdentifier='license', postTime=5000, apiSendEnabled=true, debugMode=false})
     if rootConfig then files['config.json']=type(rootConfig)=='string' and rootConfig or json.encode(rootConfig) end
     files['configuration/kick_config.lua']=legacy
@@ -112,26 +112,33 @@ assert(activeRoot.apiKey=='secret' and activeRoot.serverId==1 and activeRoot.com
 setup(200, document(), nil, {apiKey='root-key',serverId=7})
 assert(Config.apiKey=='root-key' and Config.serverId==7, 'Legacy/convars superseded root config.json')
 assert(Config.communityID=='test' and Config.mode=='production' and Config.apiUrl=='https://api.sonorancad.com/')
+local stored=json.decode(files['.configuration-cache.json']).configuration.core
+assert(stored.mode=='production' and stored.branch==nil and stored.apiUrl==nil,
+    'CAD cache must contain mode without an API URL')
 setup(200, document(), nil, {apiKey='root-key',serverId=7,branch='development'})
 assert(Config.critError and Config.bootstrapError, 'Extra root configuration keys were accepted')
 setup(200, document(), nil, {apiKey='root-key',serverId='7'})
 assert(Config.critError and Config.bootstrapError, 'Non-numeric server ID was accepted')
 setup(200,document(),nil,'{broken')
 assert(Config.critError and Config.bootstrapError, 'Malformed nonempty root config was accepted')
-local routed=document(); routed.core.branch='development';routed.core.apiUrl='https://cad-api.example.test/custom/'
+local routed=document(); routed.core.mode='development'
 setup(200, routed, nil, {apiKey='root-key',serverId=7})
-assert(Config.mode=='development' and Config.apiUrl=='https://cad-api.example.test/custom/')
+assert(Config.mode=='development' and Config.apiUrl=='https://staging-api.dev.sonorancad.com/')
 setup(503, nil, routed)
-assert(Config.configurationSource=='cache' and Config.mode=='development' and Config.apiUrl==routed.core.apiUrl)
+assert(Config.configurationSource=='cache' and Config.mode=='development' and Config.apiUrl=='https://staging-api.dev.sonorancad.com/')
+local oldCache=clone(routed);oldCache.core.mode=nil;oldCache.core.branch='development';oldCache.core.apiUrl='https://obsolete-api.example.test/'
+setup(503,nil,oldCache)
+assert(Config.configurationSource=='cache' and Config.mode=='development' and Config.apiUrl=='https://staging-api.dev.sonorancad.com/',
+    'Earlier test cache did not normalize mode or discarded URL')
 local incomplete=document();incomplete.core.communityID=nil
 setup(200,incomplete)
 assert(Config.critError, 'CAD configuration without community ID was activated')
-incomplete=document();incomplete.core.branch=nil
+incomplete=document();incomplete.core.mode=nil
 setup(200,incomplete)
-assert(Config.critError, 'CAD configuration without branch was activated')
-incomplete=document();incomplete.core.apiUrl=nil
+assert(Config.critError, 'CAD configuration without mode was activated')
+incomplete=document();incomplete.core.mode='unknown'
 setup(200,incomplete)
-assert(Config.critError, 'CAD configuration without API URL was activated')
+assert(Config.critError, 'CAD configuration with invalid mode was activated')
 
 setup(404, nil, document())
 assert(Config.critError and writes==0 and archiveCalls==0 and Config.configurationSource~='legacy',
@@ -197,10 +204,15 @@ end
 setup(404,nil,nil,{apiKey='different-key',serverId=2})
 assert(Config.critError, 'Legacy settings from another credential/server were used')
 
-for _, failure in ipairs({'none', 'upload', 'archive', 'archive-throw', 'readback', 'partial-readback', 'cache', 'conflict', 'missing-setting', 'templates', 'templates-missing', 'older-config', 'bootstrap', 'empty-root', 'whitespace-root', 'empty-object-root', 'default-root'}) do
+for _, failure in ipairs({'none', 'development-mode', 'upload', 'archive', 'archive-throw', 'readback', 'partial-readback', 'cache', 'conflict', 'missing-setting', 'templates', 'templates-missing', 'older-config', 'bootstrap', 'empty-root', 'whitespace-root', 'empty-object-root', 'default-root'}) do
     local emptyRoots={['empty-root']='', ['whitespace-root']=' \r\n ', ['empty-object-root']={}, ['default-root']={apiKey='',serverId=1}}
     local root=emptyRoots[failure]
-    setup(404,nil,nil,root,root and 17 or nil)
+    setup(404,nil,nil,root,root and 17 or nil,failure=='development-mode' and 'development' or nil)
+    if failure=='development-mode' then
+        local core=json.decode(files['configuration/config.json'])
+        core.mode='development';core.branch='production';core.apiUrl='https://obsolete-api.example.test/'
+        files['configuration/config.json']=json.encode(core)
+    end
     if root then
         assert(not Config.bootstrapError and Config.apiKey=='secret' and Config.serverId==17)
         assert(files['config.json']~=nil and archiveCalls==0, 'Startup archived or removed legacy settings')
@@ -251,10 +263,12 @@ for _, failure in ipairs({'none', 'upload', 'archive', 'archive-throw', 'readbac
         assert(prepared.apiKey=='secret' and prepared.serverId==Config.serverId,
             'Migration did not prepare credentials before the API request')
     end
-    local succeeds=failure=='none' or failure=='archive' or failure=='archive-throw' or failure=='templates' or failure=='older-config' or root~=nil
+    local succeeds=failure=='none' or failure=='development-mode' or failure=='archive' or failure=='archive-throw' or failure=='templates' or failure=='older-config' or root~=nil
     assert(archiveCalls==(succeeds and 1 or 0))
     if uploaded then
         assert(uploaded.core.apiKey==nil and uploaded.core.serverId==nil and uploaded.core.communityID=='test')
+        assert(uploaded.core.mode==(failure=='development-mode' and 'development' or 'production') and uploaded.core.branch==nil and uploaded.core.apiUrl==nil
+            and uploaded.core.apiURL==nil, 'Legacy migration retained branch or an API URL')
         assert(uploaded.plugins.kick.pluginName=='kick' and uploaded.plugins.custom.enabled==false)
         if root then
             local boot=json.decode(files['config.json'])
@@ -330,6 +344,8 @@ local payload=json.decode(request.body)
 assert(request.method=='POST' and request.url:match('/configuration/migrate$'))
 assert(payload.serverId==1 and payload.config.kick.enabled and payload.config.plugins==nil)
 assert(payload.config.core.apiKey==nil and payload.config.core.livemap_vehicle_models.car.type=='SEDAN')
+assert(payload.config.core.mode=='production' and payload.config.core.branch==nil and payload.config.core.apiUrl==nil
+    and payload.config.core.apiURL==nil, 'Migration must send mode without an API URL')
 assert(http('migrate',200,{serverId=1,status='alreadyMigrated'}).data.status=='alreadyMigrated')
 assert(http('migrate',200,{serverId=2,status='saved'}).status==502)
 assert(http('migrate',200,{serverId=1,status='unknown'}).status==502)
@@ -339,11 +355,15 @@ assert(http('get',404,{}).migrationPending==nil, 'An empty 404 was classified as
 assert(http('get',404,{title='Not Found'}).migrationPending==nil)
 assert(http('get',401,{title='Unauthorized'}).status==401)
 assert(http('get',200,{revision=4,values=flat}).data==nil, 'Earlier draft envelope was accepted')
-local alias=clone(flat);alias.core.communityID=nil;alias.core.commId='cad-community';alias.core.branch='development';alias.core.apiUrl='https://cad-api.example.test/'
+local alias=clone(flat);alias.core.communityID=nil;alias.core.commId='cad-community';alias.core.mode=nil;alias.core.branch='development';alias.core.apiUrl='https://cad-api.example.test/'
 assert(http('get',200,alias).data.core.communityID=='cad-community')
+assert(result.data.core.mode=='development' and result.data.core.branch==nil and result.data.core.apiUrl==nil)
+alias.core.mode='production';alias.core.apiURL='https://other-api.example.test/'
+assert(http('get',200,alias).data.core.mode=='production' and result.data.core.apiURL==nil,
+    'Canonical mode must take priority over the earlier branch alias')
 Config.apiUrl='https://other-api.example.test/'
 assert(http('get',200,flat).status==200 and request.url=='https://api.sonorancad.com/v2/fivem/servers/1/configuration',
-    'CAD-controlled API URL changed the initial configuration lookup address')
+    'Runtime API URL changed the initial configuration lookup address')
 function GetResourceMetadata(_,key) if key=='configuration_bootstrap_url' then return 'https://staging-api.dev.sonorancad.com/' end end
 assert(http('get',200,flat).status==200 and request.url=='https://staging-api.dev.sonorancad.com/v2/fivem/servers/1/configuration')
 GetResourceMetadata=nil
@@ -351,7 +371,7 @@ GetResourceMetadata=nil
 local clients={}
 Sonoran={logLevels={ERROR=0},productEnums={CAD=0},createClient=function(options) clients[#clients+1]=options; return {} end}
 GetCadClient()
-Config.apiUrl='https://configured-api.example.test/';Config.communityID='configured-community'
+Config.mode='development';Config.apiUrl=GetCadApiUrl(Config.mode);Config.communityID='configured-community'
 GetCadClient()
 assert(#clients==2 and clients[2].apiUrl==Config.apiUrl and clients[2].communityId==Config.communityID,
     'An early SDK client retained the pre-CAD API URL/community')

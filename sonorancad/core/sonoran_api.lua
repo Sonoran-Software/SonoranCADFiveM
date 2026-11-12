@@ -6,6 +6,26 @@ local COMMUNITY_LINK_CHECK_CACHE_TTL_MS = 10 * 60 * 1000
 -- The transport uses the documented flat CAD shape; the loader/cache keep one
 -- internal shape. Bootstrap secrets are never included in migration or cache data.
 local resolve_api_url
+local apiUrls = {
+    production = 'https://api.sonorancad.com/',
+    development = 'https://staging-api.dev.sonorancad.com/'
+}
+function GetCadApiUrl(mode)
+    return apiUrls[mode]
+end
+
+-- Read earlier test configurations, but keep only the established mode setting.
+function NormalizeCadCoreConfiguration(core)
+    local normalized = {}
+    for key, setting in pairs(core) do
+        if key ~= 'apiKey' and key ~= 'serverId' and key ~= 'branch' and key ~= 'commId' and
+            key ~= 'apiUrl' and key ~= 'apiURL' then normalized[key] = setting end
+    end
+    normalized.communityID = core.communityID or core.commId
+    normalized.mode = core.mode or core.branch
+    return normalized
+end
+
 function GetCadConfigurationBootstrapUrl()
     local url = type(GetResourceMetadata) == 'function' and
         GetResourceMetadata(GetCurrentResourceName(), 'configuration_bootstrap_url', 0)
@@ -13,14 +33,9 @@ function GetCadConfigurationBootstrapUrl()
 end
 local function fromCadConfiguration(value)
     if type(value) ~= 'table' or type(value.core) ~= 'table' then return nil end
-    local document = {core = {}, plugins = {}, updaterIgnore = value.core.updateIgnore or {ignore = {}},
+    local document = {core = NormalizeCadCoreConfiguration(value.core), plugins = {}, updaterIgnore = value.core.updateIgnore or {ignore = {}},
         vehicleModels = value.core.livemap_vehicle_models or {}, callTemplates = {}}
-    for key, setting in pairs(value.core) do
-        if key ~= 'apiKey' and key ~= 'serverId' and key ~= 'mode' and key ~= 'commId' and
-            key ~= 'updateIgnore' and key ~= 'livemap_vehicle_models' then document.core[key] = setting end
-    end
-    document.core.communityID = value.core.communityID or value.core.commId
-    document.core.branch = value.core.branch or value.core.mode
+    document.core.updateIgnore, document.core.livemap_vehicle_models = nil, nil
     for name, settings in pairs(value) do
         if name ~= 'core' then
             if type(name) ~= 'string' or type(settings) ~= 'table' then return nil end
@@ -31,10 +46,7 @@ local function fromCadConfiguration(value)
     return document
 end
 local function toCadConfiguration(document)
-    local value = {core = {}}
-    for key, setting in pairs(document.core) do
-        if key ~= 'apiKey' and key ~= 'serverId' and key ~= 'mode' and key ~= 'commId' then value.core[key] = setting end
-    end
+    local value = {core = NormalizeCadCoreConfiguration(document.core)}
     value.core.updateIgnore = document.updaterIgnore
     value.core.livemap_vehicle_models = document.vehicleModels
     for name, settings in pairs(document.plugins) do

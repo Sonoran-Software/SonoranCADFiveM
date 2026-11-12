@@ -80,7 +80,7 @@ local coreTypes = {
     allowPopupCloseWhenUnlinked='boolean', linkPollIntervalMs='number', linkPopupTitleText='string', linkButtonText='string',
     statusLabels='table', allowAutoUpdate='boolean', autoUpdateUrl='string', allowUpdateWithPlayers='boolean',
     noUnitTimer='boolean', enablePushEventForwarding='boolean', pushEventForwardUrl='string',
-    disableOverride='boolean', devHiddenSwitch='boolean', communityID='string', branch='string', apiUrl='string'
+    disableOverride='boolean', devHiddenSwitch='boolean', communityID='string', mode='string'
 }
 local function validate(document, phase)
     local migrating = phase == 'migration'
@@ -89,10 +89,8 @@ local function validate(document, phase)
         return nil, 'Expected a complete core/plugins configuration document.'
     end
     if not migrating and (type(document.core.communityID) ~= 'string' or document.core.communityID == '' or
-        (document.core.branch ~= 'production' and document.core.branch ~= 'development') or
-        type(document.core.apiUrl) ~= 'string' or not document.core.apiUrl:match('^https?://[^/%s@?#]+') or
-        document.core.apiUrl:find('[?#]')) then
-        return nil, 'CAD must provide communityID, branch (production/development), and a valid apiUrl.'
+        (document.core.mode ~= 'production' and document.core.mode ~= 'development')) then
+        return nil, 'CAD must provide communityID and mode (production/development).'
     end
     -- These required core values cannot come from old files or convar overrides.
     if not migrating and (type(document.core.primaryIdentifier) ~= 'string' or document.core.primaryIdentifier == '' or
@@ -158,6 +156,9 @@ end
 local function readCache()
     local cached = decode(LoadResourceFile(resource, cachePath))
     if not cached or cached.version ~= 1 or cached.scope ~= cacheScope then return nil end
+    if type(cached.configuration) == 'table' and type(cached.configuration.core) == 'table' then
+        cached.configuration.core = NormalizeCadCoreConfiguration(cached.configuration.core)
+    end
     local parsed, err = validate(cached.configuration)
     if not parsed or err then return nil end
     local tier = tonumber(cached.apiVersion)
@@ -173,8 +174,7 @@ end
 
 local function applyConfiguration(document, parsed)
     for key, value in pairs(document.core) do Config[key] = value end
-    Config.mode = document.core.branch
-    Config.apiUrl = document.core.apiUrl:gsub('/+$', '') .. '/'
+    Config.apiUrl = GetCadApiUrl(Config.mode)
     SetConvar('sonoran_apiKey', Config.apiKey)
     SetConvar('sonoran_serverId', tostring(Config.serverId))
     SetConvar('sonoran_communityID', Config.communityID)
@@ -546,17 +546,15 @@ collectLegacy = function(startup)
     local modeSetter = GetConvar('sonoran_mode_setter', 'NONE')
     if (legacyMode == 'development' or legacyMode == 'production') and (modeSetter == 'NONE' or modeSetter == 'server') then
         -- Honor existing server.cfg overrides only in the legacy transition.
-        document.core.branch = legacyMode
+        document.core.mode = legacyMode
     end
-    document.core.branch = document.core.branch or document.core.mode or
+    document.core.mode = document.core.mode or document.core.branch or
         (GetCadConfigurationBootstrapUrl():find('staging', 1, true) and 'development' or 'production')
-    document.core.apiUrl = document.core.apiUrl or
-        (document.core.branch == 'development' and 'https://staging-api.dev.sonorancad.com/' or 'https://api.sonorancad.com/')
-    for _, key in ipairs({'apiKey', 'serverId', 'mode', 'commId'}) do document.core[key] = nil end
+    document.core = NormalizeCadCoreConfiguration(document.core)
     for key, expected in pairs(coreTypes) do
         local value = GetConvar('sonoran_' .. key, 'NONE')
         local setter = GetConvar('sonoran_' .. key .. '_setter', 'NONE')
-        if key ~= 'communityID' and key ~= 'branch' and key ~= 'apiUrl' and value ~= 'NONE' and (setter == 'NONE' or setter == 'server') then
+        if key ~= 'communityID' and key ~= 'mode' and value ~= 'NONE' and (setter == 'NONE' or setter == 'server') then
             if expected == 'number' then value = tonumber(value)
             elseif expected == 'boolean' then
                 if value == 'true' then value = true elseif value == 'false' then value = false else value = nil end
