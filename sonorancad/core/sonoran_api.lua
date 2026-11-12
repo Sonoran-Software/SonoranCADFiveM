@@ -89,7 +89,18 @@ CadConfigurationApi = {
                 if value and value.serverId == serverId and (value.status == 'saved' or value.status == 'alreadyMigrated') then callback(200, value)
                 else callback(502, nil, 'CAD returned an invalid migration acknowledgement. Legacy files were preserved.') end
             else
-                callback(status, nil, title, status == 404 and {migrationPending = title ~= nil and title:lower():find('migrat', 1, true) ~= nil} or nil)
+                local pending
+                if status == 404 then
+                    local detail = value and type(value.detail) == 'string' and value.detail or ''
+                    local description = ((title or '') .. ' ' .. detail):lower()
+                    if description:find('migrat', 1, true) then pending = true
+                    else
+                        for _, text in ipairs({'server not found', 'unknown server', 'server does not belong', 'server is not registered', 'server not registered', 'server does not exist'}) do
+                            if description:find(text, 1, true) then pending = false; break end
+                        end
+                    end
+                end
+                callback(status, nil, title, {migrationPending = pending})
             end
         end, operation == 'get' and 'GET' or 'POST', body, {
             ['Authorization'] = 'Bearer ' .. Config.apiKey, ['Content-Type'] = 'application/json', ['Accept'] = 'application/json'

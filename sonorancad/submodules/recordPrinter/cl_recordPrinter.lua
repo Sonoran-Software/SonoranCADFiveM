@@ -6,6 +6,7 @@
     Description: Integrates SonoranCAD PDFs in-game.
 ]]
 CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig)
+    if not pluginConfig.enabled then return end
     local printQueue = {}
     local pendingShares = {}
     local doc_link = nil

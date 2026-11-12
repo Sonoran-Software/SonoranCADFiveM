@@ -139,7 +139,7 @@ local pluginRequests = {}
 RegisterNetEvent('SonoranCAD::core:receivePluginConfig')
 AddEventHandler('SonoranCAD::core:receivePluginConfig', function(name, entry)
     if not pluginRequests[name] or Config.plugins[name] then return end
-    local settings = ParseCadPluginConfiguration(name, entry)
+    local settings = ParseCadPluginConfiguration(name, entry, Config.configurationSource == 'legacy')
     Config.plugins[name] = settings or disable_plugin('Invalid CAD plugin configuration')
     if settings and settings.enabled then Plugins[#Plugins + 1] = name end
 end)

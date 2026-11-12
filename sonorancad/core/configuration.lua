@@ -82,7 +82,9 @@ local coreTypes = {
     noUnitTimer='boolean', enablePushEventForwarding='boolean', pushEventForwardUrl='string',
     disableOverride='boolean', devHiddenSwitch='boolean', communityID='string', branch='string', apiUrl='string'
 }
-local function validate(document, migrating)
+local function validate(document, phase)
+    local migrating = phase == 'migration'
+    local allowPartial = migrating or phase == 'legacy'
     if type(document) ~= 'table' or type(document.core) ~= 'table' or type(document.plugins) ~= 'table' then
         return nil, 'Expected a complete core/plugins configuration document.'
     end
@@ -110,7 +112,7 @@ local function validate(document, migrating)
     local parsed, errors = {}, {}
     for name, value in pairs(document.plugins) do
         if type(name) ~= 'string' or not name:match('^[%w_-]+$') then return nil, 'Invalid plugin name.' end
-        local settings, err = ParseCadPluginConfiguration(name, value, migrating)
+        local settings, err = ParseCadPluginConfiguration(name, value, allowPartial)
         if not settings then errors[#errors + 1] = err end
         parsed[name] = settings or disabled(err)
     end
@@ -335,7 +337,23 @@ local function migrationWarning()
         '[SonoranCAD] After migration, manage all settings through the CAD interface.')
 end
 
-CreateThread(function()
+local collectLegacy
+local function loadLegacyConfiguration()
+    local document, err = collectLegacy(true)
+    if not document then return false, err end
+    local parsed, issues = validate(document, 'legacy')
+    if not parsed then return false, issues end
+    cacheable = false -- Legacy settings must never become a last-known-good CAD cache.
+    applyConfiguration(document, parsed)
+    Config.configurationSource = 'legacy'
+    Config.migrationRequired = true
+    if issues then warn('Invalid legacy plugin settings disabled: ' .. issues) end
+    warn('Continuing startup with existing legacy settings until migration completes.')
+    migrationWarning()
+    return true
+end
+
+local function resolveConfiguration()
     local ok = pcall(function()
         if Config.bootstrapError then Config.critError = true; fail(Config.bootstrapError); return end
         if mock then warn('MOCK configuration API enabled. Changes are local test data, not uploaded to CAD.') end
@@ -354,22 +372,31 @@ CreateThread(function()
                 Config.EnsureBootstrapConfig()
                 return
             end
-            -- A malformed response is a backend failure, but cannot replace good cache data.
             warn('Invalid CAD configuration: ' .. tostring(err) .. ' The previous cache was preserved.')
         elseif response.status == 404 then
-            if response.migrationPending == false then
-                fail('CAD could not find the configured server in this community: ' .. tostring(response.message or 'unknown server') ..
-                    '. Check serverId and apiKey in config.json. No migration or cache fallback was attempted.')
-                Config.critError = true
-                return
+            -- Missing/old configuration endpoints can also return an empty 404.
+            -- Never infer an unknown community/server from that response alone.
+            warn('CAD configuration lookup returned HTTP 404' .. (response.message and ': ' .. response.message or '.') ..
+                ' Endpoint: ' .. GetCadConfigurationBootstrapUrl())
+            local migrated = readCache()
+            if not migrated then
+                local loaded, legacyError = loadLegacyConfiguration()
+                if loaded then return end
+                warn('Legacy startup unavailable: ' .. tostring(legacyError))
             end
-            migrationWarning()
+            fail('CAD configuration is unavailable and no eligible legacy startup is available. Check the CAD server/endpoint and migration state.')
             Config.critError = true
-            return -- Never fall back to cache or files on 404.
+            return -- 404 is never an outage-cache fallback or an automatic upload.
         elseif response.status > 0 and response.status < 500 then
+            if not readCache() then
+                warn('CAD configuration lookup was rejected (HTTP ' .. response.status .. '). Checking the existing pre-migration settings.')
+                local loaded, legacyError = loadLegacyConfiguration()
+                if loaded then return end
+                warn('Legacy startup unavailable: ' .. tostring(legacyError))
+            end
             fail('CAD configuration request rejected (HTTP ' .. response.status .. '). Check credentials and backend configuration.')
             Config.critError = true
-            return -- Authentication/validation failures are not connectivity failures.
+            return
         else
             warn(response.message or ('CAD configuration unavailable (HTTP ' .. response.status .. ').'))
         end
@@ -382,6 +409,13 @@ CreateThread(function()
             Config.EnsureBootstrapConfig()
             warn('Using the last-known-good cached configuration while CAD is unavailable.')
         else
+            -- Existing installations can continue during the rollout before their
+            -- first migration. A malformed 200 never causes a legacy override.
+            if response.status ~= 200 then
+                local loaded, legacyError = loadLegacyConfiguration()
+                if loaded then return end
+                warn('Legacy startup unavailable: ' .. tostring(legacyError))
+            end
             fail('No valid configuration cache for this server. Configuration-dependent initialization has been stopped.')
             Config.critError = true
         end
@@ -389,7 +423,7 @@ CreateThread(function()
     if not ok then Config.critError = true; fail('Unable to resolve configuration; initialization has been stopped.') end
     if Config.critError then Config.apiSendEnabled = false; Config.apiVersion = 0 end
     Config.configurationReady = true
-end)
+end
 
 -- Client plugins receive only their configuration, never the server API key.
 RegisterNetEvent('SonoranCAD::core:requestPluginConfig')
@@ -501,13 +535,22 @@ function ExportLegacyPluginConfiguration(name, source)
     return config
 end
 
-local function collectLegacy()
+collectLegacy = function(startup)
     local inventory = decode(exports[resource]:ListLegacyCadConfiguration())
     if not inventory or inventory.error then return nil, inventory and inventory.error or 'Unable to discover legacy configuration.' end
     local document = {core = decode(LoadResourceFile(resource, 'configuration/config.json')), plugins = {},
         updaterIgnore = {ignore = {}}, vehicleModels = {}, callTemplates = {}}
     if not document.core then return nil, 'Missing or invalid configuration/config.json.' end
+    if startup and (document.core.apiKey ~= Config.apiKey or tonumber(document.core.serverId) ~= Config.serverId) then
+        return nil, 'Legacy credentials/server do not match the active config.json.'
+    end
     document.core.communityID = document.core.communityID or document.core.commId
+    local legacyMode = GetConvar('sonoran_mode', 'NONE')
+    local modeSetter = GetConvar('sonoran_mode_setter', 'NONE')
+    if (legacyMode == 'development' or legacyMode == 'production') and (modeSetter == 'NONE' or modeSetter == 'server') then
+        -- Honor existing server.cfg overrides only in the legacy transition.
+        document.core.branch = legacyMode
+    end
     document.core.branch = document.core.branch or document.core.mode or
         (GetCadConfigurationBootstrapUrl():find('staging', 1, true) and 'development' or 'production')
     document.core.apiUrl = document.core.apiUrl or
@@ -531,34 +574,45 @@ local function collectLegacy()
         local default = file:match('^(.-)_config%.dist%.lua$')
         if name then selected[name] = file
         elseif default and not selected[default] then selected[default] = file
-        elseif file:match('%.lua$') then return nil, 'Unrecognized legacy configuration file: ' .. file
-        elseif file:match('%.json$') and file ~= 'config.json' and file ~= 'config.CHANGEME.json' and
+        elseif file:match('%.lua$') and not startup then return nil, 'Unrecognized legacy configuration file: ' .. file
+        elseif not startup and file:match('%.json$') and file ~= 'config.json' and file ~= 'config.CHANGEME.json' and
             file ~= 'updateIgnore.json' and file ~= 'updateIgnore.CHANGEME.json' and file ~= 'livemap_vehicle_models.json' then
             return nil, 'Unrecognized legacy configuration file: ' .. file
         end
     end
-    -- Export settings as objects, retaining callable source and disabled plugins.
+    -- Keep the original Lua for pre-migration runtime behavior, including closures.
+    -- Only the explicit migration command converts it into JSON settings.
     for name, file in pairs(selected) do
         local source = LoadResourceFile(resource, 'configuration/' .. file)
-        if not source then return nil, 'Cannot read ' .. file end
-        local settings, err = ExportLegacyPluginConfiguration(name, source)
-        if not settings then return nil, err end
-        document.plugins[name] = settings
+        if startup then
+            document.plugins[name] = source or disabled('Cannot read legacy configuration: ' .. file)
+        else
+            if not source then return nil, 'Cannot read ' .. file end
+            local settings, err = ExportLegacyPluginConfiguration(name, source)
+            if not settings then return nil, err end
+            document.plugins[name] = settings
+        end
     end
     for _, name in ipairs(inventory.plugins or {}) do
-        if not document.plugins[name] then document.plugins[name] = disabled('No legacy configuration') end
+        if not document.plugins[name] then
+            document.plugins[name] = startup and disabled('No legacy configuration') or {enabled = false}
+        end
     end
     for _, item in ipairs({{'updateIgnore.json', 'updaterIgnore'}, {'livemap_vehicle_models.json', 'vehicleModels'}}) do
         local raw = LoadResourceFile(resource, 'configuration/' .. item[1])
         if not raw and item[2] == 'updaterIgnore' then raw = LoadResourceFile(resource, 'configuration/updateIgnore.CHANGEME.json') end
         if raw then
-            document[item[2]] = decode(raw)
-            if not document[item[2]] then return nil, 'Invalid JSON in ' .. item[1] end
+            local parsed = decode(raw)
+            if parsed then document[item[2]] = parsed
+            elseif startup then warn('Ignoring invalid legacy JSON for startup: ' .. item[1])
+            else return nil, 'Invalid JSON in ' .. item[1] end
         end
     end
-    if document.plugins.calltemplates then
+    local function readCallTemplates()
+        if not document.plugins.calltemplates then return true end
         local settings, err = ParseCadPluginConfiguration('calltemplates', document.plugins.calltemplates, true)
         if not settings then return nil, err end
+        if not settings.enabled and settings.commands == nil then return true end
         local directory = settings.callTypeDirectory or 'submodules/calltemplates/calltypes'
         local templates = decode(exports[resource]:ListLegacyCadConfiguration(directory))
         if not templates or templates.error then return nil, 'Cannot discover call templates in ' .. directory end
@@ -576,11 +630,23 @@ local function collectLegacy()
             if not template then return nil, 'Missing or invalid call template: ' .. path end
             document.callTemplates[command.callTypeFile] = template
         end
+        return true
     end
-    local parsed, err = validate(document, true)
+    local templatesOk, templateError = readCallTemplates()
+    if not templatesOk then
+        if not startup then return nil, templateError end
+        document.plugins.calltemplates = disabled(templateError)
+        document.callTemplates = {}
+        warn('Call Templates disabled for legacy startup: ' .. tostring(templateError))
+    end
+    if startup then return document end
+    local parsed, err = validate(document, 'migration')
     if not parsed or err then return nil, err end
     return document
 end
+
+-- All legacy readers are defined before the first request can complete.
+CreateThread(resolveConfiguration)
 
 local migrating = false
 local acceptedThisSession = false
@@ -675,6 +741,7 @@ AddEventHandler('SonoranCAD::core:sendClientConfig', function()
     for name, settings in pairs(Config.plugins) do pluginStates[name] = not Config.critError and settings.enabled == true end
     local config = {
         pluginStates = pluginStates,
+        configurationSource = Config.configurationSource,
         critError = Config.critError == true,
         communityID = Config.communityID,
         postTime = Config.postTime,

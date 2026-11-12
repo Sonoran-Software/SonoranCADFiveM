@@ -131,7 +131,46 @@ setup(200,incomplete)
 assert(Config.critError, 'CAD configuration without API URL was activated')
 
 setup(404, nil, document())
-assert(Config.critError and writes==0 and archiveCalls==0 and table.concat(logs):find('sonorancad migrate'))
+assert(Config.critError and writes==0 and archiveCalls==0 and Config.configurationSource~='legacy',
+    'A previously migrated server returned to legacy settings')
+setup(404)
+assert(not Config.critError and Config.configurationSource=='legacy' and Config.apiSendEnabled)
+assert(Config.GetPluginConfig('kick').enabled and writes==0 and archiveCalls==0)
+assert(table.concat(logs):find('sonorancad migrate'))
+assert(not Config.SaveConfigurationCache(3) and files['.configuration-cache.json']==nil,
+    'Pre-migration settings were written as a CAD cache')
+
+-- Exercise the existing main startup after a pre-migration configuration 404.
+threads={};Config.apiVersion=-1
+function CadApiGetVersion() return {success=true,data='3'} end
+function RegisterServerEvent() end
+function RegisterCommand() end
+function GetResourcePath() return 'test-resource' end
+function GetResourceState() return 'stopped' end
+function getServerVersion() return 6500 end
+function debugLog() end
+function SanitizeErrorDetail(value) return tostring(value) end
+local warmed=false
+function manuallySetUnitCache() warmed=true end
+dofile('sonorancad/core/server.lua')
+local startup=table.remove(threads,1)
+assert(coroutine.resume(startup.co))
+assert(Config.apiVersion==3 and not Config.critError and warmed and Config.GetPluginConfig('kick').enabled)
+assert(writes==0 and files['.configuration-cache.json']==nil)
+threads={}
+convars.sonoran_mode='development';convars.sonoran_mode_setter='server'
+dofile('sonorancad/core/configuration.lua')
+threads[3]=nil;threads[2]=nil
+runUntil(function() return Config.configurationReady end)
+assert(not Config.critError and Config.configurationSource=='legacy' and Config.mode=='development')
+assert(Config.apiUrl=='https://staging-api.dev.sonorancad.com/', 'Legacy server.cfg environment override was lost')
+files['configuration/kick_config.lua']='local offset=40; local config={enabled=true,pluginName="kick",configVersion="1.0",callback=function(value) return value+offset end}'
+threads={}
+dofile('sonorancad/core/configuration.lua')
+threads[3]=nil;threads[2]=nil
+runUntil(function() return Config.configurationReady end)
+Config.apiVersion=3
+assert(Config.GetPluginConfig('kick').callback(2)==42, 'Legacy callback closure changed before migration')
 for _, status in ipairs({0, 503}) do
     setup(status, nil, document()); assert(Config.configurationSource=='cache' and Config.cachedApiVersion==3 and writes==0)
 end
@@ -142,8 +181,11 @@ setup(200, partial, document())
 assert(Config.configurationSource=='cad' and not Config.GetPluginConfig('bodycam').enabled and writes==0)
 assert(not Config.SaveConfigurationCache(3), 'Partial response overwrote the good cache')
 setup(401, nil, document()); assert(Config.critError and writes==0)
-setup(0); assert(Config.critError and Config.apiSendEnabled==false)
-setup(503, nil, {core={}}); assert(Config.critError and writes==0)
+setup(401); assert(Config.configurationSource=='legacy' and not Config.critError)
+setup(0); assert(not Config.critError and Config.configurationSource=='legacy' and Config.apiSendEnabled)
+setup(503, nil, {core={}}); assert(Config.configurationSource=='legacy' and writes==0)
+setup(404,nil,nil,{apiKey='different-key',serverId=2})
+assert(Config.critError, 'Legacy settings from another credential/server were used')
 
 for _, failure in ipairs({'none', 'upload', 'archive', 'archive-throw', 'readback', 'partial-readback', 'cache', 'conflict', 'missing-setting', 'templates', 'templates-missing', 'older-config', 'bootstrap', 'empty-root', 'whitespace-root', 'empty-object-root', 'default-root'}) do
     local emptyRoots={['empty-root']='', ['whitespace-root']=' \r\n ', ['empty-object-root']={}, ['default-root']={apiKey='',serverId=1}}
@@ -283,6 +325,8 @@ assert(http('migrate',200,{serverId=2,status='saved'}).status==502)
 assert(http('migrate',200,{serverId=1,status='unknown'}).status==502)
 assert(http('get',404,{title='Migration pending'}).migrationPending==true)
 assert(http('get',404,{title='Server not found'}).migrationPending==false)
+assert(http('get',404,{}).migrationPending==nil, 'An empty 404 was classified as an unknown server')
+assert(http('get',404,{title='Not Found'}).migrationPending==nil)
 assert(http('get',401,{title='Unauthorized'}).status==401)
 assert(http('get',200,{revision=4,values=flat}).data==nil, 'Earlier draft envelope was accepted')
 local alias=clone(flat);alias.core.communityID=nil;alias.core.commId='cad-community';alias.core.branch='development';alias.core.apiUrl='https://cad-api.example.test/'
@@ -335,6 +379,13 @@ function TriggerServerEvent(_, name)
         name=='kick' and document().plugins.kick or {enabled=false})
 end
 assert(Config.GetPluginConfig('kick').enabled and not Config.GetPluginConfig('missing').enabled)
+local oldLocations={enabled=true,pluginName='locations',configVersion='1.1',clientCheckTime=250,prefixPostal=false}
+handlers['SonoranCAD::core:recvClientConfig']({configurationSource='legacy'})
+function TriggerServerEvent(_,name) handlers['SonoranCAD::core:receivePluginConfig'](name,oldLocations) end
+assert(Config.GetPluginConfig('locations').enabled, 'Client rejected an eligible pre-migration configuration')
+Config.plugins.locations=nil;Config.configurationSource='cad'
+handlers['SonoranCAD::core:receivePluginConfig']('locations',oldLocations)
+assert(not Config.GetPluginConfig('locations').enabled, 'Client relaxed CAD validation after migration')
 Config.RegisterPluginConfig('kick', {enabled=false})
 assert(Config.GetPluginConfig('kick').enabled)
 handlers['SonoranCAD::core:recvClientConfig']({linkCommand='cadlink'})
@@ -345,6 +396,24 @@ dofile('sonorancad/core/linking_cl.lua')
 local task=table.remove(threads, 1)
 assert(coroutine.resume(task.co))
 assert(commands.cadlink and not commands.link, 'Link command ignored CAD configuration')
+
+-- Disabled Record Printer must return before framework access or event registration.
+local loadPlugin=Config.LoadPlugin
+Config.LoadPlugin=function(_,cb) cb({enabled=false,disableReason='Configuration startup aborted'}) end
+for _,side in ipairs({'sv','cl'}) do
+    threads={}
+    dofile('sonorancad/submodules/recordPrinter/'..side..'_recordPrinter.lua')
+    local task=table.remove(threads,1)
+    local ok,err=coroutine.resume(task.co)
+    assert(ok,err);assert(coroutine.status(task.co)=='dead')
+end
+Config.LoadPlugin=loadPlugin
+threads={};Config.critError=true;Config.apiVersion=0
+Citizen={CreateThread=CreateThread,Wait=Wait}
+local priorLogs=#logs
+dofile('sonorancad/core/unittracking.lua')
+runUntil(function() return #threads==0 end)
+assert(#logs==priorLogs, 'Critical configuration failure produced misleading API-disabled cache errors')
 
 -- Every shipped legacy file, including disabled plugins, closures, helper functions,
 -- vector literals and Cfx hash keys. Only Cfx syntax is translated for stock Lua.
