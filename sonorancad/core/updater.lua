@@ -72,6 +72,12 @@ local function doUpdate(latest)
 end
 
 function RunAutoUpdater(manualRun)
+    -- Downloaded staging test ZIPs must remain installed for the entire test.
+    -- This metadata is set only in the test archive, not in normal releases.
+    if GetResourceMetadata(GetCurrentResourceName(), 'configuration_test_build', 0) == 'true' then
+        if manualRun then infoLog('The automatic updater is disabled in this staging test build.') end
+        return
+    end
     if Config.updateBranch == nil then
         return
     end
@@ -148,6 +154,8 @@ end
 
 
 CreateThread(function()
+    while not Config.configurationReady do Wait(25) end
+    if Config.critError then return end
     while true do
         if pendingRestart then
             if GetNumPlayerIndices() > 0 then

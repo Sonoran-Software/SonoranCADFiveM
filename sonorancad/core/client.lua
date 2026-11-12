@@ -1,4 +1,4 @@
-Config = {plugins = {}}
+Config = {plugins = {}, apiVersion = -1}
 Plugins = {}
 SonoranCommandHelp = {}
 
@@ -42,38 +42,6 @@ local function disable_plugin(reason)
         enabled = false,
         disableReason = reason
     }
-end
-
-local function extract_plugin_config(pluginName, rawConfig, subjectLabel)
-    if type(rawConfig) ~= "string" or rawConfig == "" then
-        warnLog("PLUGIN_CONFIG_PARSE_FAILED", ("%s %s configuration file was empty or unreadable."):format(subjectLabel, pluginName))
-        return disable_plugin("Unreadable configuration file")
-    end
-
-    local configBody = rawConfig:match("local config = ({.-\n})")
-    if configBody == nil then
-        errorLog("PLUGIN_CONFIG_PARSE_FAILED", ("%s %s configuration is missing a valid local config table."):format(subjectLabel, pluginName))
-        return disable_plugin("Invalid or missing config")
-    end
-
-    local tempEnv = {}
-    setmetatable(tempEnv, {__index = _G})
-    local loadedPlugin, pluginError = load("local config = " .. configBody .. "\nreturn config", 'config', 't', tempEnv)
-    if not loadedPlugin then
-        errorLog("PLUGIN_CONFIG_PARSE_FAILED", ("%s %s failed to compile: %s"):format(subjectLabel, pluginName, tostring(pluginError)))
-        return disable_plugin("Failed to load")
-    end
-
-    local success, res = pcall(loadedPlugin)
-    if not success then
-        errorLog("PLUGIN_CONFIG_PARSE_FAILED", ("%s %s failed to execute: %s"):format(subjectLabel, pluginName, SanitizeErrorDetail(res) or "unknown error"))
-        return disable_plugin("Failed to load")
-    end
-    if type(res) ~= "table" then
-        errorLog("PLUGIN_CONFIG_PARSE_FAILED", ("%s %s did not define a valid config table."):format(subjectLabel, pluginName))
-        return disable_plugin("Invalid or missing config")
-    end
-    return res
 end
 
 local function sorted_keys(input)
@@ -147,11 +115,8 @@ TriggerEvent("chat:addSuggestion", "/sonorancad", "Show SonoranCAD command help.
 RegisterPlayerCommandHelp("core", "sonorancad", "Show SonoranCAD command help by submodule or upload support logs.", "help [submodule]|support <id>")
 
 
-Config.RegisterPluginConfig = function(pluginName, configs)
-    Config.plugins[pluginName] = {}
-    for k, v in pairs(configs) do Config.plugins[pluginName][k] = v end
-    table.insert(Plugins, pluginName)
-end
+-- Local config scripts cannot replace the server-resolved configuration.
+Config.RegisterPluginConfig = function() end
 
 --[[
     @function getApiMode
@@ -170,128 +135,29 @@ end
 
 exports('getApiMode', getApiMode)
 
-Config.GetPluginConfig = function(pluginName)
-    local correctConfig = nil
-    if Config.plugins[pluginName] ~= nil then
-        if Config.critError then
-            Config.plugins[pluginName].enabled = false
-            Config.plugins[pluginName].disableReason = 'startup aborted'
-        elseif Config.plugins[pluginName].enabled == nil then
-            Config.plugins[pluginName].enabled = true
-        elseif Config.plugins[pluginName].enabled == false then
-            Config.plugins[pluginName].disableReason = 'Disabled'
-        end
-        return Config.plugins[pluginName]
-    else
-        if pluginName == 'apicheck' or pluginName == 'livemap' or pluginName ==
-            'smartsigns' then
-            return {enabled = false, disableReason = 'deprecated plugin'}
-        end
-        correctConfig = LoadResourceFile(GetCurrentResourceName(),
-                                         '/configuration/' .. pluginName ..
-                                             '_config.lua')
-        if not correctConfig then
-            warnLog("UNHANDLED_WARNING", ('Plugin %s is missing critical configuration. Please check our plugin install guide at https://info.sonorancad.com/integration-submodules/integration-submodules/plugin-installation for steps to properly install.'):format(
-                    pluginName))
-            Config.plugins[pluginName] = {
-                enabled = false,
-                disableReason = 'Missing configuration file'
-            }
-            return {
-                enabled = false,
-                disableReason = 'Missing configuration file'
-            }
-        else
-            local pluginConfig = extract_plugin_config(pluginName, correctConfig, "Plugin")
-            if type(pluginConfig) ~= "table" then
-                pluginConfig = disable_plugin("Invalid or missing config")
-            end
-            Config.plugins[pluginName] = pluginConfig
-            if pluginConfig.enabled == false and pluginConfig.disableReason ~= nil then
-                return pluginConfig
-            end
-            do
-                if Config.critError then
-                    Config.plugins[pluginName].enabled = false
-                    Config.plugins[pluginName].disableReason = 'startup aborted'
-                elseif Config.plugins[pluginName].enabled == nil then
-                    Config.plugins[pluginName].enabled = true
-                elseif Config.plugins[pluginName].enabled == false then
-                    Config.plugins[pluginName].disableReason = 'Disabled'
-                end
-            end
-            return Config.plugins[pluginName]
-        end
-        Config.plugins[pluginName] = {
-            enabled = false,
-            disableReason = 'Missing configuration file'
-        }
-        return {enabled = false, disableReason = 'Missing configuration file'}
-    end
-end
+local pluginRequests = {}
+RegisterNetEvent('SonoranCAD::core:receivePluginConfig')
+AddEventHandler('SonoranCAD::core:receivePluginConfig', function(name, entry)
+    if not pluginRequests[name] or Config.plugins[name] then return end
+    local settings = ParseCadPluginConfiguration(name, entry)
+    Config.plugins[name] = settings or disable_plugin('Invalid CAD plugin configuration')
+    if settings and settings.enabled then Plugins[#Plugins + 1] = name end
+end)
 
-Config.LoadPlugin = function(pluginName, cb)
-    local correctConfig = nil
-    while Config.apiVersion == -1 do Wait(1) end
-    if Config.plugins[pluginName] ~= nil then
-        if Config.critError then
-            Config.plugins[pluginName].enabled = false
-            Config.plugins[pluginName].disableReason = 'startup aborted'
-        elseif Config.plugins[pluginName].enabled == nil then
-            Config.plugins[pluginName].enabled = true
-        elseif Config.plugins[pluginName].enabled == false then
-            Config.plugins[pluginName].disableReason = 'Disabled'
+Config.GetPluginConfig = function(name)
+    local started = GetGameTimer()
+    while not Config.inited and GetGameTimer() - started < 60000 do Wait(25) end
+    if not Config.inited or Config.critError then return disable_plugin('Configuration startup aborted') end
+    if not Config.plugins[name] then
+        if not pluginRequests[name] then
+            pluginRequests[name] = true
+            TriggerServerEvent('SonoranCAD::core:requestPluginConfig', name)
         end
-        return cb(Config.plugins[pluginName])
-    else
-        if pluginName == 'yourpluginname' then
-            return cb({enabled = false, disableReason = 'Template plugin'})
-        end
-        correctConfig = LoadResourceFile(GetCurrentResourceName(),
-                                         '/configuration/' .. pluginName ..
-                                             '_config.lua')
-        if not correctConfig then
-            warnLog("UNHANDLED_WARNING", ('Submodule %s is missing critical configuration. Please check our submodule install guide at https://info.sonorancad.com/integration-plugins/in-game-integration/fivem-installation/submodule-configuration#activating-a-submodule for steps to properly install.'):format(
-                    pluginName))
-            Config.plugins[pluginName] = {
-                enabled = false,
-                disableReason = 'Missing configuration file'
-            }
-            return cb({
-                enabled = false,
-                disableReason = 'Missing configuration file'
-            })
-        else
-            local pluginConfig = extract_plugin_config(pluginName, correctConfig, "Submodule")
-            if type(pluginConfig) ~= "table" then
-                pluginConfig = disable_plugin("Invalid or missing config")
-            end
-            Config.plugins[pluginName] = pluginConfig
-            if pluginConfig.enabled == false and pluginConfig.disableReason ~= nil then
-                return cb(pluginConfig)
-            end
-            do
-                if Config.critError then
-                    Config.plugins[pluginName].enabled = false
-                    Config.plugins[pluginName].disableReason = 'startup aborted'
-                elseif Config.plugins[pluginName].enabled == nil then
-                    Config.plugins[pluginName].enabled = true
-                elseif Config.plugins[pluginName].enabled == false then
-                    Config.plugins[pluginName].disableReason = 'Disabled'
-                end
-            end
-            return cb(Config.plugins[pluginName])
-        end
-        Config.plugins[pluginName] = {
-            enabled = false,
-            disableReason = 'Missing configuration file'
-        }
-        return cb({
-            enabled = false,
-            disableReason = 'Missing configuration file'
-        })
+        while not Config.plugins[name] and GetGameTimer() - started < 75000 do Wait(25) end
     end
+    return Config.plugins[name] or disable_plugin('CAD plugin configuration request timed out')
 end
+Config.LoadPlugin = function(name, callback) return callback(Config.GetPluginConfig(name)) end
 
 CreateThread(function()
     while not NetworkIsPlayerActive(PlayerId()) do Wait(1) end

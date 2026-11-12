@@ -15,7 +15,6 @@ CreateThread(function()
         end
 
         local templateCache = {}
-        local templateDirectory = pluginConfig.callTypeDirectory or "submodules/calltemplates/calltypes"
 
         local function loadTemplate(fileName)
             if fileName == nil or fileName == "" then
@@ -27,16 +26,9 @@ CreateThread(function()
                 return templateCache[fileName]
             end
 
-            local filePath = ("%s/%s"):format(templateDirectory, fileName)
-            local raw = LoadResourceFile(GetCurrentResourceName(), filePath)
-            if raw == nil then
-                errorLog("UNHANDLED_SERVER_ERROR", ("[calltemplates] Unable to load call type template at %s"):format(filePath))
-                return nil
-            end
-
-            local decoded = SafeJsonDecode(raw, ("call template %s"):format(filePath), nil)
-            if decoded == nil then
-                errorLog("UNHANDLED_SERVER_ERROR", ("[calltemplates] Failed to decode JSON for template %s"):format(filePath))
+            local decoded = Config.callTemplates[fileName]
+            if type(decoded) ~= 'table' then
+                errorLog("UNHANDLED_SERVER_ERROR", ("[calltemplates] Missing CAD call type template: %s"):format(fileName))
                 return nil
             end
 

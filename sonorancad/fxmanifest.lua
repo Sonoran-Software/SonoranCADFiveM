@@ -14,8 +14,8 @@ server_scripts {
     ,'core/pdf.js'
     ,'core/logging.lua'
     ,'core/shared_functions.lua'
-    ,'core/configuration.lua'
     ,'core/sonoran_api.lua'
+    ,'core/configuration.lua'
     ,'core/linking_sv.lua'
     ,'core/server.lua'
     ,'core/commands.lua'
@@ -23,7 +23,6 @@ server_scripts {
     ,'core/unittracking.lua'
     ,'core/updater.lua'
     ,'core/apicheck.lua'
-    ,'configuration/*_config.lua'
     ,'core/plugin_loader.lua'
     ,'submodules/**/sv_*.lua'
     ,'submodules/**/sv_*.js'
@@ -38,7 +37,6 @@ client_scripts {
     ,'core/placement/math.lua'
     ,'core/placement/client.lua'
     ,'core/lighting.lua'
-    ,'configuration/*_config.lua'
     ,'submodules/**/cl_*.lua'
     ,'submodules/**/cl_*.js'
 }
@@ -51,7 +49,6 @@ files {
     'core/client_nui/js/*.js',
     'core/client_nui/sounds/*.mp3',
     'core/client_nui/img/*.*',
-    'configuration/livemap_vehicle_models.json',
     'submodules/**/*.mp3',
     'submodules/caddisplay/html/**/*',
     'submodules/postals/*.json',

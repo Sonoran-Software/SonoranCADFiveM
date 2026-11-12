@@ -17,7 +17,6 @@
     const SEND_ERROR_LOG_INTERVAL_MS = 60 * 1000;
     const MAX_SILENT_RECONNECT_FAILURES = 5;
     const MANUAL_RETRY_DELAYS_MS = [2000, 5000, 10000, 30000];
-    const PROTECTED_CONVAR_PLACEHOLDER = "protection_initialized";
     const SIGNALR_DEBUG_ONLY_PATTERNS = [
         "(WebSockets transport) There was an error with the transport.",
         "Failed to start the transport 'WebSockets'",
@@ -177,25 +176,6 @@
         );
     }
 
-    function parseBoolean(value, fallback) {
-        if (value === undefined || value === null) {
-            return fallback;
-        }
-        if (typeof value === "boolean") {
-            return value;
-        }
-        if (typeof value === "string") {
-            const normalized = value.toLowerCase();
-            if (normalized === "true") {
-                return true;
-            }
-            if (normalized === "false") {
-                return false;
-            }
-        }
-        return fallback;
-    }
-
     function normalizeServerId(value) {
         if (value === undefined || value === null) {
             return null;
@@ -243,48 +223,22 @@
         }
     }
 
-    function readConfigFile() {
-        try {
-            const raw = LoadResourceFile(GetCurrentResourceName(), "configuration/config.json");
-            if (raw && raw !== "") {
-                return JSON.parse(raw);
-            }
-        } catch (err) {
-            apiWsLog("warn", "ERR-WS-103 Failed to parse API WS configuration. More: https://sonorancad.com/error/err-ws-103");
-        }
-        return {};
-    }
-
-    function getConvar(name) {
-        const value = GetConvar(name, "NONE");
-        if (value === "NONE" || value === PROTECTED_CONVAR_PLACEHOLDER) {
-            return null;
-        }
-        return value;
-    }
-
     function buildConfig() {
-        const fileConfig = readConfigFile();
-        const communityID = getConvar("sonoran_communityID") || fileConfig.communityID;
-        const apiKey = getConvar("sonoran_apiKey") || fileConfig.apiKey;
-        const serverId = normalizeServerId(getConvar("sonoran_serverId") || fileConfig.serverId);
-        const mode = (getConvar("sonoran_mode") || fileConfig.mode || "production").toLowerCase();
-        const apiSendEnabled = parseBoolean(
-            getConvar("sonoran_apiSendEnabled"),
-            parseBoolean(fileConfig.apiSendEnabled, true)
-        );
-        const hubUrl = mode === "development" ? DEFAULT_HUBS.development : DEFAULT_HUBS.production;
-        apiWsLog("debug", "Config: mode=" + mode + ", hubUrl=" + hubUrl + ", apiSendEnabled=" + apiSendEnabled
-            + ", communityID=" + (communityID ? "set" : "missing") + ", apiKey=" + (apiKey ? "set" : "missing")
-            + ", serverId=" + (serverId !== null ? String(serverId) : "missing"));
-        return {
-            communityID,
-            apiKey,
-            serverId,
-            mode,
-            hubUrl,
-            apiSendEnabled
-        };
+        let resolved = {};
+        try {
+            resolved = JSON.parse(exports[GetCurrentResourceName()].GetResolvedConfig());
+        } catch (_) {
+            // Lua configuration resolution may still be starting.
+        }
+        const communityID = resolved.communityID;
+        const apiKey = resolved.apiKey;
+        const serverId = normalizeServerId(resolved.serverId);
+        const mode = resolved.mode || "production";
+        const apiSendEnabled = resolved.ready === true && resolved.apiSendEnabled === true;
+        const hubUrl = resolved.apiUrl
+            ? resolved.apiUrl.replace(/\/+$/, "") + "/apiWsHub"
+            : mode === "development" ? DEFAULT_HUBS.development : DEFAULT_HUBS.production;
+        return {ready: resolved.ready === true, communityID, apiKey, serverId, mode, hubUrl, apiSendEnabled};
     }
 
     function configsEqual(a, b) {
@@ -332,6 +286,7 @@
     }
 
     async function ensureConnection(config) {
+        if (!config.ready) return false;
         if (!signalR) {
             apiWsLog("debug", "ensureConnection: signalR missing.");
             return false;

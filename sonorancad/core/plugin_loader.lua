@@ -63,22 +63,7 @@ function CheckForPluginUpdate(name)
                     end
                 else
                     debugLog(("Submodule %s has the same configuration version."):format(name))
-                    local distConfig = LoadResourceFile(GetCurrentResourceName(), ("configuration/%s_config.dist.lua"):format(name))
-                    local normalConfig = LoadResourceFile(GetCurrentResourceName(), ("configuration/%s_config.lua"):format(name))
-                    if distConfig and normalConfig then
-                        local filePath = ("%s/configuration/config-backup"):format(GetResourcePath(GetCurrentResourceName()))
-                        exports['sonorancad']:CreateFolderIfNotExisting(filePath)
-                        local backupFile = io.open(("%s/configuration/config-backup/%s_config.lua"):format(GetResourcePath(GetCurrentResourceName()), name), "w")
-                        if backupFile == nil then
-                            errorLog("UNHANDLED_SERVER_ERROR", ("Unable to open config backup file for sub module %s."):format(name))
-                            return
-                        end
 
-                        backupFile:write(distConfig)
-                        backupFile:close()
-                        os.remove(("%s/configuration/%s_config.dist.lua"):format(GetResourcePath(GetCurrentResourceName()), name))
-                        debugLog(("Submodule %s configuration file is up to date. Backup saved."):format(name))
-                    end
                 end
             end
         elseif plugin.enabled then
@@ -89,8 +74,8 @@ end
 
 CreateThread(function()
     Wait(5000)
-    while Config.apiVersion == -1 do Wait(10) end
-    if Config.critError then logError("ERROR_ABORT") end
+    while Config.apiVersion == -1 and not Config.critError do Wait(10) end
+    if Config.critError then logError("ERROR_ABORT"); return end
 
     local versionFile = nil
     local vfile = LoadVersionFile()

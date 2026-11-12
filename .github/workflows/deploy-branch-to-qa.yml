@@ -49,11 +49,6 @@ jobs:
           git submodule update --init --recursive
           git submodule update --remote --merge
 
-      - name: Move external submodule config.dist.lua files
-        shell: bash
-        run: |
-          find sonorancad/submodules/ -type f -name '*_config.dist.lua' -exec mv -f {} sonorancad/configuration/ \;
-
       - name: Build QA archive
         id: build
         shell: bash
@@ -66,11 +61,20 @@ jobs:
 
           rm -rf "./[sonorancad]"
           rsync -a \
+            --exclude="/sonorancad/config.json" \
+            --exclude="/sonorancad/configuration/" \
+            --exclude="/sonorancad/configuration_old/" \
+            --exclude="/sonorancad/submodules/calltemplates/calltypes/" \
+            --exclude="*_config.lua" \
+            --exclude="*_config.dist.lua" \
+            --exclude=".configuration-*.json*" \
+            --exclude="/sonorancad-all-configuration.json" \
             --exclude="[sonorancad]" \
             --exclude=".git" \
             --exclude=".vscode" \
             --exclude=".github" \
             ./ "./[sonorancad]"
+          printf '{\n  "apiKey": "",\n  "serverId": 1\n}\n' > "./[sonorancad]/sonorancad/config.json"
 
           zip -r "$ARCHIVE_NAME" "[sonorancad]/"
 

@@ -1,4 +1,5 @@
 .vscode
+sonorancad/.configuration-*.json*
 *.zip
 wk_wars2x/config.lua
 tablet/config.lua

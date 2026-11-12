@@ -30,7 +30,7 @@ local ErrorCodes = {
     ['ERROR_ABORT'] = { code = "ERR-CORE-010", message = "Aborted startup due to critical errors reported. Review logs for troubleshooting." },
     ['PLUGIN_DEPENDENCY_ERROR'] = { code = "ERR-CORE-011", message = "Submodule %s requires %s, which is not loaded! Skipping." },
     ['PLUGIN_VERSION_MISMATCH'] = { code = "ERR-CORE-012", message = "PLUGIN ERROR: Plugin %s requires %s at version %s or higher, but only %s was found. Use the command \"sonoran pluginupdate\" to check for updates." },
-    ['PLUGIN_CONFIG_OUTDATED'] = { code = "ERR-CORE-013", message = "Submodule Updater: %s was disabled because its local config version (%s) is older than the required template version (%s). Review %s_config.dist.lua and copy over the missing settings before using this submodule again." },
+    ['PLUGIN_CONFIG_OUTDATED'] = { code = "ERR-CORE-013", message = "Submodule Updater: %s was disabled because its CAD configuration version (%s) is older than the required version (%s). Update the %s settings through the CAD interface, then restart the resource." },
     ['PLUGIN_CORE_OUTDATED'] = { code = "ERR-CORE-014", message = "PLUGIN ERROR: Plugin %s requires Core Version %s, but you have %s. Please update SonoranCAD to use this plugin. Force disabled." },
     ['CUSTOM_POSTALS_FILE_NOT_FOUND'] = { code = "ERR-CORE-015", message = "Your custom postals file %s could not be found in the /sonorancad/submodules/postals/ directory. Please ensure it exists and is not corrupted." },
     ['POSTAL_RESOURCE_MISSING'] = { code = "ERR-CORE-016", message = "The configured postals resource (%s) does not exist. Please check the name." },
