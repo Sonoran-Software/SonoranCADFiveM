@@ -157,7 +157,11 @@ Config.GetPluginConfig = function(name)
     end
     return Config.plugins[name] or disable_plugin('CAD plugin configuration request timed out')
 end
-Config.LoadPlugin = function(name, callback) return callback(Config.GetPluginConfig(name)) end
+Config.LoadPlugin = function(name, callback)
+    local settings = Config.GetPluginConfig(name)
+    if settings.enabled ~= true then return end
+    return callback(settings)
+end
 
 CreateThread(function()
     while not NetworkIsPlayerActive(PlayerId()) do Wait(1) end

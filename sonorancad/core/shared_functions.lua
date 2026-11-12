@@ -178,6 +178,10 @@ function ParseCadPluginConfiguration(pluginName, value, migrating)
         return nil, 'Missing plugin metadata for ' .. pluginName
     end
     if config.enabled ~= false then
+        -- The printer indexes this table immediately, including in older files.
+        if pluginName == 'recordPrinter' and type(config.frameworks) ~= 'table' then
+            return nil, 'Missing or invalid recordPrinter.frameworks'
+        end
         for key, expected in (cadPluginFields[pluginName] or ''):gmatch('([%w_]+):(%w+)') do
             -- Older local files can omit options added later. CAD supplies their
             -- catalog defaults after migration; provided values still keep their types.

@@ -88,9 +88,11 @@ local function validate(document, phase)
     if type(document) ~= 'table' or type(document.core) ~= 'table' or type(document.plugins) ~= 'table' then
         return nil, 'Expected a complete core/plugins configuration document.'
     end
-    if not migrating and (type(document.core.communityID) ~= 'string' or document.core.communityID == '' or
-        (document.core.mode ~= 'production' and document.core.mode ~= 'development')) then
-        return nil, 'CAD must provide communityID and mode (production/development).'
+    if not migrating and (type(document.core.communityID) ~= 'string' or document.core.communityID == '') then
+        return nil, 'CAD response is missing a valid core.communityID.'
+    end
+    if not migrating and document.core.mode ~= 'production' and document.core.mode ~= 'development' then
+        return nil, 'CAD response must include core.mode set to production or development.'
     end
     -- These required core values cannot come from old files or convar overrides.
     if not migrating and (type(document.core.primaryIdentifier) ~= 'string' or document.core.primaryIdentifier == '' or
@@ -134,7 +136,11 @@ Config.GetPluginConfig = function(name)
     if Config.critError then return disabled('Configuration startup aborted') end
     return Config.plugins[name] or disabled('Missing CAD configuration; configure this plugin in CAD')
 end
-Config.LoadPlugin = function(name, callback) return callback(Config.GetPluginConfig(name)) end
+Config.LoadPlugin = function(name, callback)
+    local settings = Config.GetPluginConfig(name)
+    if settings.enabled ~= true then return end
+    return callback(settings)
+end
 -- Old config scripts must never register over authoritative settings.
 Config.RegisterPluginConfig = function() warn('Local plugin configuration registration ignored. Manage settings in CAD.') end
 exports('GetPluginConfig', function(name) return Config.GetPluginConfig(name) end)
@@ -368,7 +374,6 @@ local function resolveConfiguration()
                 Config.EnsureBootstrapConfig()
                 return
             end
-            warn('Invalid CAD configuration: ' .. tostring(err) .. ' The previous cache was preserved.')
         elseif response.status == 404 then
             -- Missing/old configuration endpoints can also return an empty 404.
             -- Never infer an unknown community/server from that response alone.
@@ -397,6 +402,7 @@ local function resolveConfiguration()
         end
         local cached, cachedPlugins = readCache()
         if cached then
+            if response.status == 200 then warn('Invalid CAD configuration: ' .. tostring(err) .. ' The previous cache was preserved.') end
             if unavailableWarning then warn(unavailableWarning) end
             cacheable = true
             applyConfiguration(cached.configuration, cachedPlugins)
@@ -413,7 +419,9 @@ local function resolveConfiguration()
                 warn('Legacy startup unavailable: ' .. tostring(legacyError))
             end
             if unavailableWarning then warn(unavailableWarning) end
-            fail('No valid configuration cache for this server. Configuration-dependent initialization has been stopped.')
+            fail((response.status == 200 and ('Invalid CAD configuration: ' .. tostring(err)) or
+                'CAD configuration is unavailable.') ..
+                ' No valid configuration cache is available. Check the CAD configuration and restart sonorancad.')
             Config.critError = true
         end
     end)

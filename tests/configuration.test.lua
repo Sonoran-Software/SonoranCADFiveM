@@ -133,9 +133,12 @@ assert(Config.configurationSource=='cache' and Config.mode=='development' and Co
 local incomplete=document();incomplete.core.communityID=nil
 setup(200,incomplete)
 assert(Config.critError, 'CAD configuration without community ID was activated')
+assert(#logs==1 and logs[1]:find('core.communityID',1,true), 'Startup hid the rejected CAD field behind a cache error')
+Config.LoadPlugin('recordPrinter',function() error('Disabled printer callback was invoked after configuration failure') end)
 incomplete=document();incomplete.core.mode=nil
 setup(200,incomplete)
 assert(Config.critError, 'CAD configuration without mode was activated')
+assert(#logs==1 and logs[1]:find('core.mode',1,true), 'Startup hid the missing CAD mode')
 incomplete=document();incomplete.core.mode='unknown'
 setup(200,incomplete)
 assert(Config.critError, 'CAD configuration with invalid mode was activated')
@@ -426,6 +429,17 @@ dofile('sonorancad/core/linking_cl.lua')
 local task=table.remove(threads, 1)
 assert(coroutine.resume(task.co))
 assert(commands.cadlink and not commands.link, 'Link command ignored CAD configuration')
+
+-- The loader itself must protect old plugin scripts that lack an enabled guard.
+Config.plugins.recordPrinter={enabled=false}
+Config.LoadPlugin('recordPrinter',function() error('Client invoked a disabled plugin callback') end)
+local called=false
+Config.LoadPlugin('kick',function(settings) called=settings.enabled end)
+assert(called, 'Client skipped an enabled plugin')
+local unsafePrinter={enabled=true,pluginName='recordPrinter',configVersion='1.0'}
+local printer, printerError=ParseCadPluginConfiguration('recordPrinter',unsafePrinter,true)
+assert(printer==nil and printerError:find('recordPrinter.frameworks',1,true),
+    'Legacy printer without frameworks would crash during initialization')
 
 -- Disabled Record Printer must return before framework access or event registration.
 local loadPlugin=Config.LoadPlugin
