@@ -55,6 +55,8 @@ function IsDuplicityVersion() return true end
 function warnLog(_, text) logs[#logs + 1] = text end
 errorLog = warnLog
 function infoLog(text) logs[#logs + 1] = text end
+local notices = {}
+function warningNotice(text) notices[#notices + 1] = text; logs[#logs + 1] = text end
 function CreateThread(fn) threads[#threads + 1] = {co = coroutine.create(fn), at = now} end
 function Wait(ms) coroutine.yield(ms) end
 function vector3(x, y, z) return {x=x, y=y, z=z} end
@@ -76,6 +78,7 @@ end
 local legacy = 'local config = {enabled=true, pluginName="kick", configVersion="1.0"}\n' ..
     'if config.enabled then Config.RegisterPluginConfig(config.pluginName, config) end'
 local function setup(status, data, cached, rootConfig, legacyServerId)
+    notices = {}
     files, convars, handlers, threads, logs, now, writes, archiveCalls = {}, {}, {}, {}, {}, 0, 0, 0
     Config, Plugins, replies = nil, nil, nil
     convars.sonoran_communityID='test'; convars.sonoran_apiKey='secret'; convars.sonoran_serverId='1'
@@ -136,7 +139,9 @@ assert(Config.critError and writes==0 and archiveCalls==0 and Config.configurati
 setup(404)
 assert(not Config.critError and Config.configurationSource=='legacy' and Config.apiSendEnabled)
 assert(Config.GetPluginConfig('kick').enabled and writes==0 and archiveCalls==0)
-assert(table.concat(logs):find('sonorancad migrate'))
+local migrationNotice='Configuration migration required. Run: sonorancad migrate. https://snorn.link/configmigration'
+assert(#logs==1 and #notices==1 and notices[1]==migrationNotice,
+    'Expected migration startup must show only one concise, untraced warning')
 assert(not Config.SaveConfigurationCache(3) and files['.configuration-cache.json']==nil,
     'Pre-migration settings were written as a CAD cache')
 
@@ -184,6 +189,11 @@ setup(401, nil, document()); assert(Config.critError and writes==0)
 setup(401); assert(Config.configurationSource=='legacy' and not Config.critError)
 setup(0); assert(not Config.critError and Config.configurationSource=='legacy' and Config.apiSendEnabled)
 setup(503, nil, {core={}}); assert(Config.configurationSource=='legacy' and writes==0)
+for _, status in ipairs({0, 401, 404, 503}) do
+    setup(status)
+    assert(Config.configurationSource=='legacy' and #logs==1 and #notices==1 and notices[1]==migrationNotice,
+        'Pre-migration HTTP '..status..' printed diagnostic noise')
+end
 setup(404,nil,nil,{apiKey='different-key',serverId=2})
 assert(Config.critError, 'Legacy settings from another credential/server were used')
 
@@ -439,4 +449,17 @@ for path in inventory:lines() do
 end
 inventory:close()
 assert(count==20, 'Expected every shipped plugin to be covered')
+-- Exercise the real logger so the notice cannot silently regain report/trace output.
+local console, originalPrint = {}, print
+print=function(text) console[#console+1]=text end
+Config.debugMode=false; convars.sonoran_quietPrint='false'
+dofile('sonorancad/core/logging.lua')
+console={}
+warningNotice(migrationNotice)
+assert(#console==1 and console[1]:find(migrationNotice, 1, true))
+assert(not console[1]:find('\n') and not console[1]:find('Trace:') and not console[1]:find('Docs:')
+    and not console[1]:find('WRN%-CORE'), 'Migration notice included a diagnostic report')
+assert(#getSupportErrorBuffer()==0 and #getErrorBuffer()==1,
+    'Migration notice must remain in the console buffer without creating a support error')
+print=originalPrint
 print('Configuration resolution, migration, mock, timeout and all '..count..' plugin parsers passed')

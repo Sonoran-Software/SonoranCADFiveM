@@ -331,10 +331,7 @@ local function applyConfiguration(document, parsed)
 end
 
 local function migrationWarning()
-    warn('WARNING: Resource configuration has not been migrated.\n' ..
-        '[SonoranCAD] Run: sonorancad migrate\n' ..
-        '[SonoranCAD] This uploads your existing resource and plugin configuration.\n' ..
-        '[SonoranCAD] After migration, manage all settings through the CAD interface.')
+    warningNotice('Configuration migration required. Run: sonorancad migrate. https://snorn.link/configmigration')
 end
 
 local collectLegacy
@@ -348,7 +345,6 @@ local function loadLegacyConfiguration()
     Config.configurationSource = 'legacy'
     Config.migrationRequired = true
     if issues then warn('Invalid legacy plugin settings disabled: ' .. issues) end
-    warn('Continuing startup with existing legacy settings until migration completes.')
     migrationWarning()
     return true
 end
@@ -358,7 +354,7 @@ local function resolveConfiguration()
         if Config.bootstrapError then Config.critError = true; fail(Config.bootstrapError); return end
         if mock then warn('MOCK configuration API enabled. Changes are local test data, not uploaded to CAD.') end
         local response = CadConfigurationRequest('get')
-        local parsed, err
+        local parsed, err, unavailableWarning
         if response.status == 200 then
             parsed, err = validate(response.data)
             if parsed then
@@ -376,20 +372,19 @@ local function resolveConfiguration()
         elseif response.status == 404 then
             -- Missing/old configuration endpoints can also return an empty 404.
             -- Never infer an unknown community/server from that response alone.
-            warn('CAD configuration lookup returned HTTP 404' .. (response.message and ': ' .. response.message or '.') ..
-                ' Endpoint: ' .. GetCadConfigurationBootstrapUrl())
             local migrated = readCache()
             if not migrated then
                 local loaded, legacyError = loadLegacyConfiguration()
                 if loaded then return end
                 warn('Legacy startup unavailable: ' .. tostring(legacyError))
             end
+            warn('CAD configuration lookup returned HTTP 404' .. (response.message and ': ' .. response.message or '.') ..
+                ' Endpoint: ' .. GetCadConfigurationBootstrapUrl())
             fail('CAD configuration is unavailable and no eligible legacy startup is available. Check the CAD server/endpoint and migration state.')
             Config.critError = true
             return -- 404 is never an outage-cache fallback or an automatic upload.
         elseif response.status > 0 and response.status < 500 then
             if not readCache() then
-                warn('CAD configuration lookup was rejected (HTTP ' .. response.status .. '). Checking the existing pre-migration settings.')
                 local loaded, legacyError = loadLegacyConfiguration()
                 if loaded then return end
                 warn('Legacy startup unavailable: ' .. tostring(legacyError))
@@ -398,10 +393,11 @@ local function resolveConfiguration()
             Config.critError = true
             return
         else
-            warn(response.message or ('CAD configuration unavailable (HTTP ' .. response.status .. ').'))
+            unavailableWarning = response.message or ('CAD configuration unavailable (HTTP ' .. response.status .. ').')
         end
         local cached, cachedPlugins = readCache()
         if cached then
+            if unavailableWarning then warn(unavailableWarning) end
             cacheable = true
             applyConfiguration(cached.configuration, cachedPlugins)
             Config.cachedApiVersion = tonumber(cached.apiVersion)
@@ -416,6 +412,7 @@ local function resolveConfiguration()
                 if loaded then return end
                 warn('Legacy startup unavailable: ' .. tostring(legacyError))
             end
+            if unavailableWarning then warn(unavailableWarning) end
             fail('No valid configuration cache for this server. Configuration-dependent initialization has been stopped.')
             Config.critError = true
         end

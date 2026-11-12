@@ -896,6 +896,11 @@ function warnLog(err, msg, ...)
     sendConsole("WARNING", "^3", report.logMessage)
 end
 
+-- Expected customer actions do not need a diagnostic report or stack trace.
+function warningNotice(message)
+    sendConsole("WARNING", "^3", message)
+end
+
 function infoLog(message)
     sendConsole("INFO", "^5", message)
 end
