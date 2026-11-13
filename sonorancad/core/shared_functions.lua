@@ -80,6 +80,32 @@ end
 
 exports('isPluginLoaded', isPluginLoaded)
 
+-- Linking is configured in Force Reg. Core fields are accepted only when reading
+-- older documents; new migration/cache documents keep one copy of each setting.
+CadLinkDefaults = {
+    linkCommand = 'link', requireLink = true, autoOpenLinkPopup = true,
+    allowPopupCloseWhenUnlinked = true, linkPollIntervalMs = 10000,
+    linkPopupTitleText = 'Press the button to link your CAD account to this FiveM server',
+    linkButtonText = 'Link CAD'
+}
+
+function NormalizeCadLinkConfiguration(document)
+    if type(document) ~= 'table' or type(document.core) ~= 'table' or type(document.plugins) ~= 'table' then return end
+    local settings = document.plugins.forcereg
+    -- Pre-migration Lua must retain its closures. Its resolved values are handled
+    -- by applyConfiguration; the JSON migration path uses tables here instead.
+    if settings ~= nil and type(settings) ~= 'table' then return end
+    settings = settings or {enabled = false}
+    for key, default in pairs(CadLinkDefaults) do
+        if settings[key] == nil then settings[key] = document.core[key] end
+        if settings[key] == nil then settings[key] = default end
+        document.core[key] = nil
+    end
+    if settings.captiveOption == nil and document.core.freezeUntilLinked == true then settings.captiveOption = 'freeze' end
+    document.core.freezeUntilLinked = nil
+    document.plugins.forcereg = settings
+end
+
 -- Required top-level settings from the currently shipped plugins. Missing settings
 -- disable that plugin; they never cause local templates to be merged into CAD data.
 local cadPluginFields = {

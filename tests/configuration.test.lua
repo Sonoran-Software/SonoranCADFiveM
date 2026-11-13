@@ -129,6 +129,43 @@ assert(Config.critError and Config.bootstrapError, 'Malformed nonempty root conf
 local routed=document(); routed.core.mode='development'
 setup(200, routed, nil, {apiKey='root-key',serverId=7})
 assert(Config.mode=='development' and Config.apiUrl=='https://staging-api.dev.sonorancad.com/')
+-- Force Reg owns linking; core fields are read-only compatibility inputs.
+local function forceReg(enabled)
+    return {enabled=enabled,pluginName='forcereg',configVersion='1.0',requireLink=true,
+        linkCommand='cadconnect',linkPollIntervalMs=2750,linkPopupTitleText='Connect your account',linkButtonText='Connect CAD',
+        autoOpenLinkPopup=false,allowPopupCloseWhenUnlinked=true,captiveOption='freeze',
+        captiveMessage='',instructionalMessage='',verifyMessage='',nagDrawTextLocation='top',whitelist={enabled=false}}
+end
+for _, enabled in ipairs({false,true}) do
+    local linking=document();linking.plugins.forcereg=forceReg(enabled)
+    linking.core.linkCommand='oldlink';linking.core.linkPollIntervalMs=60000;linking.core.requireLink=false
+    setup(200,linking)
+    assert(not Config.critError and Config.linkCommand=='cadconnect' and Config.linkPollIntervalMs==2750)
+    assert(Config.linkPopupTitleText=='Connect your account' and Config.linkButtonText=='Connect CAD' and not Config.autoOpenLinkPopup)
+    assert(Config.requireLink and Config.freezeUntilLinked==enabled and Config.allowPopupCloseWhenUnlinked==not enabled)
+    local cached=json.decode(files['.configuration-cache.json']).configuration
+    for key in pairs(CadLinkDefaults) do
+        assert(cached.core[key]==nil and cached.plugins.forcereg[key]~=nil, 'Linking has duplicate configuration owners')
+    end
+    assert(cached.core.freezeUntilLinked==nil)
+    source=5;handlers['SonoranCAD::core:sendClientConfig']()
+    assert(replies[3].linkCommand=='cadconnect' and replies[3].linkButtonText=='Connect CAD',
+        'Client received different resolved linking settings')
+end
+local optionalLink=document();optionalLink.plugins.forcereg=forceReg(true);optionalLink.plugins.forcereg.requireLink=false
+setup(200,optionalLink)
+assert(not Config.requireLink and not Config.freezeUntilLinked and Config.allowPopupCloseWhenUnlinked,
+    'Disabled enforcement still forced the linking popup')
+local oldLink=document()
+oldLink.core.linkCommand='legacyconnect';oldLink.core.linkPollIntervalMs=500;oldLink.core.linkButtonText='Legacy Connect'
+oldLink.core.freezeUntilLinked=true
+setup(200,oldLink)
+assert(Config.linkCommand=='legacyconnect' and Config.linkPollIntervalMs==1000 and Config.linkButtonText=='Legacy Connect')
+assert(not Config.plugins.forcereg.enabled and not Config.freezeUntilLinked, 'Compatibility enabled Force Reg enforcement')
+local linkCache=json.decode(files['.configuration-cache.json']).configuration
+assert(linkCache.plugins.forcereg.captiveOption=='freeze' and linkCache.core.freezeUntilLinked==nil)
+setup(503,nil,linkCache)
+assert(Config.configurationSource=='cache' and Config.linkCommand=='legacyconnect' and Config.linkPollIntervalMs==1000)
 setup(503, nil, routed)
 assert(Config.configurationSource=='cache' and Config.mode=='development' and Config.apiUrl=='https://staging-api.dev.sonorancad.com/')
 local oldCache=clone(routed);oldCache.core.mode=nil;oldCache.core.branch='development';oldCache.core.apiUrl='https://obsolete-api.example.test/'
@@ -280,7 +317,7 @@ end
 setup(404,nil,nil,{apiKey='different-key',serverId=2})
 assert(Config.critError, 'Legacy settings from another credential/server were used')
 
-for _, failure in ipairs({'none', 'existing-cache', 'development-mode', 'upload', 'archive', 'archive-throw', 'readback', 'partial-readback', 'cache', 'conflict', 'missing-setting', 'templates', 'templates-missing', 'older-config', 'bootstrap', 'empty-root', 'whitespace-root', 'empty-object-root', 'default-root',
+for _, failure in ipairs({'none', 'linking', 'existing-cache', 'development-mode', 'upload', 'archive', 'archive-throw', 'readback', 'partial-readback', 'cache', 'conflict', 'missing-setting', 'templates', 'templates-missing', 'older-config', 'bootstrap', 'empty-root', 'whitespace-root', 'empty-object-root', 'default-root',
     'diagnostic-http', 'diagnostic-timeout', 'diagnostic-shape', 'diagnostic-validation', 'diagnostic-differences', 'diagnostic-limit',
     'float-roundtrip', 'float-change', 'float-id-change', 'float-type-change'}) do
     local emptyRoots={['empty-root']='', ['whitespace-root']=' \r\n ', ['empty-object-root']={}, ['default-root']={apiKey='',serverId=1}}
@@ -299,6 +336,17 @@ for _, failure in ipairs({'none', 'existing-cache', 'development-mode', 'upload'
     convars.failArchive=failure=='archive'; convars.failWrite=failure=='cache'
     convars.throwArchive=failure=='archive-throw'
     convars.failBootstrap=failure=='bootstrap'
+    if failure=='linking' then
+        local core=json.decode(files['configuration/config.json'])
+        core.linkCommand='oldlink';core.linkPopupTitleText='Existing link prompt';core.linkPollIntervalMs=40000
+        files['configuration/config.json']=json.encode(core)
+        files.inventory[#files.inventory+1]='forcereg_config.lua'
+        files['configuration/forcereg_config.lua']=[[
+            local config={enabled=true,pluginName='forcereg',configVersion='1.0',
+                linkCommand='forceconnect',linkPollIntervalMs=2500,captiveOption='nag',
+                captiveMessage='',instructionalMessage='',verifyMessage='',nagDrawTextLocation='top',whitelist={enabled=false}}
+        ]]
+    end
     if failure=='older-config' then
         files.inventory[#files.inventory+1]='locations_config.lua'
         files['configuration/locations_config.lua']='local config={enabled=true,pluginName="locations",configVersion="1.1",clientCheckTime=250,prefixPostal=false}'
@@ -389,8 +437,13 @@ for _, failure in ipairs({'none', 'existing-cache', 'development-mode', 'upload'
         assert(prepared.apiKey=='secret' and prepared.serverId==Config.serverId,
             'Migration did not prepare credentials before the API request')
     end
-    local succeeds=failure=='none' or failure=='float-roundtrip' or failure=='existing-cache' or failure=='development-mode' or failure=='archive' or failure=='archive-throw' or failure=='templates' or failure=='older-config' or root~=nil
+    local succeeds=failure=='none' or failure=='linking' or failure=='float-roundtrip' or failure=='existing-cache' or failure=='development-mode' or failure=='archive' or failure=='archive-throw' or failure=='templates' or failure=='older-config' or root~=nil
     assert(archiveCalls==(succeeds and 1 or 0))
+    if failure=='linking' then
+        assert(uploaded.plugins.forcereg.linkCommand=='forceconnect' and uploaded.plugins.forcereg.linkPollIntervalMs==2500)
+        assert(uploaded.plugins.forcereg.linkPopupTitleText=='Existing link prompt', 'Migration lost legacy core linking values')
+        for key in pairs(CadLinkDefaults) do assert(uploaded.core[key]==nil, 'Migration uploaded duplicate linking values') end
+    end
     if failure:find('float-',1,true) then
         local output=table.concat(logs,'\n')
         if failure=='float-roundtrip' then

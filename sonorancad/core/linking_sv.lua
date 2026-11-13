@@ -3,7 +3,6 @@ local CadLinkSessions = {}
 local TabletLinkRequests = {}
 local ClientLinkStates = {}
 local LinkCodeReuseWindowMs = 5 * 60 * 1000
-local LinkMenuCheckIntervalMs = 30000
 
 local function is_non_empty_string(value)
     return type(value) == "string" and value ~= ""
@@ -32,11 +31,7 @@ local function get_link_command_name()
 end
 
 local function get_link_poll_interval_ms()
-    local interval = LinkMenuCheckIntervalMs
-    if interval < LinkMenuCheckIntervalMs then
-        interval = LinkMenuCheckIntervalMs
-    end
-    return math.floor(interval)
+    return math.max(1000, math.floor(tonumber(Config.linkPollIntervalMs) or 10000))
 end
 
 local function get_link_popup_title_text()
@@ -670,7 +665,7 @@ local function set_community_link_for_player(player, account_uuid, secret_uuid)
     -- Reuse only a recent server-verified result; recheck after the cache expires
     -- so clearing a link or switching CAD accounts still works.
     local previous = CadLinkCache[community_user_id]
-    if not previous or not previous.updatedAt or GetGameTimer() - previous.updatedAt >= LinkMenuCheckIntervalMs then
+    if not previous or not previous.updatedAt or GetGameTimer() - previous.updatedAt >= get_link_poll_interval_ms() then
         previous = refresh_link_status_by_identifier(community_user_id, identifier_type, nil, {
             ttlMs = 0, forceRefresh = true
         })

@@ -4,14 +4,7 @@ Config = {
     apiUrl = nil,
     postTime = nil,
     serverId = nil,
-    linkCommand = "link",
-    requireLink = true,
-    autoOpenLinkPopup = true,
     freezeUntilLinked = false,
-    allowPopupCloseWhenUnlinked = true,
-    linkPollIntervalMs = 10000,
-    linkPopupTitleText = "Press the button to link your CAD account to this FiveM server",
-    linkButtonText = "Link CAD",
     primaryIdentifier = nil,
     apiSendEnabled = nil,
     debugMode = nil,
@@ -22,6 +15,7 @@ Config = {
     apiVersion = -1,
     plugins = {}
 }
+for key, value in pairs(CadLinkDefaults) do Config[key] = value end
 
 
 -- The only customer-facing local settings are API key and server ID. Legacy
@@ -76,12 +70,13 @@ local function disabled(reason) return {enabled = false, disableReason = reason}
 local coreTypes = {
     postTime='number', primaryIdentifier='string', apiSendEnabled='boolean', debugMode='boolean',
     notificationSystem='string', updateBranch='string', enableCanary='boolean',
-    linkCommand='string', requireLink='boolean', autoOpenLinkPopup='boolean', freezeUntilLinked='boolean',
-    allowPopupCloseWhenUnlinked='boolean', linkPollIntervalMs='number', linkPopupTitleText='string', linkButtonText='string',
     statusLabels='table', allowAutoUpdate='boolean', autoUpdateUrl='string', allowUpdateWithPlayers='boolean',
     noUnitTimer='boolean', enablePushEventForwarding='boolean', pushEventForwardUrl='string',
     disableOverride='boolean', devHiddenSwitch='boolean', communityID='string', mode='string'
 }
+local legacyCoreTypes = {freezeUntilLinked = 'boolean'}
+for key, expected in pairs(coreTypes) do legacyCoreTypes[key] = expected end
+for key, value in pairs(CadLinkDefaults) do legacyCoreTypes[key] = type(value) end
 local function validate(document, phase)
     local migrating = phase == 'migration'
     local allowPartial = migrating or phase == 'legacy'
@@ -101,7 +96,7 @@ local function validate(document, phase)
         return nil, 'Missing or invalid primaryIdentifier, postTime or apiSendEnabled.'
     end
     for key, value in pairs(document.core) do
-        if coreTypes[key] == nil or type(value) ~= coreTypes[key] then
+        if legacyCoreTypes[key] == nil or type(value) ~= legacyCoreTypes[key] then
             return nil, 'Unsupported or invalid core setting: ' .. tostring(key)
         end
     end
@@ -109,6 +104,7 @@ local function validate(document, phase)
         type(document.vehicleModels) ~= 'table' or type(document.callTemplates) ~= 'table' then
         return nil, 'Missing updaterIgnore, vehicleModels or callTemplates configuration.'
     end
+    NormalizeCadLinkConfiguration(document)
     local parsed, errors = {}, {}
     for name, value in pairs(document.plugins) do
         if type(name) ~= 'string' or not name:match('^[%w_-]+$') then return nil, 'Invalid plugin name.' end
@@ -223,89 +219,20 @@ local function applyConfiguration(document, parsed)
     end
     Config.notificationSystem = normalizedNotificationSystem
 
-    if type(Config.linkCommand) ~= "string" or Config.linkCommand == "" then
-        Config.linkCommand = "link"
+    -- These runtime mirrors serve the core link flow and existing integrations;
+    -- the editable values belong only to Force Reg.
+    local linkSettings = Config.plugins.forcereg or {}
+    for key, default in pairs(CadLinkDefaults) do
+        local value = linkSettings[key]
+        if value == nil then value = document.core[key] end -- Pre-migration Lua.
+        if type(value) ~= type(default) or (type(value) == 'string' and value == '') then value = default end
+        Config[key] = value
     end
-
-    if type(Config.requireLink) ~= "boolean" then
-        Config.requireLink = true
-    end
-
-    if type(Config.autoOpenLinkPopup) ~= "boolean" then
-        Config.autoOpenLinkPopup = true
-    end
-
-    if type(Config.freezeUntilLinked) ~= "boolean" then
-        Config.freezeUntilLinked = false
-    end
-
-    if type(Config.allowPopupCloseWhenUnlinked) ~= "boolean" then
-        Config.allowPopupCloseWhenUnlinked = true
-    end
-
-    Config.linkPollIntervalMs = tonumber(Config.linkPollIntervalMs) or 10000
-    if Config.linkPollIntervalMs < 1000 then
-        Config.linkPollIntervalMs = 1000
-    end
-
-    if type(Config.linkPopupTitleText) ~= "string" or Config.linkPopupTitleText == "" then
-        Config.linkPopupTitleText = "Press the button to link your CAD account to this FiveM server"
-    end
-
-    if type(Config.linkButtonText) ~= "string" or Config.linkButtonText == "" then
-        Config.linkButtonText = "Link CAD"
-    end
-
-    local function resolve_forcereg_link_settings()
-        local pluginConfig = Config.plugins.forcereg
-        if type(pluginConfig) ~= "table" or pluginConfig.enabled ~= true then
-            return
-        end
-
-        if type(pluginConfig.requireLink) == "boolean" then
-            Config.requireLink = pluginConfig.requireLink
-        end
-
-        if type(pluginConfig.autoOpenLinkPopup) == "boolean" then
-            Config.autoOpenLinkPopup = pluginConfig.autoOpenLinkPopup
-        end
-
-        if type(pluginConfig.linkCommand) == "string" and pluginConfig.linkCommand ~= "" then
-            Config.linkCommand = pluginConfig.linkCommand
-        end
-
-        if tonumber(pluginConfig.linkPollIntervalMs) ~= nil then
-            Config.linkPollIntervalMs = tonumber(pluginConfig.linkPollIntervalMs)
-        end
-
-        if type(pluginConfig.linkPopupTitleText) == "string" and pluginConfig.linkPopupTitleText ~= "" then
-            Config.linkPopupTitleText = pluginConfig.linkPopupTitleText
-        end
-
-        if type(pluginConfig.linkButtonText) == "string" and pluginConfig.linkButtonText ~= "" then
-            Config.linkButtonText = pluginConfig.linkButtonText
-        end
-
-        local captiveOption = type(pluginConfig.captiveOption) == "string" and pluginConfig.captiveOption:lower() or "nag"
-        if captiveOption == "freeze" then
-            Config.freezeUntilLinked = true
-            Config.allowPopupCloseWhenUnlinked = false
-        else
-            Config.freezeUntilLinked = false
-            if type(pluginConfig.allowPopupCloseWhenUnlinked) == "boolean" then
-                Config.allowPopupCloseWhenUnlinked = pluginConfig.allowPopupCloseWhenUnlinked
-            else
-                Config.allowPopupCloseWhenUnlinked = true
-            end
-        end
-    end
-
-    resolve_forcereg_link_settings()
-
-    Config.linkPollIntervalMs = tonumber(Config.linkPollIntervalMs) or 10000
-    if Config.linkPollIntervalMs < 1000 then
-        Config.linkPollIntervalMs = 1000
-    end
+    Config.linkPollIntervalMs = math.max(1000, math.floor(Config.linkPollIntervalMs))
+    local captiveOption = linkSettings.captiveOption or (document.core.freezeUntilLinked and 'freeze')
+    Config.freezeUntilLinked = linkSettings.enabled == true and Config.requireLink and
+        type(captiveOption) == 'string' and captiveOption:lower() == 'freeze'
+    if Config.freezeUntilLinked then Config.allowPopupCloseWhenUnlinked = false end
 
     local function applyFrameworkConvar(key, value)
         if key == "apiKey" or value == nil then
@@ -567,7 +494,7 @@ collectLegacy = function(startup)
     document.core.mode = document.core.mode or document.core.branch or
         (GetCadConfigurationBootstrapUrl():find('staging', 1, true) and 'development' or 'production')
     document.core = NormalizeCadCoreConfiguration(document.core)
-    for key, expected in pairs(coreTypes) do
+    for key, expected in pairs(legacyCoreTypes) do
         local value = GetConvar('sonoran_' .. key, 'NONE')
         local setter = GetConvar('sonoran_' .. key .. '_setter', 'NONE')
         if key ~= 'communityID' and key ~= 'mode' and value ~= 'NONE' and (setter == 'NONE' or setter == 'server') then

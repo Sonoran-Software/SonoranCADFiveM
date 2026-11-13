@@ -47,9 +47,11 @@ local function fromCadConfiguration(value)
         end
     end
     if document.plugins.calltemplates then document.callTemplates = document.plugins.calltemplates.templates or {} end
+    NormalizeCadLinkConfiguration(document)
     return document
 end
 local function toCadConfiguration(document)
+    NormalizeCadLinkConfiguration(document)
     local value = {core = NormalizeCadCoreConfiguration(document.core)}
     value.core.updateIgnore = document.updaterIgnore
     value.core.livemap_vehicle_models = document.vehicleModels

@@ -14,16 +14,25 @@ This resource now uses Sonoran CAD API v2 and the bundled `Sonoran.lua` client f
 
 ## Config
 
-Configure the core link flow through the FiveM configuration in CAD:
+Configure linking in the **Force Reg** section of the FiveM configuration in CAD:
 
 - `linkCommand`
 - `requireLink`
 - `autoOpenLinkPopup`
-- `freezeUntilLinked`
 - `allowPopupCloseWhenUnlinked`
 - `linkPollIntervalMs`
 - `linkPopupTitleText`
 - `linkButtonText`
+
+Use Force Reg's `captiveOption` to choose Nag, Freeze, NoSpawn, or Whitelist
+enforcement. Freeze keeps the popup open until the player links. `enabled` and
+`requireLink` control enforcement; the manual link command remains available when
+enforcement is disabled, using the same command, polling, and popup settings.
+
+Older core linking values are accepted as fallbacks when the corresponding Force
+Reg value is absent. Existing Force Reg values take priority. Migration and cached
+configuration store these settings only in Force Reg; `freezeUntilLinked` becomes
+`captiveOption = "freeze"` when no captive option is already configured.
 
 ## Third-Party Exports
 
