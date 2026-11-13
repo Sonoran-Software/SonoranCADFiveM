@@ -177,21 +177,21 @@ test('WebSocket and bodycam use public settings and the restricted API-key conva
 });
 
 test('WebSocket authenticates when configuration resolves without waiting for a location update or interval', async () => {
-    const events = {}, pushHandlers = {}, timers = [], intervals = [], auth = [];
-    let starts = 0;
-    const connection = {
+    const events = {}, pushHandlers = {}, timers = [], intervals = [], auth = [], connections = [];
+    let starts = 0, stops = 0;
+    const createConnection = () => ({
         state: 'Disconnected',
         on: (name, callback) => { pushHandlers[name] = callback; },
-        onreconnecting() {}, onreconnected() {}, onclose() {},
+        onreconnecting() {}, onreconnected() {}, onclose(callback) { this.closed = callback; },
         async start() { starts++; this.state = 'Connected'; },
-        async stop() { this.state = 'Disconnected'; },
+        async stop() { stops++; this.state = 'Disconnected'; this.closed(); },
         async invoke(...args) { auth.push(args); return { success: true }; }
-    };
+    });
     class HubConnectionBuilder {
         configureLogging() { return this; }
         withUrl() { return this; }
         withAutomaticReconnect() { return this; }
-        build() { return connection; }
+        build() { const connection = createConnection(); connections.push(connection); return connection; }
     }
     const exporter = () => {};
     exporter.sonorancad = {}; // apiws.js loads before the Lua export exists.
@@ -202,8 +202,8 @@ test('WebSocket authenticates when configuration resolves without waiting for a 
         on: (name, callback) => { events[name] = callback; },
         setInterval: (callback, delay) => { intervals.push({ callback, delay }); return intervals.length; },
         clearInterval() {},
-        setTimeout: (callback, delay) => { timers.push({ callback, delay }); return timers.length; },
-        clearTimeout() {}
+        setTimeout: (callback, delay) => { const timer = { callback, delay }; timers.push(timer); return timer; },
+        clearTimeout(timer) { const index = timers.indexOf(timer); if (index !== -1) timers.splice(index, 1); }
     });
     assert.equal(starts, 0);
     assert.equal(intervals[0].delay, 30000);
@@ -225,9 +225,28 @@ test('WebSocket authenticates when configuration resolves without waiting for a 
     await timers.shift().callback();
     assert.equal(starts, 1, 'Readiness rebuilt an already authenticated connection');
     assert.equal(auth.length, 1);
+    // A transport close schedules a manual retry. Startup validation then fails
+    // while SignalR is reconnecting; the watchdog must stop and cancel retries.
+    connections[0].closed();
+    assert.equal(timers.length, 1);
+    connections[0].state = 'Reconnecting';
     ready = false;
-    events['SonoranCAD::core:configurationReady']();
-    await timers.shift().callback();
+    await intervals[0].callback();
     assert.equal(starts, 1, 'Unready configuration opened a connection');
     assert.equal(auth.length, 1);
+    assert.equal(stops, 1, 'Unready configuration left the existing connection active');
+    assert.equal(connections[0].state, 'Disconnected');
+    assert.equal(timers.length, 0, 'Intentional shutdown left a manual retry scheduled');
+    await intervals[0].callback();
+    assert.equal(stops, 1, 'Repeated unready ticks stopped the retired connection again');
+    ready = true;
+    events['SonoranCAD::core:configurationReady']();
+    await timers.shift().callback();
+    assert.equal(starts, 2, 'Readiness did not rebuild the stopped connection');
+    assert.equal(auth.length, 2, 'Recovered connection skipped authentication');
+    assert.equal(connections.length, 2);
+    ready = false;
+    await intervals[0].callback();
+    assert.equal(stops, 2, 'Unready configuration did not stop a connected transport');
+    assert.equal(timers.length, 0);
 });

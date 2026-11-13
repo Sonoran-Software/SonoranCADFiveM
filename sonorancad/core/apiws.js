@@ -286,7 +286,10 @@
     }
 
     async function ensureConnection(config) {
-        if (!config.ready) return false;
+        if (!config.ready) {
+            await stopConnection();
+            return false;
+        }
         if (!signalR) {
             apiWsLog("debug", "ensureConnection: signalR missing.");
             return false;
@@ -363,7 +366,11 @@
                 apiWsLog("debug", "Reconnected: re-authenticating.");
                 await authenticate();
             });
+            const activeConnection = connection;
             connection.onclose((err) => {
+                // stopConnection detaches the hub before stopping it. Its close
+                // callback must not restart retries after configuration failed.
+                if (connection !== activeConnection) return;
                 authenticated = false;
                 const msg = err && err.message ? ": " + err.message : "";
                 reportReconnectFailure(Math.max(reconnectFailureCount, manualRetryAttempt), err);
