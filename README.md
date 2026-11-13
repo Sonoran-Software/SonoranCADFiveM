@@ -6,6 +6,8 @@ The Sonoran CAD FiveM integration core includes many drag-and-drop integration s
 
 Please view the [installation guide](https://info.sonorancad.com/integration-plugins/in-game-integration/fivem-installation) for more details.
 
+For a new installation, copy `sonorancad/config.example.json` to `sonorancad/config.json` and enter your API key and numeric server ID. When updating, keep your existing `config.json`; the archive includes only the example file. Existing legacy installations migrate their credentials automatically.
+
 ## Updating from v3.x.x?
 
 See our documentation [here](https://sonoran.link/cadupdate).

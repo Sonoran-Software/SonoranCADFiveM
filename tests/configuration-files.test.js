@@ -7,6 +7,21 @@ const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../sonorancad/core/http.js'), 'utf8');
 
+for (const [workflow, count] of [['release.yml', 2], ['deploy-branch-to-qa.yml', 1]]) {
+    test(`${workflow} packages only an example credential file in every archive`, () => {
+        const source = fs.readFileSync(path.join(__dirname, '../.github/workflows', workflow), 'utf8');
+        const copies = [...source.matchAll(/rsync -a[\s\S]*?\.\/ ".*?"|rsync -a[\s\S]*?\.\/ \.\/\[sonorancad\]/g)];
+        assert.equal(copies.length, count);
+        for (const [copy] of copies) assert.ok(copy.includes('--exclude="/sonorancad/config.json"'));
+        const templates = [...source.matchAll(/printf '([^']+)' > "\.\/\[sonorancad\]\/sonorancad\/([^"\n]+)"/g)];
+        assert.equal(templates.length, count);
+        for (const [, contents, filename] of templates) {
+            assert.equal(filename, 'config.example.json', 'Archive would overwrite installed credentials');
+            assert.deepEqual(JSON.parse(contents.replaceAll('\\n', '\n')), {apiKey: '', serverId: 1});
+        }
+    });
+}
+
 function setup(t) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'cad-configuration-test-'));
     t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -161,22 +176,94 @@ test('WebSocket and bodycam use public settings and the restricted API-key conva
     assert.equal(ws('buildConfig().apiSendEnabled'), false);
 });
 
+for (const phase of ['start', 'authentication']) {
+    for (const outcome of ['resolve', 'reject']) {
+        test(`WebSocket cancels pending ${phase} and ignores its late ${outcome}`, async () => {
+            let ready = true, settle;
+            const pending = new Promise((resolve, reject) => {
+                settle = () => outcome === 'resolve' ? resolve({ success: true }) : reject(new Error('Canceled attempt'));
+            });
+            const connections = [], intervals = [], timers = [], logs = [];
+            class HubConnectionBuilder {
+                configureLogging() { return this; }
+                withUrl() { return this; }
+                withAutomaticReconnect() { return this; }
+                build() {
+                    const first = connections.length === 0;
+                    const hub = {
+                        state: 'Disconnected', stops: 0, authCalls: 0,
+                        on() {}, onreconnecting() {}, onreconnected(cb) { this.reconnected = cb; },
+                        onclose(cb) { this.closed = cb; },
+                        async start() {
+                            this.state = 'Connecting';
+                            if (first && phase === 'start') await pending;
+                            if (!this.stops) this.state = 'Connected';
+                        },
+                        async invoke() {
+                            this.authCalls++;
+                            if (first && phase === 'authentication') return pending;
+                            return { success: true };
+                        },
+                        async stop() { this.stops++; this.state = 'Disconnected'; this.closed(); }
+                    };
+                    connections.push(hub);
+                    return hub;
+                }
+            }
+            const exporter = () => {};
+            exporter.sonorancad = { GetResolvedConfig: () => JSON.stringify({
+                ready, communityID: 'test', serverId: 2, apiSendEnabled: true
+            }) };
+            vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../sonorancad/core/apiws.js'), 'utf8'), {
+                require: () => ({ HubConnectionBuilder, HttpTransportType: { WebSockets: 1 }, HubConnectionState: { Connected: 'Connected' } }),
+                exports: exporter, emit: (...args) => logs.push(args.join(' ')),
+                GetCurrentResourceName: () => 'sonorancad', GetConvar: () => 'restricted-secret', on() {},
+                setInterval: cb => { intervals.push(cb); return cb; }, clearInterval() {},
+                setTimeout: cb => { timers.push(cb); return cb; },
+                clearTimeout(cb) { const index = timers.indexOf(cb); if (index !== -1) timers.splice(index, 1); }
+            });
+            await new Promise(setImmediate);
+            const old = connections[0];
+            assert.equal(old.state, phase === 'start' ? 'Connecting' : 'Connected');
+            ready = false;
+            await intervals[0]();
+            assert.equal(old.stops, 1, 'In-flight ensure blocked cancellation');
+            assert.equal(old.state, 'Disconnected');
+            assert.equal(timers.length, 0);
+            // stop() deliberately leaves the old promise pending to exercise late
+            // completions without depending on SignalR's promise settlement order.
+            settle();
+            await new Promise(setImmediate);
+            assert.equal(old.authCalls, phase === 'start' ? 0 : 1, 'Canceled start proceeded to authenticate');
+            assert.equal(timers.length, 0, 'Canceled attempt scheduled a retry');
+            assert.ok(!logs.some(line => line.includes('Authenticated with API WS hub')),
+                'Canceled authentication marked the retired connection authenticated');
+            ready = true;
+            await intervals[0]();
+            assert.equal(connections.length, 2);
+            assert.equal(connections[1].authCalls, 1, 'Recovery skipped fresh authentication');
+            await old.reconnected();
+            assert.equal(connections[1].authCalls, 1, 'Retired reconnect callback touched the replacement');
+        });
+    }
+}
+
 test('WebSocket authenticates when configuration resolves without waiting for a location update or interval', async () => {
-    const events = {}, pushHandlers = {}, timers = [], intervals = [], auth = [];
-    let starts = 0;
-    const connection = {
+    const events = {}, pushHandlers = {}, timers = [], intervals = [], auth = [], connections = [];
+    let starts = 0, stops = 0;
+    const createConnection = () => ({
         state: 'Disconnected',
         on: (name, callback) => { pushHandlers[name] = callback; },
-        onreconnecting() {}, onreconnected() {}, onclose() {},
+        onreconnecting() {}, onreconnected() {}, onclose(callback) { this.closed = callback; },
         async start() { starts++; this.state = 'Connected'; },
-        async stop() { this.state = 'Disconnected'; },
+        async stop() { stops++; this.state = 'Disconnected'; this.closed(); },
         async invoke(...args) { auth.push(args); return { success: true }; }
-    };
+    });
     class HubConnectionBuilder {
         configureLogging() { return this; }
         withUrl() { return this; }
         withAutomaticReconnect() { return this; }
-        build() { return connection; }
+        build() { const connection = createConnection(); connections.push(connection); return connection; }
     }
     const exporter = () => {};
     exporter.sonorancad = {}; // apiws.js loads before the Lua export exists.
@@ -187,8 +274,8 @@ test('WebSocket authenticates when configuration resolves without waiting for a 
         on: (name, callback) => { events[name] = callback; },
         setInterval: (callback, delay) => { intervals.push({ callback, delay }); return intervals.length; },
         clearInterval() {},
-        setTimeout: (callback, delay) => { timers.push({ callback, delay }); return timers.length; },
-        clearTimeout() {}
+        setTimeout: (callback, delay) => { const timer = { callback, delay }; timers.push(timer); return timer; },
+        clearTimeout(timer) { const index = timers.indexOf(timer); if (index !== -1) timers.splice(index, 1); }
     });
     assert.equal(starts, 0);
     assert.equal(intervals[0].delay, 30000);
@@ -210,9 +297,28 @@ test('WebSocket authenticates when configuration resolves without waiting for a 
     await timers.shift().callback();
     assert.equal(starts, 1, 'Readiness rebuilt an already authenticated connection');
     assert.equal(auth.length, 1);
+    // A transport close schedules a manual retry. Startup validation then fails
+    // while SignalR is reconnecting; the watchdog must stop and cancel retries.
+    connections[0].closed();
+    assert.equal(timers.length, 1);
+    connections[0].state = 'Reconnecting';
     ready = false;
-    events['SonoranCAD::core:configurationReady']();
-    await timers.shift().callback();
+    await intervals[0].callback();
     assert.equal(starts, 1, 'Unready configuration opened a connection');
     assert.equal(auth.length, 1);
+    assert.equal(stops, 1, 'Unready configuration left the existing connection active');
+    assert.equal(connections[0].state, 'Disconnected');
+    assert.equal(timers.length, 0, 'Intentional shutdown left a manual retry scheduled');
+    await intervals[0].callback();
+    assert.equal(stops, 1, 'Repeated unready ticks stopped the retired connection again');
+    ready = true;
+    events['SonoranCAD::core:configurationReady']();
+    await timers.shift().callback();
+    assert.equal(starts, 2, 'Readiness did not rebuild the stopped connection');
+    assert.equal(auth.length, 2, 'Recovered connection skipped authentication');
+    assert.equal(connections.length, 2);
+    ready = false;
+    await intervals[0].callback();
+    assert.equal(stops, 2, 'Unready configuration did not stop a connected transport');
+    assert.equal(timers.length, 0);
 });

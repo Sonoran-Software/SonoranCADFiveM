@@ -66,7 +66,22 @@ class ConfigurationNumericKeysTests(unittest.TestCase):
         parsed = self.lua.globals().ParseCadPluginConfiguration(plugin, received, True)
         if isinstance(parsed, tuple):
             self.fail(parsed[1])
+        self.assertEqual(self.json_value(received), json.loads(wire),
+                         'Runtime decoding mutated the authoritative tagged JSON/cache document')
         return parsed, received, wire
+
+    def numeric_entries(self, value):
+        entries = value['__sonoranNumericEntries']
+        self.assertIsNotNone(entries, 'Numeric dictionary keys lost their transport tag')
+        return {entry.key: entry.value for _, entry in entries.items()}
+
+    def parse_document(self, plugin, document):
+        received = self.lua.table_from(json.loads(json.dumps(document)), recursive=True)
+        parsed = self.lua.globals().ParseCadPluginConfiguration(plugin, received, True)
+        if isinstance(parsed, tuple):
+            self.fail(parsed[1])
+        self.assertEqual(self.json_value(received), document)
+        return parsed
 
     def clothing_source(self, root=False):
         container = 'config' if root else 'config.clothingConfig'
@@ -102,7 +117,10 @@ class ConfigurationNumericKeysTests(unittest.TestCase):
                                              (gender + component + str(drawable), color))
                     # Runtime normalization must not mutate the authoritative JSON/cache document.
                     self.assertIsNone(raw[gender][component][drawable])
-                    self.assertEqual(raw[gender][component][str(drawable)].name, gender + component + str(drawable))
+                    self.assertIsNone(raw[gender][component][str(drawable)])
+                    transported = self.numeric_entries(raw[gender][component])[drawable]
+                    self.assertEqual(transported.name, gender + component + str(drawable))
+                    self.assertEqual(dict(self.numeric_entries(transported.colors)), {-1: 'None', 0: 'White', 4: 'Red'})
 
     def test_clothing_drawable_and_texture_ids_survive_json(self):
         self.check_clothing(root=False)
@@ -127,6 +145,7 @@ class ConfigurationNumericKeysTests(unittest.TestCase):
             enabled=true, pluginName='caddisplay', configVersion='1.0',
             interaction={models={
                 [-1234567]={label='negative'}, [0]={label='zero'}, [1234567]={label='positive'},
+                ['0']={label='string zero'}, ['1234567']={label='genuine numeric-string model name'},
                 prop_laptop_jimmy={label='named'}, ['001']={label='numeric-looking model name'}
             }}
         }'''
@@ -135,13 +154,82 @@ class ConfigurationNumericKeysTests(unittest.TestCase):
         parsed, received, _ = self.round_trip('caddisplay', source)
         self.hash_calls.clear()
         actual = self.model_lookup(parsed.interaction)
-        self.assertCountEqual(self.hash_calls, ['prop_laptop_jimmy', '001'])
+        self.assertCountEqual(self.hash_calls, ['prop_laptop_jimmy', '001', '0', '1234567'])
         self.assertEqual(set(actual.keys()), set(expected.keys()))
         for key, profile in expected.items():
             self.assertEqual(actual[key].label, profile.label)
         for key in (-1234567, 0, 1234567):
             self.assertIsNone(received.interaction.models[key])
-            self.assertIsNotNone(received.interaction.models[str(key)])
+            self.assertEqual(self.numeric_entries(received.interaction.models)[key].label,
+                             {-1234567: 'negative', 0: 'zero', 1234567: 'positive'}[key])
+        self.assertEqual(received.interaction.models['0'].label, 'string zero')
+        self.assertEqual(received.interaction.models['1234567'].label, 'genuine numeric-string model name')
+        self.assertEqual(parsed.interaction.models[0].label, 'zero')
+        self.assertEqual(parsed.interaction.models['0'].label, 'string zero')
+
+    def test_tagged_clothing_maps_preserve_simultaneous_numeric_and_string_zero_keys(self):
+        parsed, received, _ = self.round_trip('localcallers', '''local config = {
+            enabled=true, pluginName='localcallers', configVersion='1.0',
+            language={unknownItem='Unknown item', unknownColor='Unknown color'},
+            clothingConfig={male={top={
+                [0]={name='Numeric drawable', colors={[0]='Numeric white', ['0']='String white'}},
+                ['0']={name='String drawable', colors={[0]='Numeric black', ['0']='String black'}}
+            }}}
+        }''')
+        drawables = parsed.clothingConfig.male.top
+        self.assertEqual(self.clothing_lookup(parsed, drawables, 0, 0), ('Numeric drawable', 'Numeric white'))
+        self.assertEqual(drawables['0'].name, 'String drawable')
+        self.assertEqual(drawables[0].colors['0'], 'String white')
+        self.assertEqual(drawables['0'].colors[0], 'Numeric black')
+        self.assertEqual(drawables['0'].colors['0'], 'String black')
+        raw = received.clothingConfig.male.top
+        self.assertEqual(raw['0'].name, 'String drawable')
+        self.assertEqual(self.numeric_entries(raw)[0].name, 'Numeric drawable')
+        self.assertEqual(self.numeric_entries(raw['0'].colors)[0], 'Numeric black')
+
+    def test_plain_cad_catalog_clothing_maps_still_restore_numeric_drawable_and_texture_ids(self):
+        parsed = self.parse_document('localcallers', {
+            'enabled': True, 'pluginName': 'localcallers', 'configVersion': '1.0',
+            'language': {'unknownItem': 'Unknown item', 'unknownColor': 'Unknown color'},
+            'clothingConfig': {'male': {'top': {
+                '0': {'name': 'Catalog shirt', 'colors': {'0': 'White', '4': 'Red'}},
+                '7': {'name': 'Catalog vest', 'colors': {'0': 'Black'}},
+            }}},
+            'custom': {'0': 'record-field string stays a string'},
+        })
+        self.assertEqual(self.clothing_lookup(parsed, parsed.clothingConfig.male.top, 0, 4), ('Catalog shirt', 'Red'))
+        self.assertEqual(self.clothing_lookup(parsed, parsed.clothingConfig.male.top, 7, 0), ('Catalog vest', 'Black'))
+        self.assertEqual(parsed.custom['0'], 'record-field string stays a string')
+        self.assertIsNone(parsed.custom[0])
+
+    def test_plain_model_names_are_not_guessed_to_be_numeric_hashes(self):
+        parsed = self.parse_document('caddisplay', {
+            'enabled': True, 'pluginName': 'caddisplay', 'configVersion': '1.0',
+            'interaction': {'models': {'1234567': {'label': 'Digit model name'}, '0': {'label': 'Zero model name'}}},
+        })
+        self.assertIsNone(parsed.interaction.models[1234567])
+        self.assertIsNone(parsed.interaction.models[0])
+        actual = self.model_lookup(parsed.interaction)
+        self.assertCountEqual(self.hash_calls, ['1234567', '0'])
+        self.assertCountEqual([profile.label for _, profile in actual.items()], ['Digit model name', 'Zero model name'])
+
+    def test_tagged_weapon_response_maps_preserve_numeric_hash_and_string_key_collisions(self):
+        parsed, received, _ = self.round_trip('localcallers', '''local config = {
+            enabled=true, pluginName='localcallers', configVersion='1.0',
+            weaponConfig={weaponResponses={
+                [0]='Numeric zero', ['0']='String zero',
+                [1234567]='Numeric hash', ['1234567']='String name', weapon_pistol='Named weapon'
+            }}
+        }''')
+        responses = parsed.weaponConfig.weaponResponses
+        self.assertEqual(responses[0], 'Numeric zero')
+        self.assertEqual(responses['0'], 'String zero')
+        self.assertEqual(responses[1234567], 'Numeric hash')
+        self.assertEqual(responses['1234567'], 'String name')
+        self.assertEqual(responses.weapon_pistol, 'Named weapon')
+        self.assertEqual(self.hash_calls, [], 'Tagged keys were reinterpreted by the legacy dictionary fallback')
+        self.assertEqual(received.weaponConfig.weaponResponses['0'], 'String zero')
+        self.assertEqual(self.numeric_entries(received.weaponConfig.weaponResponses)[0], 'Numeric zero')
 
     def test_unrelated_keys_value_types_and_noncanonical_names_are_unchanged(self):
         parsed, _, _ = self.round_trip('caddisplay', '''local config = {

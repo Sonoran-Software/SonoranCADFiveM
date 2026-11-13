@@ -131,24 +131,44 @@ local cadPluginFields = {
 }
 
 -- Evaluate callback source from JSON in one plugin environment, so helpers retain
--- access to config and to one another. Object keys are otherwise left untouched.
-local function decodeCadSettings(value, env)
+-- access to config and to one another. Restore explicitly typed numeric map keys;
+-- ordinary object keys (including numeric-looking strings) stay untouched.
+local function decodeCadSettings(value, env, typedMaps)
     if type(value) == 'string' and (value:match('^%s*function%s*%(') or value:match('^%s*function%s+[%w_]+%s*%(')) then
         local source = value:gsub('^(%s*function)%s+[%w_]+%s*%(', '%1(', 1)
         local chunk = assert(load('return ' .. source, '@cad-callback', 't', env))
         return chunk()
     elseif type(value) == 'table' then
         local copy = {}
-        for key, item in pairs(value) do copy[key] = decodeCadSettings(item, env) end
+        for key, item in pairs(value) do
+            if key ~= '__sonoranNumericEntries' then copy[key] = decodeCadSettings(item, env, typedMaps) end
+        end
+        local entries = value.__sonoranNumericEntries
+        if entries ~= nil then
+            assert(type(entries) == 'table', 'Invalid numeric configuration entries')
+            local count, maximum = 0, 0
+            for index, entry in pairs(entries) do
+                count = count + 1
+                assert(type(index) == 'number' and index >= 1 and index % 1 == 0, 'Invalid numeric entry index')
+                maximum = math.max(maximum, index)
+                assert(type(entry) == 'table' and type(entry.key) == 'number' and
+                    entry.key == entry.key and math.abs(entry.key) ~= math.huge and entry.value ~= nil,
+                    'Invalid numeric configuration entry')
+                assert(copy[entry.key] == nil, 'Duplicate numeric configuration key')
+                copy[entry.key] = decodeCadSettings(entry.value, env, typedMaps)
+            end
+            assert(count == maximum, 'Invalid numeric entry array')
+            typedMaps[copy] = true
+        end
         return copy
     end
     return value
 end
 
--- JSON object keys are strings. Restore integer keys only for dictionaries whose
--- consumers index by game IDs/hashes; record field IDs and model names stay strings.
-local function restoreIntegerDictionaryKeys(value)
-    if type(value) ~= 'table' then return value end
+-- Older CAD defaults encode clothing IDs as ordinary JSON keys. Repair only
+-- untagged dictionaries; explicitly typed maps already preserve the original keys.
+local function restoreIntegerDictionaryKeys(value, typedMaps)
+    if type(value) ~= 'table' or typedMaps[value] then return value end
     local restored = {}
     for key, item in pairs(value) do
         local integer = type(key) == 'string' and tonumber(key)
@@ -158,15 +178,15 @@ local function restoreIntegerDictionaryKeys(value)
     return restored
 end
 
-local function restoreClothingDictionaryKeys(clothing)
+local function restoreClothingDictionaryKeys(clothing, typedMaps)
     if type(clothing) ~= 'table' then return end
     for _, component in ipairs({'top', 'torso', 'pants', 'shoes', 'hat'}) do
-        local drawables = restoreIntegerDictionaryKeys(clothing[component])
+        local drawables = restoreIntegerDictionaryKeys(clothing[component], typedMaps)
         clothing[component] = drawables
         if type(drawables) == 'table' then
             for _, drawable in pairs(drawables) do
                 if type(drawable) == 'table' then
-                    drawable.colors = restoreIntegerDictionaryKeys(drawable.colors)
+                    drawable.colors = restoreIntegerDictionaryKeys(drawable.colors, typedMaps)
                 end
             end
         end
@@ -200,8 +220,9 @@ function ParseCadPluginConfiguration(pluginName, value, migrating)
     end
     if type(value) == 'table' then
         local env = setmetatable({}, {__index = _G})
-        local ok, settings = pcall(decodeCadSettings, value, env)
-        if not ok then return nil, 'Invalid callback source for ' .. pluginName end
+        local typedMaps = {}
+        local ok, settings = pcall(decodeCadSettings, value, env, typedMaps)
+        if not ok then return nil, 'Invalid callback source or numeric map for ' .. pluginName end
         config = settings
         env.config = config
         if pluginName == 'ersintegration' then seedErsDateHelpers(env, config) end
@@ -221,7 +242,7 @@ function ParseCadPluginConfiguration(pluginName, value, migrating)
             end
             if config.weaponConfig ~= nil and type(config.weaponConfig) ~= 'table' then return nil, 'Invalid weapon settings' end
             local responses = config.weaponConfig and config.weaponConfig.weaponResponses
-            if type(responses) == 'table' then
+            if type(responses) == 'table' and not typedMaps[responses] then
                 local normalized = {}
                 for key, response in pairs(responses) do
                     local hash = tonumber(key)
@@ -231,12 +252,10 @@ function ParseCadPluginConfiguration(pluginName, value, migrating)
                 config.weaponConfig.weaponResponses = normalized
             end
             for _, gender in ipairs({'male', 'female'}) do
-                restoreClothingDictionaryKeys(type(config.clothingConfig) == 'table' and config.clothingConfig[gender])
+                restoreClothingDictionaryKeys(type(config.clothingConfig) == 'table' and config.clothingConfig[gender], typedMaps)
                 -- Older Local Callers configs also support these tables at the root.
-                restoreClothingDictionaryKeys(config[gender])
+                restoreClothingDictionaryKeys(config[gender], typedMaps)
             end
-        elseif pluginName == 'caddisplay' and type(config.interaction) == 'table' then
-            config.interaction.models = restoreIntegerDictionaryKeys(config.interaction.models)
         end
     end
     if type(config) ~= 'table' or (config.pluginName ~= nil and config.pluginName ~= pluginName) or
