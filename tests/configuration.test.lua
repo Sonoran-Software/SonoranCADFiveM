@@ -549,6 +549,8 @@ assert(result.status==0 and now>=15000)
 setup(404)
 dofile('sonorancad/core/sonoran_api.lua')
 local httpStatus, httpData, request
+local coreVersion = '4.0.126'
+function GetResourceMetadata(_, key) if key == 'version' then return coreVersion end end
 function PerformHttpRequest(url, callback, method, body, headers)
     request={url=url, method=method, body=body, headers=headers}
     callback(httpStatus, json.encode(httpData))
@@ -566,9 +568,12 @@ flat.core.livemap_vehicle_models={car={type='CUSTOM'}}
 assert(http('get',200,flat).data.plugins.kick.enabled)
 assert(result.data.core.apiKey==nil and result.data.updaterIgnore.ignore[1].path=='/custom')
 assert(result.data.vehicleModels.car.type=='CUSTOM')
-assert(request.url=='https://api.sonorancad.com/v2/fivem/servers/1/configuration')
+assert(request.url=='https://api.sonorancad.com/v2/fivem/servers/1/configuration?version='..coreVersion)
 assert(request.method=='GET' and request.body=='')
 assert(request.headers.Authorization=='Bearer secret')
+coreVersion = '4.0.127'
+assert(http('get',200,flat).status==200 and request.url=='https://api.sonorancad.com/v2/fivem/servers/1/configuration?version=4.0.127',
+    'Configuration GET did not use the installed core version')
 assert(http('migrate',200,{serverId=1,status='saved'}).data.status=='saved')
 local payload=json.decode(request.body)
 assert(request.method=='POST' and request.url:match('/configuration/migrate$'))
@@ -596,10 +601,13 @@ alias.core.mode='production';alias.core.apiURL='https://other-api.example.test/'
 assert(http('get',200,alias).data.core.mode=='production' and result.data.core.apiURL==nil,
     'Canonical mode must take priority over the earlier branch alias')
 Config.apiUrl='https://other-api.example.test/'
-assert(http('get',200,flat).status==200 and request.url=='https://api.sonorancad.com/v2/fivem/servers/1/configuration',
+assert(http('get',200,flat).status==200 and request.url=='https://api.sonorancad.com/v2/fivem/servers/1/configuration?version='..coreVersion,
     'Runtime API URL changed the initial configuration lookup address')
-function GetResourceMetadata(_,key) if key=='configuration_bootstrap_url' then return 'https://staging-api.dev.sonorancad.com/' end end
-assert(http('get',200,flat).status==200 and request.url=='https://staging-api.dev.sonorancad.com/v2/fivem/servers/1/configuration')
+function GetResourceMetadata(_,key)
+    if key=='configuration_bootstrap_url' then return 'https://staging-api.dev.sonorancad.com/'
+    elseif key=='version' then return coreVersion end
+end
+assert(http('get',200,flat).status==200 and request.url=='https://staging-api.dev.sonorancad.com/v2/fivem/servers/1/configuration?version='..coreVersion)
 GetResourceMetadata=nil
 
 local clients={}

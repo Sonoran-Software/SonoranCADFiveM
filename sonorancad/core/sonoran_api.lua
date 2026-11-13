@@ -92,7 +92,9 @@ CadConfigurationApi = {
         end
         local url = GetCadConfigurationBootstrapUrl():gsub('/$', '') .. '/v2/fivem/servers/' .. string.format('%.0f', serverId) .. '/configuration'
         local body
-        if operation == 'migrate' then
+        if operation == 'get' then
+            url = url .. '?version=' .. GetResourceMetadata(GetCurrentResourceName(), 'version', 0)
+        elseif operation == 'migrate' then
             local wire = toCadConfiguration(configuration)
             if #json.encode(wire) > 1048576 then callback(413, nil, 'Configuration exceeds the 1 MiB migration limit.'); return end
             body = json.encode({serverId = serverId, config = wire})

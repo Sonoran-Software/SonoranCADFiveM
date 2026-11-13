@@ -266,7 +266,7 @@ end
 local function migrationWarning(localError)
     warningNotice('Configuration migration required. ' ..
         (localError and ('Local settings could not be loaded: ' .. localError .. ' ') or '') ..
-        'Run: sonorancad migrate. https://snorn.link/configmigration')
+        'Run: sonorancad migrate. https://sonoran.link/migrate')
 end
 
 local collectLegacy
