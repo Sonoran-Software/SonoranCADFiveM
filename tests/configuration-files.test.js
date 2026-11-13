@@ -7,6 +7,21 @@ const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../sonorancad/core/http.js'), 'utf8');
 
+for (const [workflow, count] of [['release.yml', 2], ['deploy-branch-to-qa.yml', 1]]) {
+    test(`${workflow} packages only an example credential file in every archive`, () => {
+        const source = fs.readFileSync(path.join(__dirname, '../.github/workflows', workflow), 'utf8');
+        const copies = [...source.matchAll(/rsync -a[\s\S]*?\.\/ ".*?"|rsync -a[\s\S]*?\.\/ \.\/\[sonorancad\]/g)];
+        assert.equal(copies.length, count);
+        for (const [copy] of copies) assert.ok(copy.includes('--exclude="/sonorancad/config.json"'));
+        const templates = [...source.matchAll(/printf '([^']+)' > "\.\/\[sonorancad\]\/sonorancad\/([^"\n]+)"/g)];
+        assert.equal(templates.length, count);
+        for (const [, contents, filename] of templates) {
+            assert.equal(filename, 'config.example.json', 'Archive would overwrite installed credentials');
+            assert.deepEqual(JSON.parse(contents.replaceAll('\\n', '\n')), {apiKey: '', serverId: 1});
+        }
+    });
+}
+
 function setup(t) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'cad-configuration-test-'));
     t.after(() => fs.rmSync(directory, { recursive: true, force: true }));

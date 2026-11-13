@@ -420,13 +420,34 @@ local function jsonSettings(value, seen)
         return position
     elseif kind == 'table' then
         assert(not seen[value], 'Cyclic configuration'); seen[value] = true
-        local count, array = 0, true
-        for key in pairs(value) do count = count + 1; if type(key) ~= 'number' or key < 1 or key % 1 ~= 0 then array = false end end
-        array = array and count == #value
-        local copy = {}
+        local count, maximum, array = 0, 0, true
+        for key in pairs(value) do
+            count = count + 1
+            if type(key) ~= 'number' or key < 1 or key % 1 ~= 0 then array = false
+            else maximum = math.max(maximum, key) end
+        end
+        array = array and count == maximum
+        -- JSON object keys are strings. Keep non-array numeric entries separately
+        -- so zero-based/sparse maps (and simultaneous 0 / "0" keys) round-trip.
+        assert(value.__sonoranNumericEntries == nil, 'Reserved configuration key')
+        local copy, numericKeys = {}, {}
         for key, item in pairs(value) do
             assert(type(key) == 'number' or type(key) == 'string', 'Unsupported configuration key')
-            copy[array and key or tostring(key)] = jsonSettings(item, seen)
+            if not array and type(key) == 'number' then
+                assert(key == key and math.abs(key) ~= math.huge, 'Invalid numeric configuration key')
+                numericKeys[#numericKeys + 1] = key
+            else
+                copy[key] = jsonSettings(item, seen)
+            end
+        end
+        if #numericKeys > 0 then
+            table.sort(numericKeys)
+            copy.__sonoranNumericEntries = {}
+            for _, key in ipairs(numericKeys) do
+                copy.__sonoranNumericEntries[#copy.__sonoranNumericEntries + 1] = {
+                    key = key, value = jsonSettings(value[key], seen)
+                }
+            end
         end
         seen[value] = nil
         return copy

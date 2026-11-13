@@ -131,7 +131,8 @@ local cadPluginFields = {
 }
 
 -- Evaluate callback source from JSON in one plugin environment, so helpers retain
--- access to config and to one another. Object keys are otherwise left untouched.
+-- access to config and to one another. Restore explicitly typed numeric map keys;
+-- ordinary object keys (including numeric-looking strings) stay untouched.
 local function decodeCadSettings(value, env)
     if type(value) == 'string' and (value:match('^%s*function%s*%(') or value:match('^%s*function%s+[%w_]+%s*%(')) then
         local source = value:gsub('^(%s*function)%s+[%w_]+%s*%(', '%1(', 1)
@@ -139,7 +140,25 @@ local function decodeCadSettings(value, env)
         return chunk()
     elseif type(value) == 'table' then
         local copy = {}
-        for key, item in pairs(value) do copy[key] = decodeCadSettings(item, env) end
+        for key, item in pairs(value) do
+            if key ~= '__sonoranNumericEntries' then copy[key] = decodeCadSettings(item, env) end
+        end
+        local entries = value.__sonoranNumericEntries
+        if entries ~= nil then
+            assert(type(entries) == 'table', 'Invalid numeric configuration entries')
+            local count, maximum = 0, 0
+            for index, entry in pairs(entries) do
+                count = count + 1
+                assert(type(index) == 'number' and index >= 1 and index % 1 == 0, 'Invalid numeric entry index')
+                maximum = math.max(maximum, index)
+                assert(type(entry) == 'table' and type(entry.key) == 'number' and
+                    entry.key == entry.key and math.abs(entry.key) ~= math.huge and entry.value ~= nil,
+                    'Invalid numeric configuration entry')
+                assert(copy[entry.key] == nil, 'Duplicate numeric configuration key')
+                copy[entry.key] = decodeCadSettings(entry.value, env)
+            end
+            assert(count == maximum, 'Invalid numeric entry array')
+        end
         return copy
     end
     return value
@@ -164,7 +183,7 @@ function ParseCadPluginConfiguration(pluginName, value, migrating)
     if type(value) == 'table' then
         local env = setmetatable({}, {__index = _G})
         local ok, settings = pcall(decodeCadSettings, value, env)
-        if not ok then return nil, 'Invalid callback source for ' .. pluginName end
+        if not ok then return nil, 'Invalid callback source or numeric map for ' .. pluginName end
         config = settings
         env.config = config
         for name, setting in pairs(config) do

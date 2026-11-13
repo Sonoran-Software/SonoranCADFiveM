@@ -5,10 +5,29 @@ local function clone(value)
     if type(value) ~= 'table' then return value end
     local copy = {}; for k, v in pairs(value) do copy[k] = clone(v) end; return copy
 end
+-- Model JSON arrays versus objects: object keys return as strings, never Lua
+-- numbers. A plain table clone would hide numeric-map migration regressions.
+local function jsonClone(value)
+    if type(value) ~= 'table' then return value end
+    local count, maximum, array = 0, 0, true
+    for key in pairs(value) do
+        count = count + 1
+        if type(key) ~= 'number' or key < 1 or key % 1 ~= 0 then array = false
+        else maximum = math.max(maximum, key) end
+    end
+    array = array and count == maximum
+    local copy = {}
+    for key, item in pairs(value) do
+        local jsonKey = array and key or tostring(key)
+        assert(copy[jsonKey] == nil, 'JSON object key collision')
+        copy[jsonKey] = jsonClone(item)
+    end
+    return copy
+end
 local encoded, counter = {}, 0
 json = {
     encode = function(value)
-        counter = counter + 1; local key = '{"test-json-id":' .. counter .. '}'; encoded[key] = clone(value); return key
+        counter = counter + 1; local key = '{"test-json-id":' .. counter .. '}'; encoded[key] = jsonClone(value); return key
     end,
     decode = function(value) assert(encoded[value], 'Invalid JSON'); return clone(encoded[value]) end
 }
@@ -635,6 +654,39 @@ CreateThread(function() result=CadConfigurationRequest('get') end); result=nil
 runUntil(function() return result~=nil end)
 assert(result.status==0 and now>=15000)
 
+-- Numeric maps survive CAD, offline cache and client transport.
+local numericWire = assert(ExportLegacyPluginConfiguration('numericmaps', [[
+    local config={enabled=true,pluginName='numericmaps',configVersion='1.0',
+        map={[0]='zero', [7]='sparse', [-2]='negative', [1.5]='fraction', ['0']='string zero'},
+        sparse={[1]='one',[2]='two',[4]='four',[6]='six'},
+        list={'one','two'}, nested={{[0]=false,[3]=function(v) return v+1 end}}}
+]]))
+local numericDocument=document()
+numericDocument.plugins.numericmaps=json.decode(json.encode(numericWire))
+for _,cached in ipairs({false,true}) do
+    setup(cached and 503 or 200, cached and nil or numericDocument, cached and numericDocument or nil,
+        {apiKey='secret',serverId=1},nil,nil,true)
+    local settings=Config.GetPluginConfig('numericmaps')
+    assert(settings.map[0]=='zero' and settings.map['0']=='string zero' and settings.map[7]=='sparse')
+    assert(settings.map[-2]=='negative' and settings.map[1.5]=='fraction')
+    assert(settings.sparse[4]=='four' and settings.sparse[6]=='six' and settings.sparse[3]==nil)
+    assert(settings.list[1]=='one' and #settings.list==2 and settings.nested[1][0]==false)
+    assert(settings.nested[1][3](41)==42 and settings.map.__sonoranNumericEntries==nil)
+    source=5;handlers['SonoranCAD::core:requestPluginConfig']('numericmaps')
+    local client=assert(ParseCadPluginConfiguration('numericmaps',json.decode(json.encode(replies[4]))))
+    assert(client.map[0]=='zero' and client.map['0']=='string zero' and client.nested[1][3](41)==42,
+        'Numeric maps did not survive the client configuration response')
+end
+for _,entries in ipairs({'invalid', {{key='0',value='wrong type'}}, {{key=0}},
+    {[2]={key=0,value='hole'}},
+    {{key=0,value=false},{key=0,value='duplicate'}}}) do
+    local bad=clone(numericWire)
+    bad.map.__sonoranNumericEntries=entries
+    assert(ParseCadPluginConfiguration('numericmaps',bad)==nil, 'Invalid numeric map was accepted')
+end
+assert(ExportLegacyPluginConfiguration('reserved', 'local config={__sonoranNumericEntries={}}')==nil,
+    'Reserved numeric-map metadata silently replaced a legacy setting')
+
 -- Exercise the actual HTTP adapter against the published GET/POST wire contract.
 setup(404)
 dofile('sonorancad/core/sonoran_api.lua')
@@ -866,6 +918,7 @@ local legacyExamples={
     localcallers=[[
         local config={enabled=true,pluginName='localcallers',configVersion='1.0',
             weaponConfig={weaponResponses={[12345]={description='Example response'}}},
+            clothingConfig={male={top={[0]={name='Shirt',colors={[0]='Black',[2]='Blue'}}}}},
             whitelistZones={{center=vector3(441.2,1,2),radius=50}}}
     ]],
     custom=[[
@@ -899,7 +952,7 @@ local legacyExamples={
 for name,text in pairs(legacyExamples) do
     local wire, exportError=ExportLegacyPluginConfiguration(name, text)
     assert(wire, name .. ': ' .. tostring(exportError))
-    local config, err=ParseCadPluginConfiguration(name, wire, true)
+    local config, err=ParseCadPluginConfiguration(name, json.decode(json.encode(wire)), true)
     assert(config, name .. ': ' .. tostring(err))
     if name=='caddisplay' then
         assert(type(wire.custom.permissionCheck)=='string' and type(config.custom.permissionCheck)=='function')
@@ -920,7 +973,9 @@ for name,text in pairs(legacyExamples) do
             'Local helper or callback references failed the plaintext round trip')
     end
     if name=='localcallers' then
-        assert(wire.weaponConfig.weaponResponses['12345'] and config.weaponConfig.weaponResponses[12345])
+        assert(config.weaponConfig.weaponResponses[12345].description=='Example response')
+        assert(config.clothingConfig.male.top[0].name=='Shirt' and
+            config.clothingConfig.male.top[0].colors[0]=='Black' and config.clothingConfig.male.top[0].colors[2]=='Blue')
         assert(wire.whitelistZones[1].center.x==441.2)
     end
 end
