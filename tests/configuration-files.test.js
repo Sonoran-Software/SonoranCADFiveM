@@ -176,6 +176,78 @@ test('WebSocket and bodycam use public settings and the restricted API-key conva
     assert.equal(ws('buildConfig().apiSendEnabled'), false);
 });
 
+for (const phase of ['start', 'authentication']) {
+    for (const outcome of ['resolve', 'reject']) {
+        test(`WebSocket cancels pending ${phase} and ignores its late ${outcome}`, async () => {
+            let ready = true, settle;
+            const pending = new Promise((resolve, reject) => {
+                settle = () => outcome === 'resolve' ? resolve({ success: true }) : reject(new Error('Canceled attempt'));
+            });
+            const connections = [], intervals = [], timers = [], logs = [];
+            class HubConnectionBuilder {
+                configureLogging() { return this; }
+                withUrl() { return this; }
+                withAutomaticReconnect() { return this; }
+                build() {
+                    const first = connections.length === 0;
+                    const hub = {
+                        state: 'Disconnected', stops: 0, authCalls: 0,
+                        on() {}, onreconnecting() {}, onreconnected(cb) { this.reconnected = cb; },
+                        onclose(cb) { this.closed = cb; },
+                        async start() {
+                            this.state = 'Connecting';
+                            if (first && phase === 'start') await pending;
+                            if (!this.stops) this.state = 'Connected';
+                        },
+                        async invoke() {
+                            this.authCalls++;
+                            if (first && phase === 'authentication') return pending;
+                            return { success: true };
+                        },
+                        async stop() { this.stops++; this.state = 'Disconnected'; this.closed(); }
+                    };
+                    connections.push(hub);
+                    return hub;
+                }
+            }
+            const exporter = () => {};
+            exporter.sonorancad = { GetResolvedConfig: () => JSON.stringify({
+                ready, communityID: 'test', serverId: 2, apiSendEnabled: true
+            }) };
+            vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../sonorancad/core/apiws.js'), 'utf8'), {
+                require: () => ({ HubConnectionBuilder, HttpTransportType: { WebSockets: 1 }, HubConnectionState: { Connected: 'Connected' } }),
+                exports: exporter, emit: (...args) => logs.push(args.join(' ')),
+                GetCurrentResourceName: () => 'sonorancad', GetConvar: () => 'restricted-secret', on() {},
+                setInterval: cb => { intervals.push(cb); return cb; }, clearInterval() {},
+                setTimeout: cb => { timers.push(cb); return cb; },
+                clearTimeout(cb) { const index = timers.indexOf(cb); if (index !== -1) timers.splice(index, 1); }
+            });
+            await new Promise(setImmediate);
+            const old = connections[0];
+            assert.equal(old.state, phase === 'start' ? 'Connecting' : 'Connected');
+            ready = false;
+            await intervals[0]();
+            assert.equal(old.stops, 1, 'In-flight ensure blocked cancellation');
+            assert.equal(old.state, 'Disconnected');
+            assert.equal(timers.length, 0);
+            // stop() deliberately leaves the old promise pending to exercise late
+            // completions without depending on SignalR's promise settlement order.
+            settle();
+            await new Promise(setImmediate);
+            assert.equal(old.authCalls, phase === 'start' ? 0 : 1, 'Canceled start proceeded to authenticate');
+            assert.equal(timers.length, 0, 'Canceled attempt scheduled a retry');
+            assert.ok(!logs.some(line => line.includes('Authenticated with API WS hub')),
+                'Canceled authentication marked the retired connection authenticated');
+            ready = true;
+            await intervals[0]();
+            assert.equal(connections.length, 2);
+            assert.equal(connections[1].authCalls, 1, 'Recovery skipped fresh authentication');
+            await old.reconnected();
+            assert.equal(connections[1].authCalls, 1, 'Retired reconnect callback touched the replacement');
+        });
+    }
+}
+
 test('WebSocket authenticates when configuration resolves without waiting for a location update or interval', async () => {
     const events = {}, pushHandlers = {}, timers = [], intervals = [], auth = [], connections = [];
     let starts = 0, stops = 0;
