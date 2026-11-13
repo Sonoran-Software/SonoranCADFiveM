@@ -674,7 +674,14 @@ local function configurationDifferences(expected, actual, path, differences)
     differences = differences or {}
     path = path or ''
     if #differences > 10 then return differences end
-    if type(expected) ~= type(actual) or (type(expected) ~= 'table' and expected ~= actual) then
+    local same = expected == actual
+    if type(expected)=='number' and type(actual)=='number' and not same then
+        -- JSON round trips can change the last decimal bits. Scale the tolerance,
+        -- but cap it so large settings/IDs cannot hide a meaningful value change.
+        local tolerance = math.min(1e-9, 1e-12 * math.max(1, math.abs(expected), math.abs(actual)))
+        same = math.abs(expected-actual) <= tolerance
+    end
+    if type(expected) ~= type(actual) or (type(expected) ~= 'table' and not same) then
         differences[#differences + 1] = {path=path, expected=expected, actual=actual}
     elseif type(expected) == 'table' then
         local keys = {}; for key in pairs(expected) do keys[#keys + 1] = key end
@@ -699,7 +706,8 @@ local function differenceValue(value, path)
         if value:match('^%s*function[%s%(]') then return ('Lua source (%s bytes)'):format(#value) end
         return 'string "' .. diagnosticText(value,100) .. '"'
     end
-    if kind == 'number' or kind == 'boolean' then return kind .. ' ' .. tostring(value) end
+    if kind == 'number' then return 'number ' .. (math.type(value)=='integer' and tostring(value) or ('%.17g'):format(value)) end
+    if kind == 'boolean' then return 'boolean ' .. tostring(value) end
     return kind
 end
 local function logMigrationDifferences(differences)

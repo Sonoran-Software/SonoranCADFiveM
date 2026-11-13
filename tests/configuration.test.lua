@@ -237,7 +237,8 @@ setup(404,nil,nil,{apiKey='different-key',serverId=2})
 assert(Config.critError, 'Legacy settings from another credential/server were used')
 
 for _, failure in ipairs({'none', 'existing-cache', 'development-mode', 'upload', 'archive', 'archive-throw', 'readback', 'partial-readback', 'cache', 'conflict', 'missing-setting', 'templates', 'templates-missing', 'older-config', 'bootstrap', 'empty-root', 'whitespace-root', 'empty-object-root', 'default-root',
-    'diagnostic-http', 'diagnostic-timeout', 'diagnostic-shape', 'diagnostic-validation', 'diagnostic-differences', 'diagnostic-limit'}) do
+    'diagnostic-http', 'diagnostic-timeout', 'diagnostic-shape', 'diagnostic-validation', 'diagnostic-differences', 'diagnostic-limit',
+    'float-roundtrip', 'float-change', 'float-id-change', 'float-type-change'}) do
     local emptyRoots={['empty-root']='', ['whitespace-root']=' \r\n ', ['empty-object-root']={}, ['default-root']={apiKey='',serverId=1}}
     local root=emptyRoots[failure]
     setup(404,nil,failure=='existing-cache' and document() or nil,root,root and 17 or nil,failure=='development-mode' and 'development' or nil)
@@ -283,6 +284,14 @@ for _, failure in ipairs({'none', 'existing-cache', 'development-mode', 'upload'
                 '\nfor i=1,20 do config["extra"..i]=i end'
         end
     end
+    if failure:find('float-',1,true) then
+        files['configuration/kick_config.lua']=[[
+            local config={enabled=true,pluginName='kick',configVersion='1.0',measurements={
+                range=19.989999999998002, x=-0.16199999999998, y=0.077400000000012,
+                x2=0.15800000000002, y2=0.031599999999998, z=0.046000000000006,
+                nearZero=0, scaled=12345.67890123456, largeId=1000000000000}}
+        ]]
+    end
     local initialCache=files['.configuration-cache.json']
     local uploaded, sent, gets, finished = nil, 0, 0, false
     CadConfigurationApi.request=function(operation, payload, callback)
@@ -305,6 +314,16 @@ for _, failure in ipairs({'none', 'existing-cache', 'development-mode', 'upload'
                 if failure=='diagnostic-limit' then
                     for i=1,20 do data.plugins.kick['extra'..i]=false end
                 end
+                if failure:find('float-',1,true) then
+                    local measurements=data.plugins.kick.measurements
+                    measurements.range=19.989999999997998;measurements.x=-0.16199999999998002
+                    measurements.y=0.07740000000001;measurements.x2=0.158
+                    measurements.y2=0.03159999999999;measurements.z=0.046
+                    measurements.nearZero=1e-13;measurements.scaled=12345.678901234558
+                    if failure=='float-change' then measurements.x2=0.15801 end
+                    if failure=='float-id-change' then measurements.largeId=1000000000001 end
+                    if failure=='float-type-change' then measurements.range='19.989999999998' end
+                end
                 callback(200, data)
             else callback(404) end
         else
@@ -326,8 +345,21 @@ for _, failure in ipairs({'none', 'existing-cache', 'development-mode', 'upload'
         assert(prepared.apiKey=='secret' and prepared.serverId==Config.serverId,
             'Migration did not prepare credentials before the API request')
     end
-    local succeeds=failure=='none' or failure=='existing-cache' or failure=='development-mode' or failure=='archive' or failure=='archive-throw' or failure=='templates' or failure=='older-config' or root~=nil
+    local succeeds=failure=='none' or failure=='float-roundtrip' or failure=='existing-cache' or failure=='development-mode' or failure=='archive' or failure=='archive-throw' or failure=='templates' or failure=='older-config' or root~=nil
     assert(archiveCalls==(succeeds and 1 or 0))
+    if failure:find('float-',1,true) then
+        local output=table.concat(logs,'\n')
+        if failure=='float-roundtrip' then
+            assert(output:find('Configuration migration successful',1,true) and not output:find('Difference at',1,true),
+                'Nominal floating-point round trips failed migration')
+        else
+            assert(files['.configuration-cache.json']==initialCache and output:find('Migration readback failed',1,true),
+                'Meaningful numeric/type changes passed migration verification')
+            local field=failure=='float-change' and 'x2' or failure=='float-id-change' and 'largeId' or 'range'
+            assert(output:find('Difference at plugins.kick.measurements.'..field,1,true))
+            local _,count=output:gsub('Difference at','');assert(count==1, 'Numeric noise hid the meaningful difference')
+        end
+    end
     if failure:find('diagnostic',1,true) then
         local output=table.concat(logs,'\n')
         assert(output:find('Migration readback failed for server 1',1,true))
