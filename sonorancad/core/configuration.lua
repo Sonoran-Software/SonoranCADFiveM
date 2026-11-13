@@ -161,6 +161,10 @@ local function readCache()
     if type(cached.configuration) == 'table' and type(cached.configuration.core) == 'table' then
         cached.configuration.core = NormalizeCadCoreConfiguration(cached.configuration.core)
     end
+    -- Older caches stored a second copy inside the client-visible plugin settings.
+    local callTemplatesPlugin = type(cached.configuration) == 'table' and
+        type(cached.configuration.plugins) == 'table' and cached.configuration.plugins.calltemplates
+    if type(callTemplatesPlugin) == 'table' then callTemplatesPlugin.templates = nil end
     local parsed, err = validate(cached.configuration)
     if not parsed or err then return nil end
     local tier = tonumber(cached.apiVersion)
@@ -552,6 +556,10 @@ collectLegacy = function(startup)
         local settings, err = ParseCadPluginConfiguration('calltemplates', document.plugins.calltemplates, true)
         if not settings then return nil, err end
         if not settings.enabled and settings.commands == nil then return true end
+        -- File discovery is only for existing installations before their migration.
+        if settings.callTypeDirectory ~= nil and type(settings.callTypeDirectory) ~= 'string' then
+            return nil, 'Invalid legacy call template directory.'
+        end
         local directory = settings.callTypeDirectory or 'submodules/calltemplates/calltypes'
         local templates = decode(exports[resource]:ListLegacyCadConfiguration(directory))
         if not templates or templates.error then return nil, 'Cannot discover call templates in ' .. directory end

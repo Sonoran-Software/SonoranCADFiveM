@@ -193,7 +193,7 @@ incomplete=document();incomplete.core.mode='unknown'
 setup(200,incomplete)
 assert(Config.critError, 'CAD configuration with invalid mode was activated')
 
-local migrationNotice='Configuration migration required. Run: sonorancad migrate. https://snorn.link/configmigration'
+local migrationNotice='Configuration migration required. Run: sonorancad migrate. https://sonoran.link/migrate'
 local staleCache=document();staleCache.plugins.kick.enabled=false
 for _, cached in ipairs({false, staleCache}) do
     setup(404,nil,cached or nil,nil,nil,nil,nil,false)
@@ -626,6 +626,67 @@ end
 local before=request
 assert(http('migrate',200,{serverId=1,status='saved'}).status==413 and request==before)
 json.encode=originalEncode
+
+-- Run template commands from the CAD response and its offline cache.
+-- No calltype files or file-related settings are present.
+local savedTypes = clone(flat)
+savedTypes.calltemplates = {
+    enabled=true, pluginName='calltemplates', configVersion='2.0.0',
+    defaultOrigin=2, defaultStatus=1, defaultPriority=1,
+    commands={
+        {command='closure', callTypeFile='road_closure.json'},
+        {command='tow', callTypeFile='tow_request.json'},
+        {command='alarm', callTypeFile='bank_alarm.json'}
+    },
+    templates={
+        ['road_closure.json']={title='Road Closure',description='function (use the service road',priority=2},
+        ['tow_request.json']={callType={title='Tow Request'}},
+        ['bank_alarm.json']={{title='Bank Alarm'}}
+    }
+}
+function GetResourceMetadata(_, key) if key=='version' then return coreVersion end end
+local inline = assert(http('get',200,savedTypes).data, 'CAD did not resolve the inline template response')
+GetResourceMetadata = nil
+assert(inline.plugins.calltemplates.templates==nil, 'Template bodies were retained in client-visible settings')
+local function runTemplateCommands()
+    local commands, sent = {}, nil
+    local readFile, trigger, registerCommand = LoadResourceFile, TriggerEvent, RegisterCommand
+    local playerStatus, pluginLoaded, resolveUnits = getPlayerCadStatus, isPluginLoaded, CadApiResolveCommunityUserIds
+    local locationCache = LocationCache
+    LoadResourceFile = function() error('Template command tried to read a local file') end
+    TriggerEvent = function(name, payload)
+        assert(name=='SonoranCAD::calltemplates:SendDispatch')
+        sent = payload
+    end
+    function RegisterCommand(name, callback) commands[name] = callback end
+    function getPlayerCadStatus() return {success=true,link='unit-1'} end
+    function isPluginLoaded() return false end
+    function CadApiResolveCommunityUserIds(units) return units end
+    LocationCache = {}
+    dofile('sonorancad/submodules/calltemplates/sv_calltemplates.lua')
+    runUntil(function() return #threads==0 end)
+    commands.closure(5,{'two lanes'})
+    assert(sent.title=='Road Closure' and sent.priority==2 and sent.description=='function (use the service road - two lanes')
+    commands.tow(5,{'truck'})
+    assert(sent.title=='Tow Request')
+    commands.alarm(5,{'test'})
+    assert(sent.title=='Bank Alarm')
+    LoadResourceFile, TriggerEvent, RegisterCommand = readFile, trigger, registerCommand
+    getPlayerCadStatus, isPluginLoaded, CadApiResolveCommunityUserIds = playerStatus, pluginLoaded, resolveUnits
+    LocationCache = locationCache
+end
+setup(200,inline,nil,{apiKey='secret',serverId=1},nil,nil,true)
+assert(Config.configurationSource=='cad' and Config.GetPluginConfig('calltemplates').enabled)
+source=5;handlers['SonoranCAD::core:requestPluginConfig']('calltemplates')
+assert(replies[4].templates==nil, 'Client received the call template bodies')
+runTemplateCommands()
+local inlineCache=json.decode(files['.configuration-cache.json']).configuration
+inlineCache.plugins.calltemplates.templates=clone(inlineCache.callTemplates) -- Earlier cache format.
+setup(503,nil,inlineCache,{apiKey='secret',serverId=1},nil,nil,true)
+assert(Config.configurationSource=='cache' and Config.GetPluginConfig('calltemplates').enabled)
+source=5;handlers['SonoranCAD::core:requestPluginConfig']('calltemplates')
+assert(replies[4].templates==nil, 'Earlier cache exposed the call template bodies')
+runTemplateCommands()
 
 -- The drop-in test artifact must not replace itself with a normal release.
 threads={}

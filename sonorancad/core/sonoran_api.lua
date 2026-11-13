@@ -43,10 +43,19 @@ local function fromCadConfiguration(value)
             if type(name) ~= 'string' or type(settings) ~= 'table' then
                 return nil, 'Invalid CAD plugin section '..tostring(name)..': expected object, received '..type(settings)..'.'
             end
+            if name == 'calltemplates' then
+                -- Template contents are server data. Keep them out of plugin
+                -- settings, which are parsed as Lua and sent to game clients.
+                local plugin = {}
+                for key, setting in pairs(settings) do
+                    if key == 'templates' then document.callTemplates = setting
+                    else plugin[key] = setting end
+                end
+                settings = plugin
+            end
             document.plugins[name] = settings
         end
     end
-    if document.plugins.calltemplates then document.callTemplates = document.plugins.calltemplates.templates or {} end
     NormalizeCadLinkConfiguration(document)
     return document
 end
