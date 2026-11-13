@@ -692,7 +692,7 @@ function MigrateCadConfiguration()
                             warningNotice('[configuration] Existing CAD settings differ from local files. CAD edits may be intentional; no upload was sent.')
                             logMigrationDifferences(differences)
                         end
-                        Config.SaveConfigurationCache(nil, existing.data); Config.EnsureBootstrapConfig()
+                        Config.SaveConfigurationCache(Config.apiVersion, existing.data); Config.EnsureBootstrapConfig()
                     else logReadbackFailure(existing, 'alreadyMigrated', invalid, differences) end
                 else
                     logReadbackFailure(existing, 'previouslyAccepted')
@@ -726,7 +726,7 @@ function MigrateCadConfiguration()
             end
             -- All plugins retain references to their startup tables. Keep this process
             -- consistent and require a resource restart rather than mixing live sources.
-            if not Config.SaveConfigurationCache(nil, fetched.data) then
+            if not Config.SaveConfigurationCache(Config.apiVersion, fetched.data) then
                 warn('CAD accepted the migration, but caching failed. Legacy files were preserved. Restart after fixing write permissions.')
                 return
             end

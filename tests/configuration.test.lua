@@ -447,6 +447,10 @@ for _, failure in ipairs({'none', 'linking', 'existing-cache', 'development-mode
     end
     local succeeds=failure=='none' or failure=='linking' or failure=='float-roundtrip' or failure=='existing-cache' or failure=='development-mode' or failure=='archive' or failure=='archive-throw' or failure=='templates' or failure=='older-config' or root~=nil
     assert(archiveCalls==(succeeds and 1 or 0))
+    if succeeds then
+        assert(json.decode(files['.configuration-cache.json']).apiVersion==Config.apiVersion,
+            'Migration cache omitted the validated API version')
+    end
     if failure=='linking' then
         assert(uploaded.plugins.forcereg.linkCommand=='forceconnect' and uploaded.plugins.forcereg.linkPollIntervalMs==2500)
         assert(uploaded.plugins.forcereg.linkPopupTitleText=='Existing link prompt', 'Migration lost legacy core linking values')
@@ -510,10 +514,36 @@ for _, failure in ipairs({'none', 'linking', 'existing-cache', 'development-mode
         local before=sent; MigrateCadConfiguration(); finished=false
         CreateThread(function() Wait(100); finished=true end); runUntil(function() return finished end)
         assert(sent==before, 'Repeated migration uploaded again')
+        if succeeds then
+            assert(json.decode(files['.configuration-cache.json']).apiVersion==Config.apiVersion,
+                'Repeated migration dropped the validated API version')
+        end
         if failure=='diagnostic-differences' then
             assert(table.concat(logs):find('Existing CAD settings differ from local files',1,true),
                 'Rerunning migration after an accepted upload omitted difference diagnostics')
         end
+    end
+    if failure=='none' then
+        local migratedCache=files['.configuration-cache.json']
+        files['configuration/config.json']=nil
+        files['configuration/kick_config.lua']=nil
+        files.inventory={}
+        threads={};readyEvents=0
+        CadConfigurationApi.request=function(_, _, callback) callback(503) end
+        dofile('sonorancad/core/configuration.lua')
+        runUntil(function() return Config.configurationReady end)
+        assert(Config.configurationSource=='cache' and Config.cachedApiVersion==3 and not Config.critError,
+            'Offline restart could not resolve the migrated cache')
+        threads={};warmed=false
+        function getServerVersion() return 6500 end
+        function CadApiGetVersion() return {success=false,status=503} end
+        dofile('sonorancad/core/server.lua')
+        local task=table.remove(threads,1)
+        local ok,err=coroutine.resume(task.co);assert(ok,err)
+        assert(Config.apiVersion==3 and not Config.critError and warmed and Config.GetPluginConfig('kick').enabled,
+            'Offline restart failed plugin initialization after migration: '..table.concat(logs,' | '))
+        assert(files['.configuration-cache.json']==migratedCache,
+            'Offline restart replaced the migrated cache')
     end
 end
 
