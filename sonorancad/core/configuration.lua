@@ -674,6 +674,11 @@ function MigrateCadConfiguration()
         local ok = pcall(function()
             while not Config.configurationReady do Wait(25) end
             if Config.bootstrapError then fail(Config.bootstrapError); return end
+            while Config.apiVersion == -1 and not Config.critError do Wait(25) end
+            if Config.critError then
+                fail('Cannot migrate because startup failed. Resolve the startup errors and restart sonorancad before retrying; legacy files and cache were preserved.')
+                return
+            end
             -- An update can introduce an empty root config. Prepare its credentials
             -- before contacting CAD so a failed/ambiguous upload is still retryable.
             if not Config.EnsureBootstrapConfig() then

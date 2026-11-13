@@ -547,6 +547,47 @@ for _, failure in ipairs({'none', 'linking', 'existing-cache', 'development-mode
     end
 end
 
+-- Migration must wait for the startup version request before either readback path.
+for _, scenario in ipairs({'new', 'existing', 'startup-failure'}) do
+    setup(404)
+    threads={};Config.apiVersion=-1;warmed=false
+    function getServerVersion() return 6500 end
+    function CadApiGetVersion()
+        Wait(100)
+        return scenario=='startup-failure' and {success=false,status=503} or {success=true,data='3'}
+    end
+    dofile('sonorancad/core/server.lua')
+    local startupTask=threads[1]
+    threads={startupTask} -- Only drive startup and migration, not background loops.
+    local uploaded,requests=nil,0
+    CadConfigurationApi.request=function(operation, payload, callback)
+        requests=requests+1
+        if operation=='migrate' then
+            uploaded=clone(payload)
+            callback(200,{serverId=Config.serverId,status='saved'})
+        elseif uploaded or scenario=='existing' then callback(200,clone(uploaded or document()))
+        else callback(404) end
+    end
+    MigrateCadConfiguration()
+    local checkpoint=false
+    CreateThread(function() Wait(50);checkpoint=true end)
+    runUntil(function() return checkpoint end)
+    assert(Config.apiVersion==-1 and requests==0 and writes==0 and archiveCalls==0,
+        'Migration proceeded before startup validated the API version: '..scenario)
+    local finished=false
+    CreateThread(function() Wait(200);finished=true end)
+    runUntil(function() return finished end)
+    if scenario=='startup-failure' then
+        assert(Config.critError and requests==0 and writes==0 and archiveCalls==0,
+            'Failed startup allowed migration to write an unvalidated API version')
+    else
+        assert(not Config.critError and warmed and Config.apiVersion==3)
+        assert(json.decode(files['.configuration-cache.json']).apiVersion==3,
+            'Delayed startup did not cache the validated API version: '..scenario)
+        assert(archiveCalls==(scenario=='new' and 1 or 0))
+    end
+end
+
 setup(200, document(), nil, {apiKey='new-key',serverId=9})
 files['configuration/config.json']=nil
 files['configuration_old/config.json']=nil
