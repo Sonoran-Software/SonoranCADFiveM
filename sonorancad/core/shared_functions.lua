@@ -145,6 +145,34 @@ local function decodeCadSettings(value, env)
     return value
 end
 
+-- JSON object keys are strings. Restore integer keys only for dictionaries whose
+-- consumers index by game IDs/hashes; record field IDs and model names stay strings.
+local function restoreIntegerDictionaryKeys(value)
+    if type(value) ~= 'table' then return value end
+    local restored = {}
+    for key, item in pairs(value) do
+        local integer = type(key) == 'string' and tonumber(key)
+        if integer and math.type(integer) == 'integer' and tostring(integer) == key then key = integer end
+        restored[key] = item
+    end
+    return restored
+end
+
+local function restoreClothingDictionaryKeys(clothing)
+    if type(clothing) ~= 'table' then return end
+    for _, component in ipairs({'top', 'torso', 'pants', 'shoes', 'hat'}) do
+        local drawables = restoreIntegerDictionaryKeys(clothing[component])
+        clothing[component] = drawables
+        if type(drawables) == 'table' then
+            for _, drawable in pairs(drawables) do
+                if type(drawable) == 'table' then
+                    drawable.colors = restoreIntegerDictionaryKeys(drawable.colors)
+                end
+            end
+        end
+    end
+end
+
 -- Never read a local file here: CAD and its cache use this parser on both sides.
 function ParseCadPluginConfiguration(pluginName, value, migrating)
     local config = value
@@ -192,6 +220,13 @@ function ParseCadPluginConfiguration(pluginName, value, migrating)
                 end
                 config.weaponConfig.weaponResponses = normalized
             end
+            for _, gender in ipairs({'male', 'female'}) do
+                restoreClothingDictionaryKeys(type(config.clothingConfig) == 'table' and config.clothingConfig[gender])
+                -- Older Local Callers configs also support these tables at the root.
+                restoreClothingDictionaryKeys(config[gender])
+            end
+        elseif pluginName == 'caddisplay' and type(config.interaction) == 'table' then
+            config.interaction.models = restoreIntegerDictionaryKeys(config.interaction.models)
         end
     end
     if type(config) ~= 'table' or (config.pluginName ~= nil and config.pluginName ~= pluginName) or
