@@ -146,7 +146,7 @@ Config.RegisterPluginConfig = function() warn('Local plugin configuration regist
 exports('GetPluginConfig', function(name) return Config.GetPluginConfig(name) end)
 exports('GetResolvedConfig', function()
     return json.encode({ready = Config.configurationReady and not Config.critError,
-        communityID = Config.communityID, apiKey = Config.apiKey, serverId = Config.serverId,
+        communityID = Config.communityID, serverId = Config.serverId,
         mode = Config.mode, apiUrl = Config.apiUrl, apiSendEnabled = Config.apiSendEnabled})
 end)
 
@@ -376,9 +376,9 @@ local function resolveConfiguration()
                 Config.EnsureBootstrapConfig()
                 return
             end
-        elseif response.status == 404 then
-            -- CAD is waiting for migration. An earlier test/cache must not prevent
-            -- an existing installation from starting with its own local settings.
+        elseif response.status == 404 and response.migrationPending ~= false then
+            -- Empty/older endpoint 404s can also mean migration is pending. Only
+            -- explicit invalid-server responses should prevent local startup.
             Config.migrationRequired = true
             local loaded, legacyError = loadLegacyConfiguration()
             if loaded then return end
@@ -397,7 +397,7 @@ local function resolveConfiguration()
             end
             return
         elseif response.status > 0 and response.status < 500 then
-            if not readCache() then
+            if response.status ~= 404 and not readCache() then
                 local loaded, legacyError = loadLegacyConfiguration()
                 if loaded then return end
                 warn('Legacy startup unavailable: ' .. tostring(legacyError))
@@ -764,7 +764,7 @@ function MigrateCadConfiguration()
                 warningNotice('[configuration] Configuration has already migrated. No upload was sent. Manage settings in CAD and restart this resource.')
                 return
             end
-            if existing.status ~= 404 then
+            if existing.status ~= 404 or existing.migrationPending == false then
                 fail('Cannot confirm migration state (HTTP ' .. existing.status .. '). Check connectivity/credentials and retry. Legacy files were preserved.')
                 return
             end

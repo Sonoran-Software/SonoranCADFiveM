@@ -116,8 +116,9 @@ test('cache identity follows credentials/server/bootstrap target, independently 
     assert.notEqual(scope, api.GetCadConfigurationScope('private-key', 1, 'https://api.example.test', true));
 });
 
-test('WebSocket and bodycam services use the resolved configuration without local overrides', () => {
-    let resolved = { ready: false, apiSendEnabled: true, apiKey: 'resolved-secret', mode: 'development', serverId: 2, communityID: 'test' };
+test('WebSocket and bodycam use public settings and the restricted API-key convar', () => {
+    let resolved = { ready: false, apiSendEnabled: true, mode: 'development', serverId: 2, communityID: 'test' };
+    let apiKey = 'restricted-secret';
     const exporter = () => {};
     exporter.sonorancad = { GetResolvedConfig: () => JSON.stringify(resolved) };
     function runtime(file) {
@@ -128,7 +129,11 @@ test('WebSocket and bodycam services use the resolved configuration without loca
                 return require(name);
             },
             GetCurrentResourceName: () => 'sonorancad', GetResourcePath: () => __dirname,
-            GetConvar: () => { throw new Error('Local override read'); },
+            GetConvar: name => {
+                assert.equal(name, 'sonoran_apiKey', 'Unexpected local override read');
+                assert.equal(resolved.ready, true, 'API key read before configuration was ready');
+                return apiKey;
+            },
             LoadResourceFile: () => { throw new Error('Legacy config read'); },
             exports: exporter, emit() {}, on() {}, onNet() {}
         });
@@ -138,11 +143,16 @@ test('WebSocket and bodycam services use the resolved configuration without loca
     const ws = runtime('core/apiws.js');
     const bodycam = runtime('submodules/bodycam/sv_bodycam_recording.js');
     assert.equal(ws('buildConfig().apiSendEnabled'), false);
+    assert.equal(ws('buildConfig().apiKey'), '');
     assert.equal(bodycam('getApiKey()'), null);
     resolved.ready = true;
     assert.equal(ws('buildConfig().serverId'), 2);
     assert.equal(ws('buildConfig().apiSendEnabled'), true);
-    assert.equal(bodycam('getApiKey()'), 'resolved-secret');
+    assert.equal(ws('buildConfig().apiKey'), 'restricted-secret');
+    assert.equal(bodycam('getApiKey()'), 'restricted-secret');
+    apiKey = 'changed-secret';
+    assert.equal(ws('buildConfig().apiKey'), 'changed-secret');
+    assert.equal(bodycam('getApiKey()'), 'changed-secret');
     assert.equal(bodycam('getApiBaseUrl()'), 'https://staging-api.dev.sonorancad.com');
     resolved.apiUrl = 'https://custom-cad-api.example.test/';
     assert.equal(ws('buildConfig().hubUrl'), 'https://custom-cad-api.example.test/apiWsHub');

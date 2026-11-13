@@ -54,25 +54,25 @@ CreateThread(function()
             if Config.cachedApiVersion then
                 Config.apiVersion = Config.cachedApiVersion
                 warnLog('UNHANDLED_WARNING', 'CAD version check unavailable; using the cached API version for plugin initialization.')
+            else
+                logError("API_ERROR")
+                Config.critError = true
+                Config.apiSendEnabled = false
+                Config.apiVersion = 0
                 return
             end
-            logError("API_ERROR")
-            Config.critError = true
-            Config.apiSendEnabled = false
-            Config.apiVersion = 0
-            return
+        else
+            local result = tostring(versionResponse.data or "")
+            Config.apiVersion = tonumber(string.sub(result, 1, 1)) or -1
+            if Config.apiVersion < 0 then
+                Config.critError = true
+                Config.apiSendEnabled = false
+                Config.apiVersion = 0
+                return
+            end
+            Config.SaveConfigurationCache(Config.apiVersion)
+            debugLog(("Set version %s from response %s"):format(Config.apiVersion, result))
         end
-
-        local result = tostring(versionResponse.data or "")
-        Config.apiVersion = tonumber(string.sub(result, 1, 1)) or -1
-        if Config.apiVersion < 0 then
-            Config.critError = true
-            Config.apiSendEnabled = false
-            Config.apiVersion = 0
-            return
-        end
-        Config.SaveConfigurationCache(Config.apiVersion)
-        debugLog(("Set version %s from response %s"):format(Config.apiVersion, result))
         infoLog(("Loaded community ID %s with API URL: %s"):format(Config.communityID, Config.apiUrl))
 
         if Config.primaryIdentifier == "steam" and (GetConvar("steam_webapiKey", "none") == "none" or GetConvar("steam_webapiKey", "none") == "") then

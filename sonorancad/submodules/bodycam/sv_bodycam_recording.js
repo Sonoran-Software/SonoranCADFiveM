@@ -54,7 +54,7 @@ function getApiBaseUrl() {
 }
 
 function getApiKey() {
-    return resolvedConfig().apiKey || null;
+    return resolvedConfig().ready === true ? GetConvar("sonoran_apiKey", "") || null : null;
 }
 
 function getCommunityUserId(src) {

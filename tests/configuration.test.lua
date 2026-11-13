@@ -74,7 +74,7 @@ local function document()
 end
 local legacy = 'local config = {enabled=true, pluginName="kick", configVersion="1.0"}\n' ..
     'if config.enabled then Config.RegisterPluginConfig(config.pluginName, config) end'
-local function setup(status, data, cached, rootConfig, legacyServerId, legacyMode, withoutLegacy)
+local function setup(status, data, cached, rootConfig, legacyServerId, legacyMode, withoutLegacy, migrationPending)
     notices = {}
     files, convars, handlers, threads, logs, now, writes, archiveCalls = {}, {}, {}, {}, {}, 0, 0, 0
     Config, Plugins, replies = nil, nil, nil
@@ -94,7 +94,7 @@ local function setup(status, data, cached, rootConfig, legacyServerId, legacyMod
     if cached then files['.configuration-cache.json'] = json.encode({version=1, scope='scope:1:cad', apiVersion=3, configuration=cached}) end
     dofile('sonorancad/core/shared_functions.lua')
     dofile('sonorancad/core/sonoran_api.lua')
-    CadConfigurationApi.request = function(_, _, cb) cb(status, clone(data)) end
+    CadConfigurationApi.request = function(_, _, cb) cb(status, clone(data), nil, {migrationPending=migrationPending}) end
     dofile('sonorancad/core/configuration.lua')
     threads[3]=nil; threads[2]=nil -- Unrelated existing server-registration/diagnostic threads.
     runUntil(function() return Config.configurationReady end)
@@ -104,6 +104,9 @@ end
 setup(200, document())
 assert(Config.configurationSource=='cad' and Config.debugMode==false and writes==1)
 assert(Config.GetPluginConfig('kick').enabled and not Config.GetPluginConfig('missing').enabled)
+local resolved=json.decode(registry.GetResolvedConfig())
+assert(resolved.ready and resolved.communityID=='test' and resolved.serverId==1 and resolved.apiKey==nil,
+    'Public resolved configuration exposed the CAD API key')
 Config.RegisterPluginConfig('kick', {enabled=false})
 assert(Config.GetPluginConfig('kick').enabled, 'Local registration overrode CAD')
 source=5; handlers['SonoranCAD::core:requestPluginConfig']('kick')
@@ -147,6 +150,23 @@ assert(Config.critError, 'CAD configuration with invalid mode was activated')
 
 local migrationNotice='Configuration migration required. Run: sonorancad migrate. https://snorn.link/configmigration'
 local staleCache=document();staleCache.plugins.kick.enabled=false
+for _, cached in ipairs({false, staleCache}) do
+    setup(404,nil,cached or nil,nil,nil,nil,nil,false)
+    assert(Config.critError and not Config.migrationRequired and not Config.configurationSource,
+        'Known invalid-server 404 started legacy/cached settings')
+    assert(writes==0 and archiveCalls==0 and #notices==0 and logs[#logs]:find('rejected',1,true))
+    local sent=0
+    CadConfigurationApi.request=function(operation, _, cb)
+        if operation=='migrate' then sent=sent+1 end
+        cb(404,nil,'Server not found',{migrationPending=false})
+    end
+    MigrateCadConfiguration()
+    runUntil(function() return #threads==0 end)
+    assert(sent==0 and writes==0 and archiveCalls==0, 'Known invalid-server 404 allowed a migration upload')
+end
+setup(404,nil,staleCache,nil,nil,nil,nil,true)
+assert(Config.configurationSource=='legacy' and Config.migrationRequired and not Config.critError,
+    'Explicit migration-pending 404 blocked legacy startup')
 setup(404, nil, staleCache)
 assert(not Config.critError and writes==0 and archiveCalls==0 and Config.configurationSource=='legacy' and Config.migrationRequired,
     'An existing cache blocked legacy startup on a migration-required 404')
@@ -201,6 +221,30 @@ assert(coroutine.resume(startup.co))
 assert(Config.apiVersion==3 and not Config.critError and warmed and Config.GetPluginConfig('kick').enabled)
 assert(writes==0 and files['.configuration-cache.json']==startupCache,
     'Legacy main startup after a 404 overwrote the prior cache')
+for _, identifier in ipairs({'license','steam'}) do
+    local cached=document();cached.core.primaryIdentifier=identifier
+    setup(503,nil,cached)
+    local previousCache=files['.configuration-cache.json']
+    threads={};Config.apiVersion=-1;warmed=false
+    function getServerVersion() return 6500 end
+    function CadApiGetVersion() return {success=false,status=503} end
+    function CadApiLogFailure() end
+    local errors, commands={},{}
+    function logError(code) errors[#errors+1]=code end
+    function GetResourceState() return 'started' end
+    function ExecuteCommand(command) commands[#commands+1]=command end
+    dofile('sonorancad/core/server.lua')
+    local task=table.remove(threads,1)
+    local ok,err=coroutine.resume(task.co);assert(ok,err)
+    assert(Config.apiVersion==3 and warmed and commands[1]=='stop sonoran_updatehelper',
+        'Cached API version skipped common startup initialization: '..table.concat(logs,' | '))
+    assert((Config.critError==true)==(identifier=='steam') and
+        (identifier~='steam' or errors[1]=='STEAM_ERROR'), 'Cached startup skipped Steam API key validation')
+    assert(writes==0 and files['.configuration-cache.json']==previousCache,
+        'Cached API version replaced the last-known-good cache')
+end
+function GetResourceState() return 'stopped' end
+setup(404,nil,staleCache)
 threads={}
 convars.sonoran_mode='development';convars.sonoran_mode_setter='server'
 dofile('sonorancad/core/configuration.lua')
@@ -606,6 +650,11 @@ local legacyExamples={
     ]],
     custom=[[
         local config={enabled=false,pluginName='custom',configVersion='1.0',label='Example'}
+    ]],
+    localhelper=[[
+        local function helper(value) return value+1 end
+        local config={enabled=true,pluginName='localhelper',configVersion='1.0',
+            callback=function(value) return helper(value) end, nested={callback=helper}}
     ]]
 }
 for name,text in pairs(legacyExamples) do
@@ -619,6 +668,11 @@ for name,text in pairs(legacyExamples) do
     end
     if name=='dispatchnotify' then assert(config.unitDutyCustom(42) and not config.unitDutyCustom(1)) end
     if name=='custom' then assert(config.enabled==false and config.label=='Example') end
+    if name=='localhelper' then
+        assert(type(wire.helper)=='string' and wire.helper:match('^function helper'))
+        assert(config.helper(41)==42 and config.callback(41)==42 and config.nested.callback(41)==42,
+            'Local helper or callback references failed the plaintext round trip')
+    end
     if name=='localcallers' then
         assert(wire.weaponConfig.weaponResponses['12345'] and config.weaponConfig.weaponResponses[12345])
         assert(wire.whitelistZones[1].center.x==441.2)

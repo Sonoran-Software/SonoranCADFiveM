@@ -231,7 +231,7 @@
             // Lua configuration resolution may still be starting.
         }
         const communityID = resolved.communityID;
-        const apiKey = resolved.apiKey;
+        const apiKey = resolved.ready === true ? GetConvar("sonoran_apiKey", "") : "";
         const serverId = normalizeServerId(resolved.serverId);
         const mode = resolved.mode || "production";
         const apiSendEnabled = resolved.ready === true && resolved.apiSendEnabled === true;
