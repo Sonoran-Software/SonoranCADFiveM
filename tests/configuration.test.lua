@@ -1,9 +1,6 @@
 -- Run from the repository root: lua tests/configuration.test.lua
 -- FiveM IO/time and JSON serialization are doubled; production resolution,
--- migration, adapter and every shipped plugin parser are exercised directly.
-local function read(path)
-    local f = assert(io.open(path, 'rb')); local text = f:read('*a'); f:close(); return text
-end
+-- migration, adapter and legacy Lua conversion are exercised directly.
 local function clone(value)
     if type(value) ~= 'table' then return value end
     local copy = {}; for k, v in pairs(value) do copy[k] = clone(v) end; return copy
@@ -230,7 +227,12 @@ for _, failure in ipairs({'none', 'development-mode', 'upload', 'archive', 'arch
     end
     if failure:find('templates') then
         files.inventory[#files.inventory+1]='calltemplates_config.lua'
-        files['configuration/calltemplates_config.lua']=read('sonorancad/configuration/calltemplates_config.dist.lua')
+        files['configuration/calltemplates_config.lua']=[[
+            local config={enabled=true,pluginName='calltemplates',configVersion='2.0.0',
+                callTypeDirectory='submodules/calltemplates/calltypes',defaultOrigin=2,defaultStatus=1,
+                defaultPriority=1,reloadTemplatesOnEachUse=false,
+                commands={{command='ts',callTypeFile='traffic_stop.json'},{command='towreq',callTypeFile='tow_request.json'}}}
+        ]]
         files.templateInventory={'traffic_stop.json', 'tow_request.json', 'bank_robbery.json'}
         for _, name in ipairs(files.templateInventory) do
             files['submodules/calltemplates/calltypes/'..name]=json.encode({title=name})
@@ -459,30 +461,45 @@ dofile('sonorancad/core/unittracking.lua')
 runUntil(function() return #threads==0 end)
 assert(#logs==priorLogs, 'Critical configuration failure produced misleading API-disabled cache errors')
 
--- Every shipped legacy file, including disabled plugins, closures, helper functions,
--- vector literals and Cfx hash keys. Only Cfx syntax is translated for stock Lua.
-local inventory=io.popen('git ls-files sonorancad/configuration/*_config.dist.lua')
-local count=0
-for path in inventory:lines() do
-    local name=path:match('/([^/]+)_config%.dist%.lua$')
-    local text=read(path):gsub('`[^`]+`','12345')
+-- Legacy examples belong in this test, not in downloadable configuration files.
+local legacyExamples={
+    caddisplay=[[
+        local config={enabled=true,pluginName='caddisplay',configVersion='1.0',custom={
+            permissionCheck=function(player, permissionType)
+                local text='end function'; -- Keywords in text must not terminate the callback.
+                if player==1 then return permissionType==0 end
+                return false
+            end}}
+    ]],
+    dispatchnotify=[[
+        local config={enabled=true,pluginName='dispatchnotify',configVersion='1.0'}
+        function unitDutyCustom(player) return player==42 end
+    ]],
+    localcallers=[[
+        local config={enabled=true,pluginName='localcallers',configVersion='1.0',
+            weaponConfig={weaponResponses={[12345]={description='Example response'}}},
+            whitelistZones={{center=vector3(441.2,1,2),radius=50}}}
+    ]],
+    custom=[[
+        local config={enabled=false,pluginName='custom',configVersion='1.0',label='Example'}
+    ]]
+}
+for name,text in pairs(legacyExamples) do
     local wire, exportError=ExportLegacyPluginConfiguration(name, text)
     assert(wire, name .. ': ' .. tostring(exportError))
-    local config, err=ParseCadPluginConfiguration(name, wire)
-    assert(config, name .. ': ' .. tostring(err)); count=count+1
+    local config, err=ParseCadPluginConfiguration(name, wire, true)
+    assert(config, name .. ': ' .. tostring(err))
     if name=='caddisplay' then
         assert(type(wire.custom.permissionCheck)=='string' and type(config.custom.permissionCheck)=='function')
         assert(config.custom.permissionCheck(1,0)==true)
     end
-    if name=='dispatchnotify' then assert(type(config.unitDutyCustom)=='function') end
-    if name=='ersintegration' then assert(tonumber(config.customRecords.civilianValues.age({DOB='01/01/2000'}))) end
+    if name=='dispatchnotify' then assert(config.unitDutyCustom(42) and not config.unitDutyCustom(1)) end
+    if name=='custom' then assert(config.enabled==false and config.label=='Example') end
     if name=='localcallers' then
         assert(wire.weaponConfig.weaponResponses['12345'] and config.weaponConfig.weaponResponses[12345])
         assert(wire.whitelistZones[1].center.x==441.2)
     end
 end
-inventory:close()
-assert(count==20, 'Expected every shipped plugin to be covered')
 -- Exercise the real logger so the notice cannot silently regain report/trace output.
 local console, originalPrint = {}, print
 print=function(text) console[#console+1]=text end
@@ -496,4 +513,4 @@ assert(not console[1]:find('\n') and not console[1]:find('Trace:') and not conso
 assert(#getSupportErrorBuffer()==0 and #getErrorBuffer()==1,
     'Migration notice must remain in the console buffer without creating a support error')
 print=originalPrint
-print('Configuration resolution, migration, mock, timeout and all '..count..' plugin parsers passed')
+print('Configuration resolution, migration, mock, timeout and legacy Lua conversion passed')

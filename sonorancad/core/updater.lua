@@ -92,7 +92,7 @@ function RunAutoUpdater(manualRun)
     end
     local versionFile = Config.autoUpdateUrl
     if versionFile == "https://raw.githubusercontent.com/Sonoran-Software/SonoranCADLuaIntegration/{branch}/sonorancad/version.json" then
-        errorLog("UNHANDLED_SERVER_ERROR", 'It seems like you might be running a v2.X.X core configuration file. Please update from the config.CHANGEME.json file or reinstall the resource. Install guide: https://sonoran.link/v3')
+        errorLog("UNHANDLED_SERVER_ERROR", 'An outdated automatic update URL is configured. Update autoUpdateUrl in the CAD FiveM core configuration.')
         versionFile = "https://raw.githubusercontent.com/Sonoran-Software/SonoranCADFiveM/{branch}/sonorancad/version.json"
     end
     if versionFile == nil then

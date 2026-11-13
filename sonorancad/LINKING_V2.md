@@ -14,7 +14,7 @@ This resource now uses Sonoran CAD API v2 and the bundled `Sonoran.lua` client f
 
 ## Config
 
-The core link flow is configured in `sonorancad/configuration/config.json`:
+Configure the core link flow through the FiveM configuration in CAD:
 
 - `linkCommand`
 - `requireLink`
@@ -47,8 +47,8 @@ If a resource needs the linked CAD user for a player:
 local communityUserId = exports.sonorancad:getPlayerCommunityUserId(source)
 ```
 
-The customer must still provide their CAD API key in the normal SonoranCAD config. Third-party resources should not try to fetch the API key from this resource.
-The values returned by `getCommunityId()` and `getServerId()` come from `communityID` and `serverId` in the Sonoran CAD FiveM core config.
+The customer provides `apiKey` and `serverId` in the resource-root `config.json`. Third-party resources should not try to fetch the API key from this resource.
+The community ID comes from CAD; the server ID comes from the resource-root `config.json`.
 
 ## Tablet / CAD Iframe Account Link
 
