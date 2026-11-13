@@ -459,6 +459,11 @@
         }
     }
 
+    on("SonoranCAD::core:configurationReady", () => {
+        // Let an initial ensure against the unavailable Lua export finish first.
+        setTimeout(runBackgroundEnsure, 0);
+    });
+
     startBackgroundEnsureLoop();
 
     on("onResourceStop", (resourceName) => {

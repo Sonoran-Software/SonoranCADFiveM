@@ -363,6 +363,7 @@ local function resolveConfiguration()
     if not ok then Config.critError = true; fail('Unable to resolve configuration; initialization has been stopped.') end
     if Config.critError then Config.apiSendEnabled = false; Config.apiVersion = 0 end
     Config.configurationReady = true
+    if not Config.critError then TriggerEvent('SonoranCAD::core:configurationReady') end
 end
 
 -- Client plugins receive only their configuration, never the server API key.

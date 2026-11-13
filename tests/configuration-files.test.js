@@ -160,3 +160,59 @@ test('WebSocket and bodycam use public settings and the restricted API-key conva
     resolved.apiSendEnabled = false;
     assert.equal(ws('buildConfig().apiSendEnabled'), false);
 });
+
+test('WebSocket authenticates when configuration resolves without waiting for a location update or interval', async () => {
+    const events = {}, pushHandlers = {}, timers = [], intervals = [], auth = [];
+    let starts = 0;
+    const connection = {
+        state: 'Disconnected',
+        on: (name, callback) => { pushHandlers[name] = callback; },
+        onreconnecting() {}, onreconnected() {}, onclose() {},
+        async start() { starts++; this.state = 'Connected'; },
+        async stop() { this.state = 'Disconnected'; },
+        async invoke(...args) { auth.push(args); return { success: true }; }
+    };
+    class HubConnectionBuilder {
+        configureLogging() { return this; }
+        withUrl() { return this; }
+        withAutomaticReconnect() { return this; }
+        build() { return connection; }
+    }
+    const exporter = () => {};
+    exporter.sonorancad = {}; // apiws.js loads before the Lua export exists.
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../sonorancad/core/apiws.js'), 'utf8'), {
+        require: () => ({ HubConnectionBuilder, HttpTransportType: { WebSockets: 1 }, HubConnectionState: { Connected: 'Connected' } }),
+        exports: exporter, emit() {}, GetCurrentResourceName: () => 'sonorancad',
+        GetConvar: () => 'restricted-secret',
+        on: (name, callback) => { events[name] = callback; },
+        setInterval: (callback, delay) => { intervals.push({ callback, delay }); return intervals.length; },
+        clearInterval() {},
+        setTimeout: (callback, delay) => { timers.push({ callback, delay }); return timers.length; },
+        clearTimeout() {}
+    });
+    assert.equal(starts, 0);
+    assert.equal(intervals[0].delay, 30000);
+    let ready = true;
+    exporter.sonorancad.GetResolvedConfig = () => JSON.stringify({
+        ready, communityID: 'test', serverId: 2, apiSendEnabled: true, mode: 'production'
+    });
+    assert.equal(typeof events['SonoranCAD::core:configurationReady'], 'function');
+    // Deliver readiness during the initial in-flight ensure. The deferred retry
+    // must survive that race, without firing the 30-second watchdog.
+    events['SonoranCAD::core:configurationReady']();
+    await new Promise(setImmediate);
+    assert.equal(timers[0].delay, 0);
+    await timers.shift().callback();
+    assert.equal(starts, 1);
+    assert.deepEqual(auth, [['authenticatev2', 'test', 'restricted-secret', 2]]);
+    assert.equal(typeof pushHandlers.pushEvent, 'function');
+    events['SonoranCAD::core:configurationReady']();
+    await timers.shift().callback();
+    assert.equal(starts, 1, 'Readiness rebuilt an already authenticated connection');
+    assert.equal(auth.length, 1);
+    ready = false;
+    events['SonoranCAD::core:configurationReady']();
+    await timers.shift().callback();
+    assert.equal(starts, 1, 'Unready configuration opened a connection');
+    assert.equal(auth.length, 1);
+});

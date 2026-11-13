@@ -12,7 +12,7 @@ json = {
     end,
     decode = function(value) assert(encoded[value], 'Invalid JSON'); return clone(encoded[value]) end
 }
-local files, convars, handlers, threads, logs, writes, archiveCalls, now, replies
+local files, convars, handlers, threads, logs, writes, archiveCalls, now, replies, readyEvents
 local registry = {}
 exports = setmetatable({sonorancad = {
     GetCadConfigurationScope = function(_, _, serverId, _, mock) return 'scope:'..tostring(serverId)..(mock and ':mock' or ':cad') end,
@@ -48,6 +48,12 @@ function LoadResourceFile(_, path) return files[path] end
 function RegisterNetEvent() end
 function AddEventHandler(name, fn) handlers[name] = fn end
 function TriggerClientEvent(...) replies = {...} end
+function TriggerEvent(name)
+    if name == 'SonoranCAD::core:configurationReady' then
+        assert(Config.configurationReady and not Config.critError, 'Readiness published before configuration was usable')
+        readyEvents = readyEvents + 1
+    end
+end
 function IsDuplicityVersion() return true end
 function warnLog(_, text) logs[#logs + 1] = text end
 errorLog = warnLog
@@ -76,6 +82,7 @@ local legacy = 'local config = {enabled=true, pluginName="kick", configVersion="
     'if config.enabled then Config.RegisterPluginConfig(config.pluginName, config) end'
 local function setup(status, data, cached, rootConfig, legacyServerId, legacyMode, withoutLegacy, migrationPending)
     notices = {}
+    readyEvents = 0
     files, convars, handlers, threads, logs, now, writes, archiveCalls = {}, {}, {}, {}, {}, 0, 0, 0
     Config, Plugins, replies = nil, nil, nil
     convars.sonoran_communityID='test'; convars.sonoran_apiKey='secret'; convars.sonoran_serverId='1'
@@ -98,6 +105,7 @@ local function setup(status, data, cached, rootConfig, legacyServerId, legacyMod
     dofile('sonorancad/core/configuration.lua')
     threads[3]=nil; threads[2]=nil -- Unrelated existing server-registration/diagnostic threads.
     runUntil(function() return Config.configurationReady end)
+    assert(readyEvents == (Config.critError and 0 or 1), 'Configuration did not publish readiness exactly once')
     if not Config.critError then Config.apiVersion=3 end
 end
 
