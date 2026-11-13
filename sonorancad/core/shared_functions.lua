@@ -173,6 +173,14 @@ local function restoreClothingDictionaryKeys(clothing)
     end
 end
 
+local function seedErsDateHelpers(env, config)
+    for name, helper in pairs(CreateErsDateHelpers(config)) do
+        if rawget(env, name) == nil then
+            env[name] = type(config[name]) == 'function' and config[name] or helper
+        end
+    end
+end
+
 -- Never read a local file here: CAD and its cache use this parser on both sides.
 function ParseCadPluginConfiguration(pluginName, value, migrating)
     local config = value
@@ -188,6 +196,7 @@ function ParseCadPluginConfiguration(pluginName, value, migrating)
         if type(config) == 'table' and env.unitDutyCustom then
             config.unitDutyCustom = env.unitDutyCustom
         end
+        if pluginName == 'ersintegration' and type(config) == 'table' then seedErsDateHelpers(env, config) end
     end
     if type(value) == 'table' then
         local env = setmetatable({}, {__index = _G})
@@ -195,6 +204,7 @@ function ParseCadPluginConfiguration(pluginName, value, migrating)
         if not ok then return nil, 'Invalid callback source for ' .. pluginName end
         config = settings
         env.config = config
+        if pluginName == 'ersintegration' then seedErsDateHelpers(env, config) end
         for name, setting in pairs(config) do
             if type(setting) == 'function' then env[name] = setting end
         end

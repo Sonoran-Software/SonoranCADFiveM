@@ -5,6 +5,10 @@ author 'Sonoran CAD'
 description 'Sonoran CAD FiveM Integration'
 version '4.0.126'
 
+shared_scripts {
+    'submodules/ersintegration/sh_date_helpers.lua'
+}
+
 server_scripts {
     'lua/sonoran/init.lua'
     ,'core/http.js'

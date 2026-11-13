@@ -411,6 +411,45 @@ local function legacyTokens(source)
     return tokens
 end
 
+local function legacyFunctionEnd(tokens, first)
+    local stack, index = {{close = 'end'}}, first + 1
+    while #stack > 0 and index <= #tokens do
+        local word = tokens[index].word
+        if word == 'function' or word == 'if' then stack[#stack + 1] = {close = 'end'}
+        elseif word == 'for' or word == 'while' then stack[#stack + 1] = {close = 'end', needsDo = true}
+        elseif word == 'do' then
+            if stack[#stack].needsDo then stack[#stack].needsDo = nil else stack[#stack + 1] = {close = 'end'} end
+        elseif word == 'repeat' then stack[#stack + 1] = {close = 'until'}
+        elseif word == 'end' or word == 'until' then
+            assert(stack[#stack].close == word, 'Invalid Lua block'); table.remove(stack)
+        end
+        index = index + 1
+    end
+    assert(#stack == 0, 'Unclosed callback')
+    return index
+end
+
+local function normalizeErsHelperSource(source)
+    -- Only indentation/line endings differ between the shipped legacy helpers
+    -- and the plugin module. Keep literals and comments so custom edits survive.
+    return source:gsub('\r\n', '\n'):gsub('[ \t]*\n[ \t]*', '\n')
+end
+
+local function builtinErsHelperSources()
+    local source = LoadResourceFile(GetCurrentResourceName(), 'submodules/ersintegration/sh_date_helpers.lua')
+    local helpers = {}
+    if not source then return helpers end
+    local tokens = legacyTokens(source)
+    for index, token in ipairs(tokens) do
+        local name = tokens[index + 1] and tokens[index + 1].word
+        if token.word == 'function' and (name == 'returnAgeFromDobString' or name == 'generateDate') then
+            local last = legacyFunctionEnd(tokens, index) - 1
+            helpers[name] = normalizeErsHelperSource(source:sub(token.first, tokens[last].last))
+        end
+    end
+    return helpers
+end
+
 local function jsonSettings(value, seen)
     local kind = type(value)
     if kind:match('^vector[234]$') then
@@ -439,6 +478,7 @@ function ExportLegacyPluginConfiguration(name, source)
     local unsupportedCapture, unsupportedGlobal
     local ok, config = pcall(function()
         local tokens, pieces, helpers, cursor, i = legacyTokens(source), {}, {}, 1, 1
+        local builtinHelpers = name == 'ersintegration' and builtinErsHelperSources() or {}
         local captureName = '__captureLegacyCallback'
         while source:find(captureName, 1, true) do captureName = captureName .. '_' end
         local callbacks = {}
@@ -450,20 +490,7 @@ function ExportLegacyPluginConfiguration(name, source)
             local token = tokens[i]
             if token.word ~= 'function' then i = i + 1
             else
-                local stack, j = {{close = 'end'}}, i + 1
-                while #stack > 0 and j <= #tokens do
-                    local word = tokens[j].word
-                    if word == 'function' or word == 'if' then stack[#stack + 1] = {close = 'end'}
-                    elseif word == 'for' or word == 'while' then stack[#stack + 1] = {close = 'end', needsDo = true}
-                    elseif word == 'do' then
-                        if stack[#stack].needsDo then stack[#stack].needsDo = nil else stack[#stack + 1] = {close = 'end'} end
-                    elseif word == 'repeat' then stack[#stack + 1] = {close = 'until'}
-                    elseif word == 'end' or word == 'until' then
-                        assert(stack[#stack].close == word, 'Invalid Lua block'); table.remove(stack)
-                    end
-                    j = j + 1
-                end
-                assert(#stack == 0, 'Unclosed callback')
+                local j = legacyFunctionEnd(tokens, i)
                 local text = source:sub(token.first, tokens[j - 1].last)
                 local helper = text:match('^function%s+([%w_]+)%s*%(')
                 assert(helper or text:match('^function%s*%('), 'Unsupported callback declaration')
@@ -497,7 +524,8 @@ function ExportLegacyPluginConfiguration(name, source)
             end
         end
         -- Compile callbacks without invoking them, then inspect their final lexical
-        -- bindings. Only the shared environment and exported helpers survive JSON.
+        -- bindings. ERS callbacks may reference the exported settings table; the
+        -- parser rebinds that exact table through env.config after decoding.
         for _, callback in ipairs(callbacks) do
             local index = 1
             while true do
@@ -509,7 +537,8 @@ function ExportLegacyPluginConfiguration(name, source)
                     unsupportedGlobal = missingGlobal
                     error('Unsupported callback global')
                 end
-                if not ((key == '_ENV' and captured == env) or (helpers[key] ~= nil and captured == helpers[key])) then
+                if not ((key == '_ENV' and captured == env) or (helpers[key] ~= nil and captured == helpers[key]) or
+                    (name == 'ersintegration' and key == 'config' and captured == value)) then
                     unsupportedCapture = key
                     error('Unsupported callback local')
                 end
@@ -517,7 +546,10 @@ function ExportLegacyPluginConfiguration(name, source)
             end
         end
         for key, text in pairs(helpers) do
-            assert(value[key] == nil or value[key] == text, 'Helper conflicts with a setting'); value[key] = text
+            assert(value[key] == nil or value[key] == text, 'Helper conflicts with a setting')
+            -- Standard ERS helpers now live in plugin code. Retain customized
+            -- implementations and explicit config properties for older callbacks.
+            if value[key] ~= nil or builtinHelpers[key] ~= normalizeErsHelperSource(text) then value[key] = text end
         end
         return jsonSettings(value, {})
     end)

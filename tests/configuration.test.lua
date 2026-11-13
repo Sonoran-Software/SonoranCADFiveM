@@ -1,6 +1,13 @@
 -- Run from the repository root: lua tests/configuration.test.lua
 -- FiveM IO/time and JSON serialization are doubled; production resolution,
 -- migration, adapter and legacy Lua conversion are exercised directly.
+local function readFixture(path)
+    local file = assert(io.open(path, 'rb'))
+    local text = file:read('*a'); file:close()
+    return text
+end
+local ersHelperSource = readFixture('sonorancad/submodules/ersintegration/sh_date_helpers.lua')
+local legacyErsSource = readFixture('tests/fixtures/ersintegration_config.master.lua')
 local function clone(value)
     if type(value) ~= 'table' then return value end
     local copy = {}; for k, v in pairs(value) do copy[k] = clone(v) end; return copy
@@ -91,6 +98,7 @@ local function setup(status, data, cached, rootConfig, legacyServerId, legacyMod
         primaryIdentifier='license', postTime=5000, apiSendEnabled=true, debugMode=false})
     if rootConfig then files['config.json']=type(rootConfig)=='string' and rootConfig or json.encode(rootConfig) end
     files['configuration/kick_config.lua']=legacy
+    files['submodules/ersintegration/sh_date_helpers.lua']=ersHelperSource
     files.inventory={'config.json', 'kick_config.dist.lua', 'kick_config.lua'}
     files['configuration/kick_config.dist.lua']='invalid default must not replace active file'
     if withoutLegacy then
@@ -99,6 +107,7 @@ local function setup(status, data, cached, rootConfig, legacyServerId, legacyMod
         files.inventory={}
     end
     if cached then files['.configuration-cache.json'] = json.encode({version=1, scope='scope:1:cad', apiVersion=3, configuration=cached}) end
+    dofile('sonorancad/submodules/ersintegration/sh_date_helpers.lua')
     dofile('sonorancad/core/shared_functions.lua')
     dofile('sonorancad/core/sonoran_api.lua')
     CadConfigurationApi.request = function(_, _, cb) cb(status, clone(data), nil, {migrationPending=migrationPending}) end
@@ -327,7 +336,7 @@ assert(Config.critError, 'Legacy settings from another credential/server were us
 
 for _, failure in ipairs({'none', 'linking', 'existing-cache', 'development-mode', 'upload', 'archive', 'archive-throw', 'readback', 'partial-readback', 'cache', 'conflict', 'missing-setting', 'templates', 'templates-missing', 'older-config', 'bootstrap', 'empty-root', 'whitespace-root', 'empty-object-root', 'default-root',
     'diagnostic-http', 'diagnostic-timeout', 'diagnostic-shape', 'diagnostic-validation', 'diagnostic-differences', 'diagnostic-limit',
-    'float-roundtrip', 'float-change', 'float-id-change', 'float-type-change', 'captured-local', 'custom-global'}) do
+    'float-roundtrip', 'float-change', 'float-id-change', 'float-type-change', 'captured-local', 'custom-global', 'stock-ers-disabled', 'stock-ers-enabled'}) do
     local emptyRoots={['empty-root']='', ['whitespace-root']=' \r\n ', ['empty-object-root']={}, ['default-root']={apiKey='',serverId=1}}
     local root=emptyRoots[failure]
     setup(404,nil,(failure=='existing-cache' or failure=='captured-local' or failure=='custom-global') and document() or nil,root,root and 17 or nil,failure=='development-mode' and 'development' or nil)
@@ -358,6 +367,11 @@ for _, failure in ipairs({'none', 'linking', 'existing-cache', 'development-mode
     if failure=='older-config' then
         files.inventory[#files.inventory+1]='locations_config.lua'
         files['configuration/locations_config.lua']='local config={enabled=true,pluginName="locations",configVersion="1.1",clientCheckTime=250,prefixPostal=false}'
+    end
+    if failure=='stock-ers-disabled' or failure=='stock-ers-enabled' then
+        files.inventory[#files.inventory+1]='ersintegration_config.lua'
+        files['configuration/ersintegration_config.lua']=failure=='stock-ers-enabled'
+            and legacyErsSource:gsub('enabled = false', 'enabled = true', 1) or legacyErsSource
     end
     if failure:find('templates') then
         files.inventory[#files.inventory+1]='calltemplates_config.lua'
@@ -464,11 +478,22 @@ for _, failure in ipairs({'none', 'linking', 'existing-cache', 'development-mode
         assert(prepared.apiKey=='secret' and prepared.serverId==Config.serverId,
             'Migration did not prepare credentials before the API request')
     end
-    local succeeds=failure=='none' or failure=='linking' or failure=='float-roundtrip' or failure=='existing-cache' or failure=='development-mode' or failure=='archive' or failure=='archive-throw' or failure=='templates' or failure=='older-config' or root~=nil
+    local succeeds=failure=='none' or failure=='linking' or failure=='float-roundtrip' or failure=='existing-cache' or failure=='development-mode' or failure=='archive' or failure=='archive-throw' or failure=='templates' or failure=='older-config' or failure=='stock-ers-disabled' or failure=='stock-ers-enabled' or root~=nil
     assert(archiveCalls==(succeeds and 1 or 0))
     if succeeds then
         assert(json.decode(files['.configuration-cache.json']).apiVersion==Config.apiVersion,
             'Migration cache omitted the validated API version')
+    end
+    if failure=='stock-ers-disabled' or failure=='stock-ers-enabled' then
+        local settings=uploaded.plugins.ersintegration
+        assert(settings.enabled==(failure=='stock-ers-enabled'))
+        assert(settings.DOBFormat=='en' and settings.returnAgeFromDobString==nil and settings.generateDate==nil,
+            'Stock ERS migration retained helper source in CAD configuration')
+        local cached=json.decode(files['.configuration-cache.json']).configuration.plugins.ersintegration
+        local resolved,err=ParseCadPluginConfiguration('ersintegration',cached)
+        assert(resolved,err)
+        assert(type(resolved.customRecords.civilianValues.age({DOB='12/12/2000'}))=='string',
+            'Migrated ERS mapping lost the built-in date helper')
     end
     if failure=='linking' then
         assert(uploaded.plugins.forcereg.linkCommand=='forceconnect' and uploaded.plugins.forcereg.linkPollIntervalMs==2500)
