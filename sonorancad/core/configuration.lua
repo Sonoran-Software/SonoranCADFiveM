@@ -436,7 +436,7 @@ local function jsonSettings(value, seen)
 end
 
 function ExportLegacyPluginConfiguration(name, source)
-    local unsupportedCapture
+    local unsupportedCapture, unsupportedGlobal
     local ok, config = pcall(function()
         local tokens, pieces, helpers, cursor, i = legacyTokens(source), {}, {}, 1, 1
         local captureName = '__captureLegacyCallback'
@@ -477,11 +477,25 @@ function ExportLegacyPluginConfiguration(name, source)
         end
         pieces[#pieces + 1] = source:sub(cursor)
         local registered
-        local env = setmetatable({Config = {RegisterPluginConfig = function(_, value) registered = value end}}, {__index = _G})
+        local function registerPluginConfig(_, value) registered = value end
+        local registration = {RegisterPluginConfig = registerPluginConfig}
+        local env = setmetatable({Config = registration}, {__index = _G})
         local chunk = assert(load('local ' .. captureName .. ' = ...\n' .. table.concat(pieces) .. '\nreturn config',
             '@legacy-config/' .. name, 't', env))
         local value = chunk(capture) or registered
         assert(type(value) == 'table', 'Missing configuration table')
+        local registrationUnchanged = registration.RegisterPluginConfig == registerPluginConfig
+        for key in pairs(registration) do
+            if key ~= 'RegisterPluginConfig' then registrationUnchanged = false end
+        end
+        local missingGlobal
+        for key, entry in pairs(env) do
+            if not ((key == 'Config' and entry == registration and registrationUnchanged) or (key == 'config' and entry == value) or
+                entry == helpers[key] or entry == rawget(_G, key)) then
+                missingGlobal = tostring(key):gsub('%c', '?'):sub(1, 100)
+                break
+            end
+        end
         -- Compile callbacks without invoking them, then inspect their final lexical
         -- bindings. Only the shared environment and exported helpers survive JSON.
         for _, callback in ipairs(callbacks) do
@@ -489,6 +503,12 @@ function ExportLegacyPluginConfiguration(name, source)
             while true do
                 local key, captured = debug.getupvalue(callback, index)
                 if not key then break end
+                -- An environment may be indexed dynamically. Require all its entries
+                -- to survive reload rather than guessing which names a callback uses.
+                if key == '_ENV' and captured == env and missingGlobal then
+                    unsupportedGlobal = missingGlobal
+                    error('Unsupported callback global')
+                end
                 if not ((key == '_ENV' and captured == env) or (helpers[key] ~= nil and captured == helpers[key])) then
                     unsupportedCapture = key
                     error('Unsupported callback local')
@@ -502,6 +522,10 @@ function ExportLegacyPluginConfiguration(name, source)
         return jsonSettings(value, {})
     end)
     if not ok then
+        if unsupportedGlobal then
+            return nil, 'Cannot export ' .. name .. ': callback environment contains global variable "' .. unsupportedGlobal ..
+                '" that cannot be restored. Move that value inside the callback before migrating; legacy files were preserved.'
+        end
         if unsupportedCapture then
             return nil, 'Cannot export ' .. name .. ': callback uses local variable "' .. unsupportedCapture ..
                 '" outside its function. Move that value inside the callback before migrating; legacy files were preserved.'
