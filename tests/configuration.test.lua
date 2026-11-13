@@ -327,10 +327,10 @@ assert(Config.critError, 'Legacy settings from another credential/server were us
 
 for _, failure in ipairs({'none', 'linking', 'existing-cache', 'development-mode', 'upload', 'archive', 'archive-throw', 'readback', 'partial-readback', 'cache', 'conflict', 'missing-setting', 'templates', 'templates-missing', 'older-config', 'bootstrap', 'empty-root', 'whitespace-root', 'empty-object-root', 'default-root',
     'diagnostic-http', 'diagnostic-timeout', 'diagnostic-shape', 'diagnostic-validation', 'diagnostic-differences', 'diagnostic-limit',
-    'float-roundtrip', 'float-change', 'float-id-change', 'float-type-change'}) do
+    'float-roundtrip', 'float-change', 'float-id-change', 'float-type-change', 'captured-local'}) do
     local emptyRoots={['empty-root']='', ['whitespace-root']=' \r\n ', ['empty-object-root']={}, ['default-root']={apiKey='',serverId=1}}
     local root=emptyRoots[failure]
-    setup(404,nil,failure=='existing-cache' and document() or nil,root,root and 17 or nil,failure=='development-mode' and 'development' or nil)
+    setup(404,nil,(failure=='existing-cache' or failure=='captured-local') and document() or nil,root,root and 17 or nil,failure=='development-mode' and 'development' or nil)
     if failure=='development-mode' then
         local core=json.decode(files['configuration/config.json'])
         core.mode='development';core.branch='production';core.apiUrl='https://obsolete-api.example.test/'
@@ -393,6 +393,13 @@ for _, failure in ipairs({'none', 'linking', 'existing-cache', 'development-mode
         ]]
     end
     local initialCache=files['.configuration-cache.json']
+    if failure=='captured-local' then
+        files['configuration/kick_config.lua']=[[
+            local offset=40
+            local config={enabled=true,pluginName='kick',configVersion='1.0',
+                callback=function(value) return value+offset end}
+        ]]
+    end
     local uploaded, sent, gets, finished = nil, 0, 0, false
     CadConfigurationApi.request=function(operation, payload, callback)
         if operation=='get' then
@@ -439,7 +446,12 @@ for _, failure in ipairs({'none', 'linking', 'existing-cache', 'development-mode
     MigrateCadConfiguration(); MigrateCadConfiguration() -- concurrent invocation must collapse
     CreateThread(function() Wait(100); finished=true end)
     runUntil(function() return finished end)
-    assert(sent==((failure=='missing-setting' or failure=='templates-missing' or failure=='bootstrap') and 0 or 1))
+    assert(sent==((failure=='missing-setting' or failure=='templates-missing' or failure=='bootstrap' or failure=='captured-local') and 0 or 1))
+    if failure=='captured-local' then
+        assert(files['.configuration-cache.json']==initialCache and archiveCalls==0 and files['configuration/kick_config.lua'],
+            'Unsupported callback capture changed cache or archived legacy settings')
+        assert(table.concat(logs):find('offset',1,true), 'Migration did not identify the unsupported local dependency')
+    end
     if failure~='bootstrap' then
         local prepared=json.decode(files['config.json'])
         assert(prepared.apiKey=='secret' and prepared.serverId==Config.serverId,
@@ -856,6 +868,14 @@ local legacyExamples={
         local function helper(value) return value+1 end
         local config={enabled=true,pluginName='localhelper',configVersion='1.0',
             callback=function(value) return helper(value) end, nested={callback=helper}}
+    ]],
+    callbacklocals=[[
+        local offset=999
+        local config={enabled=true,pluginName='callbacklocals',configVersion='1.0',
+            callback=function(offset)
+                local adjustment=1
+                return function() return math.floor(offset+adjustment) end
+            end}
     ]]
 }
 for name,text in pairs(legacyExamples) do
@@ -869,6 +889,9 @@ for name,text in pairs(legacyExamples) do
     end
     if name=='dispatchnotify' then assert(config.unitDutyCustom(42) and not config.unitDutyCustom(1)) end
     if name=='custom' then assert(config.enabled==false and config.label=='Example') end
+    if name=='callbacklocals' then
+        assert(config.callback(41)()==42, 'Callback parameters and internal locals did not survive migration')
+    end
     if name=='localhelper' then
         assert(type(wire.helper)=='string' and wire.helper:match('^function helper'))
         assert(config.helper(41)==42 and config.callback(41)==42 and config.nested.callback(41)==42,
@@ -878,6 +901,20 @@ for name,text in pairs(legacyExamples) do
         assert(wire.weaponConfig.weaponResponses['12345'] and config.weaponConfig.weaponResponses[12345])
         assert(wire.whitelistZones[1].center.x==441.2)
     end
+end
+local capturedLocals={
+    'local offset=40; local config={callback=function(v) return v+offset end}',
+    'local offset={value=40}; local config={nested={callback=function(v) return v+offset.value end}}',
+    'local offset; local config={callback=function(v) return v+offset end}; offset=40',
+    'local offset=40; local function helper(v) return v+offset end; local config={callback=helper}',
+    'local function helper(v) return v+1 end; local config={callback=function(v) return helper(v) end}; helper=40',
+    'local config={}; do local offset=40; config.callback=function(v) return v+offset end end',
+    'local offset=40; local config={callback=function() return function(v) return v+offset end end}',
+    'local _ENV={offset=40}; local config={callback=function(v) return v+offset end}'
+}
+for index,source in ipairs(capturedLocals) do
+    local wire,err=ExportLegacyPluginConfiguration('captured',source)
+    assert(wire==nil and err, 'Unsupported local capture was accepted: '..index)
 end
 -- Exercise the real logger so the notice cannot silently regain report/trace output.
 local console, originalPrint = {}, print

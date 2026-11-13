@@ -436,8 +436,16 @@ local function jsonSettings(value, seen)
 end
 
 function ExportLegacyPluginConfiguration(name, source)
+    local unsupportedCapture
     local ok, config = pcall(function()
         local tokens, pieces, helpers, cursor, i = legacyTokens(source), {}, {}, 1, 1
+        local captureName = '__captureLegacyCallback'
+        while source:find(captureName, 1, true) do captureName = captureName .. '_' end
+        local callbacks = {}
+        local function capture(callback, text)
+            callbacks[#callbacks + 1] = callback
+            return text
+        end
         while i <= #tokens do
             local token = tokens[i]
             if token.word ~= 'function' then i = i + 1
@@ -460,7 +468,9 @@ function ExportLegacyPluginConfiguration(name, source)
                 local helper = text:match('^function%s+([%w_]+)%s*%(')
                 assert(helper or text:match('^function%s*%('), 'Unsupported callback declaration')
                 pieces[#pieces + 1] = source:sub(cursor, token.first - 1)
-                pieces[#pieces + 1] = (helper and helper .. ' = ' or '') .. string.format('%q', text)
+                local anonymous = text:gsub('^function%s+[%w_]+%s*%(', 'function(', 1)
+                pieces[#pieces + 1] = (helper and helper .. ' = ' or '') ..
+                    captureName .. '(' .. anonymous .. ', ' .. string.format('%q', text) .. ')'
                 if helper then helpers[helper] = text end
                 cursor, i = tokens[j - 1].last + 1, j
             end
@@ -468,15 +478,36 @@ function ExportLegacyPluginConfiguration(name, source)
         pieces[#pieces + 1] = source:sub(cursor)
         local registered
         local env = setmetatable({Config = {RegisterPluginConfig = function(_, value) registered = value end}}, {__index = _G})
-        local chunk = assert(load(table.concat(pieces) .. '\nreturn config', '@legacy-config/' .. name, 't', env))
-        local value = chunk() or registered
+        local chunk = assert(load('local ' .. captureName .. ' = ...\n' .. table.concat(pieces) .. '\nreturn config',
+            '@legacy-config/' .. name, 't', env))
+        local value = chunk(capture) or registered
         assert(type(value) == 'table', 'Missing configuration table')
+        -- Compile callbacks without invoking them, then inspect their final lexical
+        -- bindings. Only the shared environment and exported helpers survive JSON.
+        for _, callback in ipairs(callbacks) do
+            local index = 1
+            while true do
+                local key, captured = debug.getupvalue(callback, index)
+                if not key then break end
+                if not ((key == '_ENV' and captured == env) or (helpers[key] ~= nil and captured == helpers[key])) then
+                    unsupportedCapture = key
+                    error('Unsupported callback local')
+                end
+                index = index + 1
+            end
+        end
         for key, text in pairs(helpers) do
             assert(value[key] == nil or value[key] == text, 'Helper conflicts with a setting'); value[key] = text
         end
         return jsonSettings(value, {})
     end)
-    if not ok then return nil, 'Cannot export ' .. name .. ' as JSON. Check its Lua settings/callbacks; legacy files were preserved.' end
+    if not ok then
+        if unsupportedCapture then
+            return nil, 'Cannot export ' .. name .. ': callback uses local variable "' .. unsupportedCapture ..
+                '" outside its function. Move that value inside the callback before migrating; legacy files were preserved.'
+        end
+        return nil, 'Cannot export ' .. name .. ' as JSON. Check its Lua settings/callbacks; legacy files were preserved.'
+    end
     return config
 end
 
