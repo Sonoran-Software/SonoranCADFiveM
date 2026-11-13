@@ -236,7 +236,8 @@ end
 setup(404,nil,nil,{apiKey='different-key',serverId=2})
 assert(Config.critError, 'Legacy settings from another credential/server were used')
 
-for _, failure in ipairs({'none', 'existing-cache', 'development-mode', 'upload', 'archive', 'archive-throw', 'readback', 'partial-readback', 'cache', 'conflict', 'missing-setting', 'templates', 'templates-missing', 'older-config', 'bootstrap', 'empty-root', 'whitespace-root', 'empty-object-root', 'default-root'}) do
+for _, failure in ipairs({'none', 'existing-cache', 'development-mode', 'upload', 'archive', 'archive-throw', 'readback', 'partial-readback', 'cache', 'conflict', 'missing-setting', 'templates', 'templates-missing', 'older-config', 'bootstrap', 'empty-root', 'whitespace-root', 'empty-object-root', 'default-root',
+    'diagnostic-http', 'diagnostic-timeout', 'diagnostic-shape', 'diagnostic-validation', 'diagnostic-differences', 'diagnostic-limit'}) do
     local emptyRoots={['empty-root']='', ['whitespace-root']=' \r\n ', ['empty-object-root']={}, ['default-root']={apiKey='',serverId=1}}
     local root=emptyRoots[failure]
     setup(404,nil,failure=='existing-cache' and document() or nil,root,root and 17 or nil,failure=='development-mode' and 'development' or nil)
@@ -271,14 +272,39 @@ for _, failure in ipairs({'none', 'existing-cache', 'development-mode', 'upload'
         end
         if failure=='templates-missing' then files['submodules/calltemplates/calltypes/traffic_stop.json']=nil end
     end
+    if failure=='diagnostic-differences' or failure=='diagnostic-limit' then
+        files['configuration/kick_config.lua']=[[
+            local config={enabled=true,pluginName='kick',configVersion='1.0',pluginAuthor='Example author',
+                password='local-private-value',label='local label',
+                callback=function(value) return value+1 end}
+        ]]
+        if failure=='diagnostic-limit' then
+            files['configuration/kick_config.lua']=files['configuration/kick_config.lua']..
+                '\nfor i=1,20 do config["extra"..i]=i end'
+        end
+    end
+    local initialCache=files['.configuration-cache.json']
     local uploaded, sent, gets, finished = nil, 0, 0, false
     CadConfigurationApi.request=function(operation, payload, callback)
         if operation=='get' then
             gets=gets+1
             if uploaded and failure~='readback' then
+                if failure=='diagnostic-http' then callback(503,nil,'Service unavailable. Bearer private-bearer-value');return end
+                if failure=='diagnostic-timeout' then callback(0,nil,'Configuration request timed out.');return end
+                if failure=='diagnostic-shape' then callback(200,nil,'CAD returned invalid JSON or a non-object response.');return end
                 local data=clone(uploaded)
                 if failure=='partial-readback' then data.plugins.custom=nil end
                 if failure=='older-config' then data.plugins.locations.customStreetNames={enabled=false,names={}} end
+                if failure=='diagnostic-validation' then data.core.postTime='5000' end
+                if failure=='diagnostic-differences' then
+                    data.plugins.kick.pluginAuthor=nil
+                    data.plugins.kick.password='cad-private-value'
+                    data.plugins.kick.label='CAD label with secret\nnewline'
+                    data.plugins.kick.callback='function(value) return value+2 end'
+                end
+                if failure=='diagnostic-limit' then
+                    for i=1,20 do data.plugins.kick['extra'..i]=false end
+                end
                 callback(200, data)
             else callback(404) end
         else
@@ -302,6 +328,32 @@ for _, failure in ipairs({'none', 'existing-cache', 'development-mode', 'upload'
     end
     local succeeds=failure=='none' or failure=='existing-cache' or failure=='development-mode' or failure=='archive' or failure=='archive-throw' or failure=='templates' or failure=='older-config' or root~=nil
     assert(archiveCalls==(succeeds and 1 or 0))
+    if failure:find('diagnostic',1,true) then
+        local output=table.concat(logs,'\n')
+        assert(output:find('Migration readback failed for server 1',1,true))
+        assert(files['.configuration-cache.json']==initialCache and archiveCalls==0,
+            'Diagnostic failure changed the cache or archived local files')
+        if failure=='diagnostic-http' then
+            assert(output:find('GET HTTP 503',1,true) and output:find('Service unavailable.',1,true))
+            assert(not output:find('private-bearer-value',1,true))
+        elseif failure=='diagnostic-timeout' then
+            assert(output:find('GET HTTP 0',1,true) and output:find('timed out',1,true))
+        elseif failure=='diagnostic-shape' then
+            assert(output:find('GET HTTP 200',1,true) and output:find('invalid JSON',1,true) and output:find('Validation:',1,true))
+        elseif failure=='diagnostic-validation' then
+            assert(output:find('Difference at core.postTime: local=number 5000; CAD=string "5000"',1,true))
+        elseif failure=='diagnostic-differences' then
+            assert(output:find('plugins.kick.pluginAuthor: local=string "Example author"; CAD=missing',1,true))
+            assert(output:find('plugins.kick.password: local=string [redacted]; CAD=string [redacted]',1,true))
+            assert(output:find('plugins.kick.callback: local=Lua source',1,true) and output:find('Lua source first differs at byte',1,true))
+            assert(not output:find('local-private-value',1,true) and not output:find('cad-private-value',1,true)
+                and not output:find('function(value)',1,true) and not output:find('secret',1,true))
+            for _,notice in ipairs(notices) do assert(not notice:find('\n',1,true), 'Diagnostic contained a raw newline') end
+        elseif failure=='diagnostic-limit' then
+            local _,count=output:gsub('Difference at','')
+            assert(count==10 and output:find('Additional differences omitted',1,true))
+        end
+    end
     if uploaded then
         assert(uploaded.core.apiKey==nil and uploaded.core.serverId==nil and uploaded.core.communityID=='test')
         assert(uploaded.core.mode==(failure=='development-mode' and 'development' or 'production') and uploaded.core.branch==nil and uploaded.core.apiUrl==nil
@@ -321,6 +373,10 @@ for _, failure in ipairs({'none', 'existing-cache', 'development-mode', 'upload'
         local before=sent; MigrateCadConfiguration(); finished=false
         CreateThread(function() Wait(100); finished=true end); runUntil(function() return finished end)
         assert(sent==before, 'Repeated migration uploaded again')
+        if failure=='diagnostic-differences' then
+            assert(table.concat(logs):find('Existing CAD settings differ from local files',1,true),
+                'Rerunning migration after an accepted upload omitted difference diagnostics')
+        end
     end
 end
 
@@ -392,6 +448,10 @@ assert(http('get',404,{}).migrationPending==nil, 'An empty 404 was classified as
 assert(http('get',404,{title='Not Found'}).migrationPending==nil)
 assert(http('get',401,{title='Unauthorized'}).status==401)
 assert(http('get',200,{revision=4,values=flat}).data==nil, 'Earlier draft envelope was accepted')
+assert(result.message:find('core object',1,true), 'Missing core response omitted a shape diagnostic')
+assert(http('get',200,'not an object').message:find('invalid JSON or a non-object',1,true))
+assert(http('get',200,{core=flat.core,kick=42}).message:find('kick: expected object, received number',1,true),
+    'Malformed plugin section omitted its name and type')
 local alias=clone(flat);alias.core.communityID=nil;alias.core.commId='cad-community';alias.core.mode=nil;alias.core.branch='development';alias.core.apiUrl='https://cad-api.example.test/'
 assert(http('get',200,alias).data.core.communityID=='cad-community')
 assert(result.data.core.mode=='development' and result.data.core.branch==nil and result.data.core.apiUrl==nil)

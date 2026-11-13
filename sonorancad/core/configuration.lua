@@ -661,13 +661,67 @@ CreateThread(resolveConfiguration)
 
 local migrating = false
 local acceptedThisSession = false
-local function preservesSettings(expected, actual)
-    if type(expected) ~= 'table' then return expected == actual end
-    if type(actual) ~= 'table' then return false end
-    for key, value in pairs(expected) do
-        if not preservesSettings(value, actual[key]) then return false end
+local function diagnosticText(value, limit)
+    local text = tostring(value)
+    if type(Config.apiKey) == 'string' and Config.apiKey ~= '' then
+        text = text:gsub(Config.apiKey:gsub('([^%w])', '%%%1'), '[redacted]')
     end
-    return true
+    text = text:gsub('[Bb]earer%s+[%w%._%-]+', 'Bearer [redacted]')
+    text = text:gsub('[%c]', function(char) return ('\\x%02X'):format(char:byte()) end)
+    return #text > limit and (text:sub(1, limit) .. '...') or text
+end
+local function configurationDifferences(expected, actual, path, differences)
+    differences = differences or {}
+    path = path or ''
+    if #differences > 10 then return differences end
+    if type(expected) ~= type(actual) or (type(expected) ~= 'table' and expected ~= actual) then
+        differences[#differences + 1] = {path=path, expected=expected, actual=actual}
+    elseif type(expected) == 'table' then
+        local keys = {}; for key in pairs(expected) do keys[#keys + 1] = key end
+        table.sort(keys, function(a,b) return type(a)..tostring(a) < type(b)..tostring(b) end)
+        for _, key in ipairs(keys) do
+            local child = type(key)=='string' and key:match('^[%a_][%w_]*$') and
+                ((path=='' and '' or path..'.')..key) or (path..('['..string.format('%q',diagnosticText(key,64))..']'))
+            configurationDifferences(expected[key], actual[key], child, differences)
+            if #differences > 10 then break end
+        end
+    end
+    return differences
+end
+local function differenceValue(value, path)
+    local kind = type(value)
+    if kind == 'nil' then return 'missing' end
+    local key = path:lower():gsub('[^%w]', '')
+    for _, sensitive in ipairs({'apikey','password','secret','token','authorization','webhook','credential'}) do
+        if key:find(sensitive,1,true) then return kind .. ' [redacted]' end
+    end
+    if kind == 'string' then
+        if value:match('^%s*function[%s%(]') then return ('Lua source (%s bytes)'):format(#value) end
+        return 'string "' .. diagnosticText(value,100) .. '"'
+    end
+    if kind == 'number' or kind == 'boolean' then return kind .. ' ' .. tostring(value) end
+    return kind
+end
+local function logMigrationDifferences(differences)
+    for i=1,math.min(#differences,10) do
+        local diff = differences[i]
+        warningNotice(('[configuration] Difference at %s: local=%s; CAD=%s.'):format(
+            diff.path=='' and '<configuration>' or diagnosticText(diff.path,180),
+            differenceValue(diff.expected,diff.path), differenceValue(diff.actual,diff.path)))
+        if type(diff.expected)=='string' and type(diff.actual)=='string' and diff.expected:match('^%s*function[%s%(]') then
+            local offset=1
+            while offset<=math.min(#diff.expected,#diff.actual) and diff.expected:byte(offset)==diff.actual:byte(offset) do offset=offset+1 end
+            warningNotice(('[configuration] Lua source first differs at byte %s (local=%s bytes; CAD=%s bytes).'):format(offset,#diff.expected,#diff.actual))
+        end
+    end
+    if #differences > 10 then warningNotice('[configuration] Additional differences omitted (limit: 10).') end
+end
+local function logReadbackFailure(fetched, status, invalid, differences)
+    warningNotice(('[configuration] Migration readback failed for server %s (upload=%s; GET HTTP %s). Legacy files and cache were preserved.'):format(
+        Config.serverId, status, fetched.status))
+    if fetched.message then warningNotice('[configuration] GET detail: '..diagnosticText(fetched.message,400)) end
+    if invalid then warningNotice('[configuration] Validation: '..diagnosticText(invalid,600)) end
+    logMigrationDifferences(differences or {})
 end
 function MigrateCadConfiguration()
     if migrating then warn('A migration is already in progress.'); return end
@@ -687,9 +741,19 @@ function MigrateCadConfiguration()
             if existing.status == 200 or acceptedThisSession then
                 if existing.status == 200 then
                     local parsed, invalid = validate(existing.data)
-                    if parsed and not invalid then Config.SaveConfigurationCache(nil, existing.data); Config.EnsureBootstrapConfig() end
+                    local localDocument = collectLegacy()
+                    local differences = localDocument and configurationDifferences(localDocument, existing.data) or {}
+                    if parsed and not invalid then
+                        if #differences > 0 then
+                            warningNotice('[configuration] Existing CAD settings differ from local files. CAD edits may be intentional; no upload was sent.')
+                            logMigrationDifferences(differences)
+                        end
+                        Config.SaveConfigurationCache(nil, existing.data); Config.EnsureBootstrapConfig()
+                    else logReadbackFailure(existing, 'alreadyMigrated', invalid, differences) end
+                else
+                    logReadbackFailure(existing, 'previouslyAccepted')
                 end
-                warn('Configuration has already migrated. No upload was sent. Manage settings in CAD and restart this resource.')
+                warningNotice('[configuration] Configuration has already migrated. No upload was sent. Manage settings in CAD and restart this resource.')
                 return
             end
             if existing.status ~= 404 then
@@ -710,9 +774,10 @@ function MigrateCadConfiguration()
             local fetched = CadConfigurationRequest('get')
             local parsed, invalid
             if fetched.status == 200 then parsed, invalid = validate(fetched.data) end
-            if not parsed or invalid or (result.status == 'saved' and not preservesSettings(document, fetched.data)) then
-                warn('CAD accepted the migration, but readback could not be validated: ' .. tostring(invalid or 'missing/different saved settings') ..
-                    '. Legacy files were preserved. Restart after checking CAD.')
+            local differences = result.status == 'saved' and fetched.status == 200 and
+                configurationDifferences(document, fetched.data) or {}
+            if not parsed or invalid or #differences > 0 then
+                logReadbackFailure(fetched, result.status, invalid, differences)
                 return
             end
             -- All plugins retain references to their startup tables. Keep this process

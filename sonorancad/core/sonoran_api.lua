@@ -32,13 +32,17 @@ function GetCadConfigurationBootstrapUrl()
     return url or 'https://api.sonorancad.com/'
 end
 local function fromCadConfiguration(value)
-    if type(value) ~= 'table' or type(value.core) ~= 'table' then return nil end
+    if type(value) ~= 'table' or type(value.core) ~= 'table' then
+        return nil, 'CAD response must contain a core object.'
+    end
     local document = {core = NormalizeCadCoreConfiguration(value.core), plugins = {}, updaterIgnore = value.core.updateIgnore or {ignore = {}},
         vehicleModels = value.core.livemap_vehicle_models or {}, callTemplates = {}}
     document.core.updateIgnore, document.core.livemap_vehicle_models = nil, nil
     for name, settings in pairs(value) do
         if name ~= 'core' then
-            if type(name) ~= 'string' or type(settings) ~= 'table' then return nil end
+            if type(name) ~= 'string' or type(settings) ~= 'table' then
+                return nil, 'Invalid CAD plugin section '..tostring(name)..': expected object, received '..type(settings)..'.'
+            end
             document.plugins[name] = settings
         end
     end
@@ -96,7 +100,11 @@ CadConfigurationApi = {
             local ok, value = pcall(json.decode, raw or '')
             if not ok or type(value) ~= 'table' then value = nil end
             local title = value and type(value.title) == 'string' and value.title or nil
-            if status == 200 and operation == 'get' then callback(200, fromCadConfiguration(value))
+            if status == 200 and operation == 'get' then
+                local configuration, configurationError = fromCadConfiguration(value)
+                callback(200, configuration, not configuration and
+                    (not value and 'CAD returned invalid JSON or a non-object response.' or
+                        configurationError) or nil)
             elseif status == 200 then
                 if value and value.serverId == serverId and (value.status == 'saved' or value.status == 'alreadyMigrated') then callback(200, value)
                 else callback(502, nil, 'CAD returned an invalid migration acknowledgement. Legacy files were preserved.') end
