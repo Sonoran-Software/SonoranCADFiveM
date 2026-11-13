@@ -75,7 +75,10 @@ end
 CreateThread(function()
     Wait(5000)
     while Config.apiVersion == -1 and not Config.critError do Wait(10) end
-    if Config.critError then logError("ERROR_ABORT"); return end
+    if Config.critError then
+        if not Config.migrationRequired then logError("ERROR_ABORT") end
+        return
+    end
 
     local versionFile = nil
     local vfile = LoadVersionFile()

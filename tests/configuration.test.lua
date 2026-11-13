@@ -74,7 +74,7 @@ local function document()
 end
 local legacy = 'local config = {enabled=true, pluginName="kick", configVersion="1.0"}\n' ..
     'if config.enabled then Config.RegisterPluginConfig(config.pluginName, config) end'
-local function setup(status, data, cached, rootConfig, legacyServerId, legacyMode)
+local function setup(status, data, cached, rootConfig, legacyServerId, legacyMode, withoutLegacy)
     notices = {}
     files, convars, handlers, threads, logs, now, writes, archiveCalls = {}, {}, {}, {}, {}, 0, 0, 0
     Config, Plugins, replies = nil, nil, nil
@@ -86,6 +86,11 @@ local function setup(status, data, cached, rootConfig, legacyServerId, legacyMod
     files['configuration/kick_config.lua']=legacy
     files.inventory={'config.json', 'kick_config.dist.lua', 'kick_config.lua'}
     files['configuration/kick_config.dist.lua']='invalid default must not replace active file'
+    if withoutLegacy then
+        files['configuration/config.json']=nil
+        files['configuration/kick_config.lua']=nil
+        files.inventory={}
+    end
     if cached then files['.configuration-cache.json'] = json.encode({version=1, scope='scope:1:cad', apiVersion=3, configuration=cached}) end
     dofile('sonorancad/core/shared_functions.lua')
     dofile('sonorancad/core/sonoran_api.lua')
@@ -140,19 +145,45 @@ incomplete=document();incomplete.core.mode='unknown'
 setup(200,incomplete)
 assert(Config.critError, 'CAD configuration with invalid mode was activated')
 
-setup(404, nil, document())
-assert(Config.critError and writes==0 and archiveCalls==0 and Config.configurationSource~='legacy',
-    'A previously migrated server returned to legacy settings')
+local migrationNotice='Configuration migration required. Run: sonorancad migrate. https://snorn.link/configmigration'
+local staleCache=document();staleCache.plugins.kick.enabled=false
+setup(404, nil, staleCache)
+assert(not Config.critError and writes==0 and archiveCalls==0 and Config.configurationSource=='legacy' and Config.migrationRequired,
+    'An existing cache blocked legacy startup on a migration-required 404')
+assert(Config.GetPluginConfig('kick').enabled and #logs==1 and notices[1]==migrationNotice,
+    '404 did not prefer local files or emitted diagnostic noise')
+local priorCache=files['.configuration-cache.json']
+assert(not Config.SaveConfigurationCache(3) and files['.configuration-cache.json']==priorCache)
+setup(404,nil,document(),{apiKey='secret',serverId=1},nil,nil,true)
+assert(not Config.critError and Config.configurationSource=='cache' and Config.migrationRequired and Config.GetPluginConfig('kick').enabled)
+assert(writes==0 and archiveCalls==0 and #logs==1 and notices[1]==migrationNotice,
+    '404 cache-only startup wrote settings or emitted diagnostic noise')
+assert(not Config.SaveConfigurationCache(3))
+setup(404,nil,nil,{apiKey='secret',serverId=1},nil,nil,true)
+assert(Config.critError and Config.migrationRequired and #logs==1 and #notices==1
+    and notices[1]:find('Local settings could not be loaded:',1,true),
+    'Missing local files must produce one actionable migration notice')
+Config.LoadPlugin('recordPrinter',function() error('Missing local settings started a plugin') end)
+local priorLogs=#logs
+threads={}
+dofile('sonorancad/core/plugin_loader.lua')
+runUntil(function() return #threads==0 end)
+assert(#logs==priorLogs, 'Pending migration generated a redundant ERROR_ABORT trace')
+local cadOnly=document();cadOnly.plugins.kick.enabled=false
+setup(200,cadOnly,document())
+assert(Config.configurationSource=='cad' and not Config.GetPluginConfig('kick').enabled and not Config.migrationRequired,
+    'Successful CAD startup did not replace legacy/cache settings')
 setup(404)
 assert(not Config.critError and Config.configurationSource=='legacy' and Config.apiSendEnabled)
 assert(Config.GetPluginConfig('kick').enabled and writes==0 and archiveCalls==0)
-local migrationNotice='Configuration migration required. Run: sonorancad migrate. https://snorn.link/configmigration'
 assert(#logs==1 and #notices==1 and notices[1]==migrationNotice,
     'Expected migration startup must show only one concise, untraced warning')
 assert(not Config.SaveConfigurationCache(3) and files['.configuration-cache.json']==nil,
     'Pre-migration settings were written as a CAD cache')
 
 -- Exercise the existing main startup after a pre-migration configuration 404.
+setup(404,nil,staleCache)
+local startupCache=files['.configuration-cache.json']
 threads={};Config.apiVersion=-1
 function CadApiGetVersion() return {success=true,data='3'} end
 function RegisterServerEvent() end
@@ -168,7 +199,8 @@ dofile('sonorancad/core/server.lua')
 local startup=table.remove(threads,1)
 assert(coroutine.resume(startup.co))
 assert(Config.apiVersion==3 and not Config.critError and warmed and Config.GetPluginConfig('kick').enabled)
-assert(writes==0 and files['.configuration-cache.json']==nil)
+assert(writes==0 and files['.configuration-cache.json']==startupCache,
+    'Legacy main startup after a 404 overwrote the prior cache')
 threads={}
 convars.sonoran_mode='development';convars.sonoran_mode_setter='server'
 dofile('sonorancad/core/configuration.lua')
@@ -204,10 +236,10 @@ end
 setup(404,nil,nil,{apiKey='different-key',serverId=2})
 assert(Config.critError, 'Legacy settings from another credential/server were used')
 
-for _, failure in ipairs({'none', 'development-mode', 'upload', 'archive', 'archive-throw', 'readback', 'partial-readback', 'cache', 'conflict', 'missing-setting', 'templates', 'templates-missing', 'older-config', 'bootstrap', 'empty-root', 'whitespace-root', 'empty-object-root', 'default-root'}) do
+for _, failure in ipairs({'none', 'existing-cache', 'development-mode', 'upload', 'archive', 'archive-throw', 'readback', 'partial-readback', 'cache', 'conflict', 'missing-setting', 'templates', 'templates-missing', 'older-config', 'bootstrap', 'empty-root', 'whitespace-root', 'empty-object-root', 'default-root'}) do
     local emptyRoots={['empty-root']='', ['whitespace-root']=' \r\n ', ['empty-object-root']={}, ['default-root']={apiKey='',serverId=1}}
     local root=emptyRoots[failure]
-    setup(404,nil,nil,root,root and 17 or nil,failure=='development-mode' and 'development' or nil)
+    setup(404,nil,failure=='existing-cache' and document() or nil,root,root and 17 or nil,failure=='development-mode' and 'development' or nil)
     if failure=='development-mode' then
         local core=json.decode(files['configuration/config.json'])
         core.mode='development';core.branch='production';core.apiUrl='https://obsolete-api.example.test/'
@@ -268,7 +300,7 @@ for _, failure in ipairs({'none', 'development-mode', 'upload', 'archive', 'arch
         assert(prepared.apiKey=='secret' and prepared.serverId==Config.serverId,
             'Migration did not prepare credentials before the API request')
     end
-    local succeeds=failure=='none' or failure=='development-mode' or failure=='archive' or failure=='archive-throw' or failure=='templates' or failure=='older-config' or root~=nil
+    local succeeds=failure=='none' or failure=='existing-cache' or failure=='development-mode' or failure=='archive' or failure=='archive-throw' or failure=='templates' or failure=='older-config' or root~=nil
     assert(archiveCalls==(succeeds and 1 or 0))
     if uploaded then
         assert(uploaded.core.apiKey==nil and uploaded.core.serverId==nil and uploaded.core.communityID=='test')

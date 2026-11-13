@@ -336,8 +336,10 @@ local function applyConfiguration(document, parsed)
     end
 end
 
-local function migrationWarning()
-    warningNotice('Configuration migration required. Run: sonorancad migrate. https://snorn.link/configmigration')
+local function migrationWarning(localError)
+    warningNotice('Configuration migration required. ' ..
+        (localError and ('Local settings could not be loaded: ' .. localError .. ' ') or '') ..
+        'Run: sonorancad migrate. https://snorn.link/configmigration')
 end
 
 local collectLegacy
@@ -375,19 +377,25 @@ local function resolveConfiguration()
                 return
             end
         elseif response.status == 404 then
-            -- Missing/old configuration endpoints can also return an empty 404.
-            -- Never infer an unknown community/server from that response alone.
-            local migrated = readCache()
-            if not migrated then
-                local loaded, legacyError = loadLegacyConfiguration()
-                if loaded then return end
-                warn('Legacy startup unavailable: ' .. tostring(legacyError))
+            -- CAD is waiting for migration. An earlier test/cache must not prevent
+            -- an existing installation from starting with its own local settings.
+            Config.migrationRequired = true
+            local loaded, legacyError = loadLegacyConfiguration()
+            if loaded then return end
+            local cached, cachedPlugins = readCache()
+            if cached then
+                cacheable = false -- Preserve the cache until CAD returns valid settings.
+                applyConfiguration(cached.configuration, cachedPlugins)
+                Config.cachedApiVersion = tonumber(cached.apiVersion)
+                Config.configurationSource = 'cache'
+                migrationWarning()
+            else
+                -- Keep migration commands available, but never start plugins with
+                -- missing settings or emit diagnostic stacks for a pending migration.
+                Config.critError = true
+                migrationWarning(tostring(legacyError))
             end
-            warn('CAD configuration lookup returned HTTP 404' .. (response.message and ': ' .. response.message or '.') ..
-                ' Endpoint: ' .. GetCadConfigurationBootstrapUrl())
-            fail('CAD configuration is unavailable and no eligible legacy startup is available. Check the CAD server/endpoint and migration state.')
-            Config.critError = true
-            return -- 404 is never an outage-cache fallback or an automatic upload.
+            return
         elseif response.status > 0 and response.status < 500 then
             if not readCache() then
                 local loaded, legacyError = loadLegacyConfiguration()
@@ -684,7 +692,7 @@ function MigrateCadConfiguration()
                 warn('Configuration has already migrated. No upload was sent. Manage settings in CAD and restart this resource.')
                 return
             end
-            if existing.status ~= 404 or existing.migrationPending == false then
+            if existing.status ~= 404 then
                 fail('Cannot confirm migration state (HTTP ' .. existing.status .. '). Check connectivity/credentials and retry. Legacy files were preserved.')
                 return
             end
