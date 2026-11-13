@@ -1,21 +1,5 @@
-Plugins = {}
-
-ApiUrls = {
-    production = "https://api.sonorancad.com/",
-    development = "https://staging-api.dev.sonorancad.com/"
-}
-
 function getApiUrl()
-    if Config.mode == nil then
-        return ApiUrls.production
-    else
-        if ApiUrls[Config.mode] ~= nil then
-            return ApiUrls[Config.mode]
-        else
-            warnLog("INVALID_API_MODE")
-            return ApiUrls.production
-        end
-    end
+    return GetCadApiUrl(Config.mode) or GetCadConfigurationBootstrapUrl()
 end
 
 local function validateBundledCfgPermissions()
@@ -50,6 +34,8 @@ local function validateBundledCfgPermissions()
 end
 
 CreateThread(function()
+    while not Config.configurationReady do Wait(25) end
+    if Config.critError then return end
     local ok, err = xpcall(function()
         infoLog("Starting SonoranCAD from "..GetResourcePath("sonorancad"))
         Config.apiUrl = getApiUrl()
@@ -65,14 +51,28 @@ CreateThread(function()
         local versionResponse = CadApiGetVersion()
         if not versionResponse.success then
             CadApiLogFailure("GET_VERSION", versionResponse, {})
-            logError("API_ERROR")
-            Config.critError = true
-            return
+            if Config.cachedApiVersion then
+                Config.apiVersion = Config.cachedApiVersion
+                warnLog('UNHANDLED_WARNING', 'CAD version check unavailable; using the cached API version for plugin initialization.')
+            else
+                logError("API_ERROR")
+                Config.critError = true
+                Config.apiSendEnabled = false
+                Config.apiVersion = 0
+                return
+            end
+        else
+            local result = tostring(versionResponse.data or "")
+            Config.apiVersion = tonumber(string.sub(result, 1, 1)) or -1
+            if Config.apiVersion < 0 then
+                Config.critError = true
+                Config.apiSendEnabled = false
+                Config.apiVersion = 0
+                return
+            end
+            Config.SaveConfigurationCache(Config.apiVersion)
+            debugLog(("Set version %s from response %s"):format(Config.apiVersion, result))
         end
-
-        local result = tostring(versionResponse.data or "")
-        Config.apiVersion = tonumber(string.sub(result, 1, 1)) or -1
-        debugLog(("Set version %s from response %s"):format(Config.apiVersion, result))
         infoLog(("Loaded community ID %s with API URL: %s"):format(Config.communityID, Config.apiUrl))
 
         if Config.primaryIdentifier == "steam" and (GetConvar("steam_webapiKey", "none") == "none" or GetConvar("steam_webapiKey", "none") == "") then
@@ -101,6 +101,8 @@ CreateThread(function()
 
     if not ok then
         Config.critError = true
+        Config.apiSendEnabled = false
+        Config.apiVersion = 0
         errorLog("UNHANDLED_SERVER_ERROR", ("Startup initialization failed: %s"):format(SanitizeErrorDetail(err) or "unknown startup failure"))
     end
 end)
@@ -122,6 +124,8 @@ end)
 
 -- Metrics
 CreateThread(function()
+    while not Config.configurationReady or (Config.apiVersion == -1 and not Config.critError) do Wait(25) end
+    if Config.critError then return end
     while true do
         -- Wait a few seconds for server startup
         Wait(5000)
@@ -149,15 +153,17 @@ CreateThread(function()
     end
 end)
 
-if Config.devHiddenSwitch then
-    RegisterCommand("cc", function()
-        TriggerClientEvent("chat:clear", -1)
-    end)
-end
+CreateThread(function()
+    while not Config.configurationReady do Wait(25) end
+    if Config.devHiddenSwitch and not Config.critError then
+        RegisterCommand("cc", function() TriggerClientEvent("chat:clear", -1) end)
+    end
+end)
 
 -- Missing identifier detection
 RegisterNetEvent("SonoranCAD::core:PlayerReady")
 AddEventHandler("SonoranCAD::core:PlayerReady", function()
+    if not Config.configurationReady or Config.critError then return end
     local ids = GetIdentifiers(source)
     if ids[Config.primaryIdentifier] == nil then
         warnLog("PLAYER_IDENTIFIER_MISSING", ("Player %s connected, but did not have an %s ID."):format(source, Config.primaryIdentifier))

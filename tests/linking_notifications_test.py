@@ -70,6 +70,50 @@ class LinkingTests(unittest.TestCase):
         assert(notices == 0)
         ''')
 
+    def test_configured_poll_interval(self):
+        lua = self.runtime(True)
+        lua.execute('''
+        Config.linkPollIntervalMs = 4500
+        assert(not IsPlayerLinkedToCad(1) and checks == 1)
+        now = now + 4499
+        assert(not IsPlayerLinkedToCad(1) and checks == 1)
+        now = now + 1
+        assert(not IsPlayerLinkedToCad(1) and checks == 2)
+        Config.linkPollIntervalMs = 1
+        now = now + 999
+        assert(not IsPlayerLinkedToCad(1) and checks == 2)
+        now = now + 1
+        assert(not IsPlayerLinkedToCad(1) and checks == 3)
+        ''')
+
+    def test_force_reg_uses_resolved_link_settings(self):
+        lua = self.runtime()
+        lua.execute('''
+        Config.linkCommand = 'cadconnect'; Config.linkButtonText = 'Connect CAD'
+        Config.requireLink = true; Config.autoOpenLinkPopup = false
+        Config.allowPopupCloseWhenUnlinked = false
+        Config.GetPluginConfig = function() return {enabled=true, captiveOption='nag',
+            requireLink=false, linkCommand='stale', autoOpenLinkPopup=true,
+            allowPopupCloseWhenUnlinked=true} end
+        Citizen = {CreateThread=function() end}
+        function Wait() end
+        function TriggerEvent(name, value) events[#events+1]={name=name,value=value} end
+        ''')
+        lua.execute((ROOT / 'sonorancad/submodules/forcereg/cl_forcereg.lua').read_text())
+        lua.execute('''
+        assert(get_link_command() == 'cadconnect' and not should_auto_open_popup())
+        assert(not should_allow_popup_close_when_unlinked())
+        handlers['SonoranCAD::forcereg:PlayerReg']('license:test',false)
+        assert(#events == 0)
+        Config.autoOpenLinkPopup = true
+        handlers['SonoranCAD::forcereg:PlayerReg']('license:test',false)
+        assert(events[1].name == 'SonoranCAD::links:ForceOpen' and events[1].value == true)
+        local messages = {}
+        DrawText2D = function(text) messages[#messages+1]=text end
+        draw_forcereg_message('top')
+        assert(messages[2]:find('/cadconnect',1,true) and messages[2]:find('Connect CAD',1,true))
+        ''')
+
     def test_server_duplicate_burst_and_relink(self):
         lua=self.runtime(True)
         lua.execute('''

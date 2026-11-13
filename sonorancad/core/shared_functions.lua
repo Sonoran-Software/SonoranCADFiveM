@@ -73,15 +73,216 @@ function GetIdentifiers(player)
 end
 
 function isPluginLoaded(pluginName)
-    for k, v in pairs(Plugins) do
-        if v == pluginName then
-            return true
-        end
-    end
-    return false
+    local settings = Config and Config.plugins and Config.plugins[pluginName]
+    if settings then return settings.enabled == true end
+    return Config ~= nil and Config.pluginStates ~= nil and Config.pluginStates[pluginName] == true
 end
 
 exports('isPluginLoaded', isPluginLoaded)
+
+-- Linking is configured in Force Reg. Core fields are accepted only when reading
+-- older documents; new migration/cache documents keep one copy of each setting.
+CadLinkDefaults = {
+    linkCommand = 'link', requireLink = true, autoOpenLinkPopup = true,
+    allowPopupCloseWhenUnlinked = true, linkPollIntervalMs = 10000,
+    linkPopupTitleText = 'Press the button to link your CAD account to this FiveM server',
+    linkButtonText = 'Link CAD'
+}
+
+function NormalizeCadLinkConfiguration(document)
+    if type(document) ~= 'table' or type(document.core) ~= 'table' or type(document.plugins) ~= 'table' then return end
+    local settings = document.plugins.forcereg
+    -- Pre-migration Lua must retain its closures. Its resolved values are handled
+    -- by applyConfiguration; the JSON migration path uses tables here instead.
+    if settings ~= nil and type(settings) ~= 'table' then return end
+    settings = settings or {enabled = false}
+    for key, default in pairs(CadLinkDefaults) do
+        if settings[key] == nil then settings[key] = document.core[key] end
+        if settings[key] == nil then settings[key] = default end
+        document.core[key] = nil
+    end
+    if settings.captiveOption == nil and document.core.freezeUntilLinked == true then settings.captiveOption = 'freeze' end
+    document.core.freezeUntilLinked = nil
+    document.plugins.forcereg = settings
+end
+
+-- Required top-level settings from the currently shipped plugins. Missing settings
+-- disable that plugin; they never cause local templates to be merged into CAD data.
+local cadPluginFields = {
+    bodycam = "autoEnableWithLights:boolean autoEnableWithWeapons:boolean beepFrequency:number beepRange:number beepType:string clothing:table command:string defaultKeybind:string enableAnimation:boolean enableBeeps:boolean enableOverlay:boolean enablePadShake:boolean forceOffAce:string overlayLocation:string peerStream:table recording:table requireUnitDuty:boolean weapons:table",
+    caddisplay = "acePerms:table allowlistedCars:table builtinScreens:table commands:table custom:table framework:table general:table interactControl:number interactKey:string interactRange:number interaction:table lang:table permissionMode:string requestAcceptKey:string requestDenyKey:string worldDisplays:table",
+    callcommands = "addPanicCall:boolean callTypes:table enablePanic:boolean useCallLocation:boolean usePositionForMetadata:boolean",
+    calltemplates = "commands:table defaultOrigin:number defaultPriority:number defaultStatus:number",
+    civintegration = "allowCustomIds:boolean allowPurge:boolean cacheTime:number commandName:string enableCommands:boolean enableIDCardUI:boolean showNearbyDistance:number",
+    civreg = "autofillFieldIds:table commandName:string databaseSync:table language:table maxSelfieBytes:number templateCacheSeconds:number templateId:number",
+    dispatchnotify = "addNoteSubcommand:string addPlateSubcommand:string callTitle:string civilCallType:string commandName:string dispatchDisablesSelfResponse:boolean dispatchDisablesUnitNotify:boolean dotCallType:string emergencyCallType:string enableAddNote:boolean enableAddPlate:boolean enableCallerNotify:boolean enableUnitNotify:boolean enableUnitNotifyToggleCommand:boolean enableUnitResponse:boolean esxJobsAllowed:table gpsToggleSubcommand:string incomingCallMessage:string incomingCallMessageNoResponse:string noteMessage:string notifyMessage:string onSceneHandler:boolean onSceneIndex:number respondSubcommandName:string sendNotesToUnits:boolean unitDutyMethod:string unitNotifyToggleAce:string unitNotifyToggleSubcommand:string unitStatusAttachedMessage:string unitStatusDetachedMessage:string waypointFallbackEnabled:boolean waypointType:string",
+    ersintegration = "DOBFormat:string autoAddCall:boolean callCodes:table callPriority:number clearRecordsAfter:number create911Call:boolean createEmergencyCall:boolean customRecords:table",
+    forcereg = "allowPopupCloseWhenUnlinked:boolean autoOpenLinkPopup:boolean captiveMessage:string captiveOption:string instructionalMessage:string linkButtonText:string linkCommand:string linkPollIntervalMs:number linkPopupTitleText:string nagDrawTextLocation:string requireLink:boolean verifyMessage:string whitelist:table",
+    frameworksupport = "fineNotify:boolean fineableForms:table identityType:string issueFines:boolean legacyESX:boolean qbFineMessage:string qbManagementAccountNames:table qbNotifyFinedPlayer:boolean usePrefix:boolean usingQBCore:boolean usingQBManagement:boolean",
+    localcallers = "callCoolDown:number callTimers:table callTypes:table clearRecordsAfter:number clothingConfig:table language:table localRunTime:number weaponConfig:table whitelistZones:table",
+    locations = "clientCheckTime:number customStreetNames:table prefixPostal:boolean",
+    lookups = "autoLookupEnabled:boolean maxCacheTime:number stalePurgeTimer:number",
+    postals = "customPostalCodesFile:string mode:string nearestPostalEvent:string nearestPostalResourceName:string sendTimer:number shouldSendPostalData:boolean",
+    recordPrinter = "acceptShareCommand:string clearPrintQueueCommand:string commandPrefix:string frameworks:table interactRadius:number maxPrintsPerQueue:number printCommand:string printQueueCommand:string printerCoords:table printerObjects:table recordPurgeDays:number shareCommand:string translations:table vehicleConfig:table",
+    sonrad = "addPanicCall:boolean syncRadioName:table",
+    unitstatus = "enableAceCheck:boolean setStatusCommand:string statusCodes:table",
+    vehreg = "customData:table defaultRegExpire:string defaultRegStatus:string language:table recordData:table reigsterCommand:string",
+    wraithv2 = "alertNoRegistration:boolean customFields:table expiresUid:string flagOnStatuses:table notificationTimers:table statusUid:string useExpires:boolean useMiddleInitial:boolean vehTypeFilter:table",
+}
+
+-- Evaluate callback source from JSON in one plugin environment, so helpers retain
+-- access to config and to one another. Restore explicitly typed numeric map keys;
+-- ordinary object keys (including numeric-looking strings) stay untouched.
+local function decodeCadSettings(value, env, typedMaps)
+    if type(value) == 'string' and (value:match('^%s*function%s*%(') or value:match('^%s*function%s+[%w_]+%s*%(')) then
+        local source = value:gsub('^(%s*function)%s+[%w_]+%s*%(', '%1(', 1)
+        local chunk = assert(load('return ' .. source, '@cad-callback', 't', env))
+        return chunk()
+    elseif type(value) == 'table' then
+        local copy = {}
+        for key, item in pairs(value) do
+            if key ~= '__sonoranNumericEntries' then copy[key] = decodeCadSettings(item, env, typedMaps) end
+        end
+        local entries = value.__sonoranNumericEntries
+        if entries ~= nil then
+            assert(type(entries) == 'table', 'Invalid numeric configuration entries')
+            local count, maximum = 0, 0
+            for index, entry in pairs(entries) do
+                count = count + 1
+                assert(type(index) == 'number' and index >= 1 and index % 1 == 0, 'Invalid numeric entry index')
+                maximum = math.max(maximum, index)
+                assert(type(entry) == 'table' and type(entry.key) == 'number' and
+                    entry.key == entry.key and math.abs(entry.key) ~= math.huge and entry.value ~= nil,
+                    'Invalid numeric configuration entry')
+                assert(copy[entry.key] == nil, 'Duplicate numeric configuration key')
+                copy[entry.key] = decodeCadSettings(entry.value, env, typedMaps)
+            end
+            assert(count == maximum, 'Invalid numeric entry array')
+            typedMaps[copy] = true
+        end
+        return copy
+    end
+    return value
+end
+
+-- Older CAD defaults encode clothing IDs as ordinary JSON keys. Repair only
+-- untagged dictionaries; explicitly typed maps already preserve the original keys.
+local function restoreIntegerDictionaryKeys(value, typedMaps)
+    if type(value) ~= 'table' or typedMaps[value] then return value end
+    local restored = {}
+    for key, item in pairs(value) do
+        local integer = type(key) == 'string' and tonumber(key)
+        if integer and math.type(integer) == 'integer' and tostring(integer) == key then key = integer end
+        restored[key] = item
+    end
+    return restored
+end
+
+local function restoreClothingDictionaryKeys(clothing, typedMaps)
+    if type(clothing) ~= 'table' then return end
+    for _, component in ipairs({'top', 'torso', 'pants', 'shoes', 'hat'}) do
+        local drawables = restoreIntegerDictionaryKeys(clothing[component], typedMaps)
+        clothing[component] = drawables
+        if type(drawables) == 'table' then
+            for _, drawable in pairs(drawables) do
+                if type(drawable) == 'table' then
+                    drawable.colors = restoreIntegerDictionaryKeys(drawable.colors, typedMaps)
+                end
+            end
+        end
+    end
+end
+
+local function seedErsDateHelpers(env, config)
+    for name, helper in pairs(CreateErsDateHelpers(config)) do
+        if rawget(env, name) == nil then
+            env[name] = type(config[name]) == 'function' and config[name] or helper
+        end
+    end
+end
+
+-- Never read a local file here: CAD and its cache use this parser on both sides.
+function ParseCadPluginConfiguration(pluginName, value, migrating)
+    local config = value
+    if type(value) == 'string' then
+        local registered
+        local env = {Config = {RegisterPluginConfig = function(_, settings) registered = settings end}}
+        setmetatable(env, {__index = _G})
+        local chunk = load(value .. '\nreturn config', '@cad-config/' .. pluginName, 't', env)
+        if not chunk then return nil, 'Invalid Lua configuration for ' .. pluginName end
+        local ok, result = pcall(chunk)
+        if not ok then return nil, 'Unable to evaluate configuration for ' .. pluginName end
+        config = result or registered
+        if type(config) == 'table' and env.unitDutyCustom then
+            config.unitDutyCustom = env.unitDutyCustom
+        end
+        if pluginName == 'ersintegration' and type(config) == 'table' then seedErsDateHelpers(env, config) end
+    end
+    if type(value) == 'table' then
+        local env = setmetatable({}, {__index = _G})
+        local typedMaps = {}
+        local ok, settings = pcall(decodeCadSettings, value, env, typedMaps)
+        if not ok then return nil, 'Invalid callback source or numeric map for ' .. pluginName end
+        config = settings
+        env.config = config
+        if pluginName == 'ersintegration' then seedErsDateHelpers(env, config) end
+        for name, setting in pairs(config) do
+            if type(setting) == 'function' then env[name] = setting end
+        end
+        -- JSON carries coordinates as objects and hashed dictionary keys as strings.
+        if pluginName == 'localcallers' then
+            if config.whitelistZones ~= nil and type(config.whitelistZones) ~= 'table' then return nil, 'Invalid whitelist zones' end
+            for _, zone in pairs(config.whitelistZones or {}) do
+                if type(zone) ~= 'table' then return nil, 'Invalid whitelist zone' end
+                if type(zone.center) == 'table' then
+                    local c = zone.center
+                    if type(c.x) ~= 'number' or type(c.y) ~= 'number' or type(c.z) ~= 'number' then return nil, 'Invalid whitelist zone coordinates' end
+                    zone.center = vector3(c.x, c.y, c.z)
+                end
+            end
+            if config.weaponConfig ~= nil and type(config.weaponConfig) ~= 'table' then return nil, 'Invalid weapon settings' end
+            local responses = config.weaponConfig and config.weaponConfig.weaponResponses
+            if type(responses) == 'table' and not typedMaps[responses] then
+                local normalized = {}
+                for key, response in pairs(responses) do
+                    local hash = tonumber(key)
+                    if not hash and type(key) == 'string' and type(GetHashKey) == 'function' then hash = GetHashKey(key) end
+                    normalized[hash or key] = response
+                end
+                config.weaponConfig.weaponResponses = normalized
+            end
+            for _, gender in ipairs({'male', 'female'}) do
+                restoreClothingDictionaryKeys(type(config.clothingConfig) == 'table' and config.clothingConfig[gender], typedMaps)
+                -- Older Local Callers configs also support these tables at the root.
+                restoreClothingDictionaryKeys(config[gender], typedMaps)
+            end
+        end
+    end
+    if type(config) ~= 'table' or (config.pluginName ~= nil and config.pluginName ~= pluginName) or
+        (config.enabled ~= nil and type(config.enabled) ~= 'boolean') then
+        return nil, 'Invalid settings for ' .. pluginName
+    end
+    -- Empty/partial entries must not start a plugin using accidental defaults.
+    if config.enabled ~= false and (config.pluginName ~= pluginName or
+        type(config.configVersion or config.pluginVersion) ~= 'string') then
+        return nil, 'Missing plugin metadata for ' .. pluginName
+    end
+    if config.enabled ~= false then
+        -- The printer indexes this table immediately, including in older files.
+        if pluginName == 'recordPrinter' and type(config.frameworks) ~= 'table' then
+            return nil, 'Missing or invalid recordPrinter.frameworks'
+        end
+        for key, expected in (cadPluginFields[pluginName] or ''):gmatch('([%w_]+):(%w+)') do
+            -- Older local files can omit options added later. CAD supplies their
+            -- catalog defaults after migration; provided values still keep their types.
+            if (config[key] ~= nil or not migrating) and type(config[key]) ~= expected then
+                return nil, 'Missing or invalid ' .. pluginName .. '.' .. key
+            end
+        end
+    end
+    if config.enabled == nil then config.enabled = true end
+    return config
+end
 
 function PerformHttpRequestS(url, cb, method, data, headers)
     if not data then

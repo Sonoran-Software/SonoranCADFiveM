@@ -69,8 +69,8 @@ Warnings use a `WRN-*` prefix. Errors use an `ERR-*` prefix. Some warning-level 
 
 ### ERR-CORE-013
 - `Key`: `PLUGIN_CONFIG_OUTDATED`
-- `Meaning`: A submodule configuration file is older than the current template version.
-- `Potential Fix`: Compare your local submodule `*_config.lua` version against the required `*_config.dist.lua` version, copy over the missing settings, then restart the submodule.
+- `Meaning`: A submodule's CAD configuration is older than the required version.
+- `Potential Fix`: Update the submodule settings through the CAD interface, then restart the resource.
 
 ### ERR-CORE-014
 - `Key`: `PLUGIN_CORE_OUTDATED`

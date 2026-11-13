@@ -9,7 +9,7 @@
 
 local pluginConfig = Config.GetPluginConfig("forcereg")
 
-if pluginConfig.enabled and pluginConfig.requireLink ~= false then
+if pluginConfig.enabled and Config.requireLink ~= false then
 
     local isNagging = false
     local isFreezePopup = false
@@ -23,9 +23,6 @@ if pluginConfig.enabled and pluginConfig.requireLink ~= false then
     end
 
     function get_link_command()
-        if type(pluginConfig.linkCommand) == "string" and pluginConfig.linkCommand ~= "" then
-            return pluginConfig.linkCommand
-        end
         if type(Config.linkCommand) == "string" and Config.linkCommand ~= "" then
             return Config.linkCommand
         end
@@ -33,9 +30,6 @@ if pluginConfig.enabled and pluginConfig.requireLink ~= false then
     end
 
     function should_auto_open_popup()
-        if type(pluginConfig.autoOpenLinkPopup) == "boolean" then
-            return pluginConfig.autoOpenLinkPopup
-        end
         return Config.autoOpenLinkPopup ~= false
     end
 
@@ -44,10 +38,7 @@ if pluginConfig.enabled and pluginConfig.requireLink ~= false then
         if captiveOption == "freeze" then
             return false
         end
-        if type(pluginConfig.allowPopupCloseWhenUnlinked) == "boolean" then
-            return pluginConfig.allowPopupCloseWhenUnlinked
-        end
-        return true
+        return Config.allowPopupCloseWhenUnlinked ~= false
     end
 
     function should_force_popup()
@@ -75,7 +66,7 @@ if pluginConfig.enabled and pluginConfig.requireLink ~= false then
     )
     local instructionalMessage = resolve_forcereg_text(
         pluginConfig.instructionalMessage,
-        ("Run /%s, press Link CAD, and finish the link in your browser."):format(linkCommand)
+        ("Run /%s, press %s, and finish the link in your browser."):format(linkCommand, Config.linkButtonText or 'Link CAD')
     )
     local verifyMessage = resolve_forcereg_text(
         pluginConfig.verifyMessage,

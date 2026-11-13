@@ -102,7 +102,7 @@ if pluginConfig.enabled then
                 return false
             end
         elseif pluginConfig.unitDutyMethod == "custom" then
-            return unitDutyCustom(player)
+            return type(pluginConfig.unitDutyCustom) == 'function' and pluginConfig.unitDutyCustom(player) or false
         end
     end
 

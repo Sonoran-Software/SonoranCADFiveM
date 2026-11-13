@@ -72,6 +72,12 @@ local function doUpdate(latest)
 end
 
 function RunAutoUpdater(manualRun)
+    -- Downloaded staging test ZIPs must remain installed for the entire test.
+    -- This metadata is set only in the test archive, not in normal releases.
+    if GetResourceMetadata(GetCurrentResourceName(), 'configuration_test_build', 0) == 'true' then
+        if manualRun then infoLog('The automatic updater is disabled in this staging test build.') end
+        return
+    end
     if Config.updateBranch == nil then
         return
     end
@@ -86,7 +92,7 @@ function RunAutoUpdater(manualRun)
     end
     local versionFile = Config.autoUpdateUrl
     if versionFile == "https://raw.githubusercontent.com/Sonoran-Software/SonoranCADLuaIntegration/{branch}/sonorancad/version.json" then
-        errorLog("UNHANDLED_SERVER_ERROR", 'It seems like you might be running a v2.X.X core configuration file. Please update from the config.CHANGEME.json file or reinstall the resource. Install guide: https://sonoran.link/v3')
+        errorLog("UNHANDLED_SERVER_ERROR", 'An outdated automatic update URL is configured. Update autoUpdateUrl in the CAD FiveM core configuration.')
         versionFile = "https://raw.githubusercontent.com/Sonoran-Software/SonoranCADFiveM/{branch}/sonorancad/version.json"
     end
     if versionFile == nil then
@@ -148,6 +154,8 @@ end
 
 
 CreateThread(function()
+    while not Config.configurationReady do Wait(25) end
+    if Config.critError then return end
     while true do
         if pendingRestart then
             if GetNumPlayerIndices() > 0 then

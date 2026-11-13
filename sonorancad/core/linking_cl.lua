@@ -9,11 +9,7 @@ local cadLinkTitleText = "Press the button to link your CAD account to this Five
 local cadLinkButtonText = "Link CAD"
 local cadLinkLastPoll = 0
 local cadLinkPollIntervalMs = 10000
-local cadLinkCommandName = GetConvar("sonoran_linkCommand", "link")
-
-if type(cadLinkCommandName) ~= "string" or cadLinkCommandName == "" then
-    cadLinkCommandName = "link"
-end
+local cadLinkCommandName = "link"
 
 local function get_link_poll_interval_ms()
     local interval = tonumber((Config and Config.linkPollIntervalMs) or cadLinkPollIntervalMs) or 10000
@@ -119,12 +115,14 @@ local function close_link_ui(notify_server)
     end
 end
 
-RegisterCommand(cadLinkCommandName, function()
-    open_link_ui(false)
-end, false)
-
-TriggerEvent("chat:addSuggestion", "/" .. cadLinkCommandName, "Open the Sonoran CAD account link window.")
-RegisterPlayerCommandHelp("linking", cadLinkCommandName, "Open the Sonoran CAD account link window.")
+CreateThread(function()
+    while not Config.inited do Wait(25) end
+    if Config.critError then return end
+    cadLinkCommandName = Config.linkCommand or 'link'
+    RegisterCommand(cadLinkCommandName, function() open_link_ui(false) end, false)
+    TriggerEvent("chat:addSuggestion", "/" .. cadLinkCommandName, "Open the Sonoran CAD account link window.")
+    RegisterPlayerCommandHelp("linking", cadLinkCommandName, "Open the Sonoran CAD account link window.")
+end)
 
 RegisterNetEvent("SonoranCAD::links:OpenResult")
 AddEventHandler("SonoranCAD::links:OpenResult", function(data)

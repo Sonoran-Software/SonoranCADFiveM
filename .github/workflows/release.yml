@@ -93,17 +93,20 @@ jobs:
           git submodule update --remote --merge
         shell: bash
 
-      - name: Move external submodule config.dist.lua files
-        run: |
-          find sonorancad/submodules/ -type f -name '*_config.dist.lua' -exec mv -f {} sonorancad/configuration/ \;
-        shell: bash
-
       - name: Cleanup & Zip Directories
         id: zip-dirs
         run: |
           VERSION=${{ steps.version.outputs.version }}
           find sonorancad/plugins -mindepth 1 -type d -exec sh -c 'case "$0" in */readme.md|*/template) ;; *) rm -r "$0" ;; esac' {} \; & wait
           rsync -a \
+            --exclude="/sonorancad/config.json" \
+            --exclude="/sonorancad/configuration/" \
+            --exclude="/sonorancad/configuration_old/" \
+            --exclude="/sonorancad/submodules/calltemplates/calltypes/" \
+            --exclude="*_config.lua" \
+            --exclude="*_config.dist.lua" \
+            --exclude=".configuration-*.json*" \
+            --exclude="/sonorancad-all-configuration.json" \
             --exclude="[sonorancad]" \
             --exclude=".git" \
             --exclude=".vscode" \
@@ -115,6 +118,7 @@ jobs:
             --exclude="CONTRIBUTOR_LICENSE_AGREEMENT.md" \
             --exclude="errors.md" \
             ./ ./[sonorancad]
+          printf '{\n  "apiKey": "",\n  "serverId": 1\n}\n' > "./[sonorancad]/sonorancad/config.example.json"
           zip -r "sonorancad-$VERSION.zip" [sonorancad]/
           echo "Zipped sonorancad/ and sonorancad_updatehelper/ directories"
         shell: bash
@@ -188,17 +192,20 @@ jobs:
           git submodule update --remote --merge
         shell: bash
 
-      - name: Move external submodule config.dist.lua files
-        run: |
-          find sonorancad/submodules/ -type f -name '*_config.dist.lua' -exec mv -f {} sonorancad/configuration/ \;
-        shell: bash
-
       - name: Cleanup & Zip Directories
         id: zip-dirs
         run: |
           VERSION=${{ steps.extract-version.outputs.version }}
           find sonorancad/plugins -mindepth 1 -type d -exec sh -c 'case "$0" in */readme.md|*/template) ;; *) rm -r "$0" ;; esac' {} \; & wait
           rsync -a \
+            --exclude="/sonorancad/config.json" \
+            --exclude="/sonorancad/configuration/" \
+            --exclude="/sonorancad/configuration_old/" \
+            --exclude="/sonorancad/submodules/calltemplates/calltypes/" \
+            --exclude="*_config.lua" \
+            --exclude="*_config.dist.lua" \
+            --exclude=".configuration-*.json*" \
+            --exclude="/sonorancad-all-configuration.json" \
             --exclude="[sonorancad]" \
             --exclude=".git" \
             --exclude=".vscode" \
@@ -210,6 +217,7 @@ jobs:
             --exclude="CONTRIBUTOR_LICENSE_AGREEMENT.md" \
             --exclude="errors.md" \
             ./ ./[sonorancad]
+          printf '{\n  "apiKey": "",\n  "serverId": 1\n}\n' > "./[sonorancad]/sonorancad/config.example.json"
           zip -r "sonorancad-$VERSION.zip" [sonorancad]/
           echo "Zipped sonorancad/ and sonorancad_updatehelper/ directories"
         shell: bash
