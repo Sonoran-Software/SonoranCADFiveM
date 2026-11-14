@@ -240,6 +240,7 @@ Citizen.CreateThread(function()
     while Config.apiVersion == -1 do
         Wait(1000)
     end
+    if Config.critError then return end
     if (Config.noUnitTimer == "true" or Config.noUnitTimer == true) then
         debugLog("Disabling active units routine")
         return
@@ -304,6 +305,7 @@ CreateThread(function()
     while Config.apiVersion == -1 do
         Wait(10)
     end
+    if Config.critError then return end
     if not Config.apiSendEnabled then
         errorLog("CAD_API_DISABLED", "Config.apiSendEnabled disabled via convar or config, skipping call caching. Check your config if this is unintentional.")
         return

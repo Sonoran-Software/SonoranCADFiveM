@@ -15,7 +15,7 @@ class RecordPrinterCopiumTests(unittest.TestCase):
     def runtime(self, copium=None, state='started', upload_mode='success'):
         lua = LuaRuntime(unpack_returned_tuples=True)
         lua.execute('''
-            pluginConfig = {}; uploads = {}; queued = {}; warnings = {}
+            pluginConfig = {enabled = true}; uploads = {}; queued = {}; warnings = {}
             resourceState = 'started'; uploadMode = 'success'
             function CreateThread(fn) fn() end
             Config = {LoadPlugin = function(_, callback) callback(pluginConfig) end}

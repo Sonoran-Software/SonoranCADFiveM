@@ -313,10 +313,13 @@ SonoranCAD Help
     plugin <name> - show info about a plugin (config)
     ers - show ERS integration health and last failure
     update - Run core updater
+    migrate - Upload legacy resource/plugin settings to CAD (console only)
     viewcaches - View the current unit and call cache, for troubleshooting
     getclientlog <playerId> - Get a log buffer from a given client
     dumpconsole - Dumps current console buffer to file
 ]])
+    elseif args[1] == "migrate" then
+        MigrateCadConfiguration()
     elseif args[1] == "debugmode" then
         Config.debugMode = not Config.debugMode
         local convarString = ""

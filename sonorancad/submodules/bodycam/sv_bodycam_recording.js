@@ -40,38 +40,25 @@ function ensureRecordingsDirectory() {
 	}
 }
 
-function readConfigFile() {
-	try {
-		const raw = LoadResourceFile(GetCurrentResourceName(), "configuration/config.json");
-		if (raw && raw !== "") {
-			return JSON.parse(raw);
-		}
-	} catch (err) {
-		log("warn", supportHint("WRN-CORE-900"));
-	}
-	return {};
-}
-
-function getConvarValue(name) {
-	const value = GetConvar(name, "NONE");
-	if (value === "NONE" || value === "") {
-		return null;
-	}
-	return value;
+function resolvedConfig() {
+    try {
+        const config = JSON.parse(exports[GetCurrentResourceName()].GetResolvedConfig());
+        return config.ready === true ? config : {};
+    } catch (_) {
+        return {};
+    }
 }
 
 function getApiBaseUrl() {
-	const fileConfig = readConfigFile();
-	const mode = (getConvarValue("sonoran_mode") || fileConfig.mode || "production").toLowerCase();
-	if (mode === "development") {
-		return "https://staging-api.dev.sonorancad.com";
-	}
-	return "https://api.sonorancad.com";
+    const config = resolvedConfig();
+    if (config.apiUrl) return config.apiUrl.replace(/\/+$/, "");
+    return config.mode === "development"
+        ? "https://staging-api.dev.sonorancad.com"
+        : "https://api.sonorancad.com";
 }
 
 function getApiKey() {
-	const fileConfig = readConfigFile();
-	return getConvarValue("sonoran_apiKey") || fileConfig.apiKey || null;
+    return resolvedConfig().ready === true ? GetConvar("sonoran_apiKey", "") || null : null;
 }
 
 function getCommunityUserId(src) {

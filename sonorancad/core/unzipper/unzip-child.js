@@ -145,6 +145,13 @@
                         return;
                     }
 
+                    // A resource update must never replace the customer's credentials.
+                    if (/(^|\/)sonorancad\/config\.json$/.test(normalizePathForMatch(entryPath)) && fs.existsSync(fullPath)) {
+                        ignoredEntries.push({path: fullPath, reason: "Preserved local API key and server ID"});
+                        entry.autodrain();
+                        return;
+                    }
+
                     const ignoreEntry = findIgnoreEntry(entryPath, fullPath, updaterIgnore);
                     if (ignoreEntry) {
                         ignoredEntries.push({

@@ -3,6 +3,163 @@ sonoranModule = nil
 local communityLinkCheckCache = {}
 local COMMUNITY_LINK_CHECK_CACHE_TTL_MS = 10 * 60 * 1000
 
+-- The transport uses the documented flat CAD shape; the loader/cache keep one
+-- internal shape. Bootstrap secrets are never included in migration or cache data.
+local resolve_api_url
+local apiUrls = {
+    production = 'https://api.sonorancad.com/',
+    development = 'https://staging-api.dev.sonorancad.com/'
+}
+function GetCadApiUrl(mode)
+    return apiUrls[mode]
+end
+
+-- Read earlier test configurations, but keep only the established mode setting.
+function NormalizeCadCoreConfiguration(core)
+    local normalized = {}
+    for key, setting in pairs(core) do
+        if key ~= 'apiKey' and key ~= 'serverId' and key ~= 'branch' and key ~= 'commId' and
+            key ~= 'apiUrl' and key ~= 'apiURL' then normalized[key] = setting end
+    end
+    normalized.communityID = core.communityID or core.commId
+    normalized.mode = core.mode or core.branch
+    return normalized
+end
+
+function GetCadConfigurationBootstrapUrl()
+    local url = type(GetResourceMetadata) == 'function' and
+        GetResourceMetadata(GetCurrentResourceName(), 'configuration_bootstrap_url', 0)
+    return url or 'https://api.sonorancad.com/'
+end
+local function fromCadConfiguration(value)
+    if type(value) ~= 'table' or type(value.core) ~= 'table' then
+        return nil, 'CAD response must contain a core object.'
+    end
+    local document = {core = NormalizeCadCoreConfiguration(value.core), plugins = {}, updaterIgnore = value.core.updateIgnore or {ignore = {}},
+        vehicleModels = value.core.livemap_vehicle_models or {}, callTemplates = {}}
+    document.core.updateIgnore, document.core.livemap_vehicle_models = nil, nil
+    for name, settings in pairs(value) do
+        if name ~= 'core' then
+            if type(name) ~= 'string' or type(settings) ~= 'table' then
+                return nil, 'Invalid CAD plugin section '..tostring(name)..': expected object, received '..type(settings)..'.'
+            end
+            if name == 'calltemplates' then
+                -- Template contents are server data. Keep them out of plugin
+                -- settings, which are parsed as Lua and sent to game clients.
+                local plugin = {}
+                for key, setting in pairs(settings) do
+                    if key == 'templates' then document.callTemplates = setting
+                    else plugin[key] = setting end
+                end
+                settings = plugin
+            end
+            document.plugins[name] = settings
+        end
+    end
+    NormalizeCadLinkConfiguration(document)
+    return document
+end
+local function toCadConfiguration(document)
+    NormalizeCadLinkConfiguration(document)
+    local value = {core = NormalizeCadCoreConfiguration(document.core)}
+    value.core.updateIgnore = document.updaterIgnore
+    value.core.livemap_vehicle_models = document.vehicleModels
+    for name, settings in pairs(document.plugins) do
+        if type(settings) ~= 'table' then error('Plugin migration requires JSON settings.') end
+        value[name] = {}
+        for key, setting in pairs(settings) do value[name][key] = setting end
+    end
+    if value.calltemplates then value.calltemplates.templates = document.callTemplates end
+    return value
+end
+
+CadConfigurationApi = {
+    timeoutMs = 15000,
+    request = function(operation, configuration, callback)
+        if GetConvar('sonoran_configurationMock', 'false') == 'true' then
+            local forcedStatus = tonumber(GetConvar('sonoran_configurationMockStatus', '0'))
+            if forcedStatus ~= 0 then callback(forcedStatus); return end
+            local raw = LoadResourceFile(GetCurrentResourceName(), '.configuration-mock.json')
+            local ok, stored = pcall(json.decode, raw or '')
+            if not raw then stored = nil
+            elseif not ok or type(stored) ~= 'table' then callback(500); return end
+            local scope = Config.configurationScope
+            if stored and stored.scope ~= scope then callback(409, nil, 'Mock belongs to another server.'); return end
+            if operation == 'get' then
+                callback(stored and 200 or 404, stored and fromCadConfiguration(stored.configuration), nil, {migrationPending = not stored})
+            elseif stored then callback(200, {serverId = Config.serverId, status = 'alreadyMigrated'})
+            else
+                local saved = exports[GetCurrentResourceName()]:WriteCadConfiguration('mock',
+                    json.encode({scope = scope, configuration = toCadConfiguration(configuration)}))
+                callback(saved and 200 or 500, saved and {serverId = Config.serverId, status = 'saved'} or nil)
+            end
+            return
+        end
+        local serverId = tonumber(Config.serverId)
+        if not serverId or serverId < 1 or serverId % 1 ~= 0 or type(Config.apiKey) ~= 'string' or Config.apiKey == '' then
+            callback(401, nil, 'Set apiKey and a positive numeric serverId in the resource-root config.json.'); return
+        end
+        local url = GetCadConfigurationBootstrapUrl():gsub('/$', '') .. '/v2/fivem/servers/' .. string.format('%.0f', serverId) .. '/configuration'
+        local body
+        if operation == 'get' then
+            url = url .. '?version=' .. GetResourceMetadata(GetCurrentResourceName(), 'version', 0)
+        elseif operation == 'migrate' then
+            local wire = toCadConfiguration(configuration)
+            if #json.encode(wire) > 1048576 then callback(413, nil, 'Configuration exceeds the 1 MiB migration limit.'); return end
+            body = json.encode({serverId = serverId, config = wire})
+            url = url .. '/migrate'
+        end
+        PerformHttpRequestS(url, function(status, raw)
+            local ok, value = pcall(json.decode, raw or '')
+            if not ok or type(value) ~= 'table' then value = nil end
+            local title = value and type(value.title) == 'string' and value.title or nil
+            if status == 200 and operation == 'get' then
+                local configuration, configurationError = fromCadConfiguration(value)
+                callback(200, configuration, not configuration and
+                    (not value and 'CAD returned invalid JSON or a non-object response.' or
+                        configurationError) or nil)
+            elseif status == 200 then
+                if value and value.serverId == serverId and (value.status == 'saved' or value.status == 'alreadyMigrated') then callback(200, value)
+                else callback(502, nil, 'CAD returned an invalid migration acknowledgement. Legacy files were preserved.') end
+            else
+                local pending
+                if status == 404 then
+                    local detail = value and type(value.detail) == 'string' and value.detail or ''
+                    local description = ((title or '') .. ' ' .. detail):lower()
+                    if description:find('migrat', 1, true) then pending = true
+                    else
+                        for _, text in ipairs({'server not found', 'unknown server', 'server does not belong', 'server is not registered', 'server not registered', 'server does not exist'}) do
+                            if description:find(text, 1, true) then pending = false; break end
+                        end
+                    end
+                end
+                callback(status, nil, title, {migrationPending = pending})
+            end
+        end, operation == 'get' and 'GET' or 'POST', body, {
+            ['Authorization'] = 'Bearer ' .. Config.apiKey, ['Content-Type'] = 'application/json', ['Accept'] = 'application/json'
+        })
+    end
+}
+
+function CadConfigurationRequest(operation, configuration)
+    local completed, response = false, nil
+    local function finish(status, data, message, metadata)
+        if completed then return end
+        response = {status = tonumber(status) or 0, data = data, message = message,
+            migrationPending = metadata and metadata.migrationPending}
+        completed = true
+    end
+    -- Dispatch separately so a yielding adapter cannot bypass the outer deadline.
+    CreateThread(function()
+        local ok = pcall(CadConfigurationApi.request, operation, configuration, finish)
+        if not ok then finish(0, nil, 'Configuration request failed.') end
+    end)
+    local started = GetGameTimer()
+    while not completed and GetGameTimer() - started < CadConfigurationApi.timeoutMs do Wait(25) end
+    if not completed then finish(0, nil, 'Configuration request timed out; migration may have been accepted. Retry to check CAD before uploading again.') end
+    return response
+end
+
 function get_sonoran_log_level(sonoran)
     if Config ~= nil and Config.debugMode == true then
         return sonoran.logLevels.DEBUG
@@ -35,20 +192,17 @@ function load_sonoran_module()
     return sonoranModule
 end
 
-local function resolve_api_url()
+resolve_api_url = function()
     if type(Config.apiUrl) == "string" and Config.apiUrl ~= "" then
         return Config.apiUrl
     end
-    if Config.mode == "development" then
-        return "https://staging-api.dev.sonorancad.com/"
-    end
-    return "https://api.sonorancad.com/"
+    return GetCadConfigurationBootstrapUrl()
 end
 
+local cadClientBinding
 local function get_cad_client()
-    if cadV2Client ~= nil then
-        return cadV2Client
-    end
+    local binding = table.concat({Config.apiKey or '', tostring(Config.communityID), tostring(Config.serverId), resolve_api_url()}, '\0')
+    if cadV2Client ~= nil and cadClientBinding == binding then return cadV2Client end
 
     local sonoran = nil
     if type(Sonoran) == "table" and type(Sonoran.createClient) == "function" then
@@ -65,6 +219,7 @@ local function get_cad_client()
         defaultServerId = tonumber(tonumber(Config.serverId)) or 1,
         setLogLevel = get_sonoran_log_level(sonoran)
     })
+    cadClientBinding = binding
 
     return cadV2Client
 end

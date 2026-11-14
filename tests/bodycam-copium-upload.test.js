@@ -17,6 +17,7 @@ function load({ copium = null, copiumState = 'started', copiumUpload, registerSt
 	const calls = { uploads: [], fetches: [], results: [], logs: [] };
 	const exportsFn = () => {};
 	exportsFn.sonorancad = {
+		GetResolvedConfig: () => JSON.stringify({ ready: true, apiUrl: 'https://api.sonorancad.com' }),
 		getPlayerCommunityUserId: () => 'cu-42',
 		GetUnitByPlayerId: () => ({ id: 7, location: 'Legion Square', data: { unitNum } }),
 		GetPluginConfig: (name) => (name === 'bodycam' ? { recording: copium === null ? {} : { copium } } : null),

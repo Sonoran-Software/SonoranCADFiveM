@@ -6,6 +6,8 @@ The Sonoran CAD FiveM integration core includes many drag-and-drop integration s
 
 Please view the [installation guide](https://info.sonorancad.com/integration-plugins/in-game-integration/fivem-installation) for more details.
 
+For a new installation, copy `sonorancad/config.example.json` to `sonorancad/config.json` and enter your API key and numeric server ID. When updating, keep your existing `config.json`; the archive includes only the example file. Existing legacy installations migrate their credentials automatically.
+
 ## Updating from v3.x.x?
 
 See our documentation [here](https://sonoran.link/cadupdate).
@@ -25,14 +27,16 @@ The FiveM resource now uses the CAD link flow on API v2.
 ## Copium storage
 
 Bodycam clips and printed record PDFs automatically use a running `copium`
-resource. Install Copium from copium.pics → Apps → FiveM, configure its
+resource. Install Copium 1.3.2 or newer from copium.pics → Apps → FiveM, configure its
 `Config.Token` with a Copium team key, and start it. The CAD checks for Copium
 on each upload and uses its normal storage or print link when Copium is stopped
 or saving fails.
 
-Optional settings remain in `configuration/bodycam_config.lua`
-(`recording.copium`) and `configuration/recordPrinter_config.lua` (`copium`).
-These set the storage folder and evidence-locking options. Set the relevant
+Optional settings are read from the CAD-managed plugin configuration:
+`bodycam.recording.copium` and `recordPrinter.copium`.
+These control the storage folder (`path`) and evidence locking (`evidence`).
+Bodycam clips default to the `bodycam` folder with evidence locking enabled;
+printed records default to `records` with evidence locking disabled. Set the relevant
 `copium.enabled = false` to opt out. Older configs without these sections
 auto-detect Copium; an existing explicit `false` must be changed to `true` to
 enable it. See the [bodycam guide](sonorancad/submodules/bodycam/README.md#save-clips-to-copium)

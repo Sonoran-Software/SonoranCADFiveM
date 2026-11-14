@@ -3,7 +3,7 @@
 
     Plugin Name: calltemplates
     Creator: SonoranCAD
-    Description: Uses exported call type templates to build dispatch commands
+    Description: Uses templates from the resolved CAD configuration to build dispatch commands
 ]]
 
 CreateThread(function()
@@ -14,43 +14,22 @@ CreateThread(function()
             NotifyPlayer(target, ApplyPluginNotificationOverrides(pluginConfig, payload))
         end
 
-        local templateCache = {}
-        local templateDirectory = pluginConfig.callTypeDirectory or "submodules/calltemplates/calltypes"
-
-        local function loadTemplate(fileName)
-            if fileName == nil or fileName == "" then
-                warnLog("UNHANDLED_WARNING", "[calltemplates] callTypeFile missing from command config.")
+        local function getTemplate(templateKey)
+            -- The key can be a legacy filename. It only indexes the resolved
+            -- configuration, including the cached copy if CAD is unavailable.
+            local template = Config.callTemplates[templateKey]
+            if type(template) ~= "table" then
+                errorLog("UNHANDLED_SERVER_ERROR", ("[calltemplates] Missing CAD call template: %s"):format(tostring(templateKey)))
                 return nil
             end
 
-            if not pluginConfig.reloadTemplatesOnEachUse and templateCache[fileName] ~= nil then
-                return templateCache[fileName]
+            -- Preserve the older exported object and array formats.
+            if type(template.callType) == "table" then
+                return template.callType
+            elseif type(template[1]) == "table" then
+                return template[1]
             end
-
-            local filePath = ("%s/%s"):format(templateDirectory, fileName)
-            local raw = LoadResourceFile(GetCurrentResourceName(), filePath)
-            if raw == nil then
-                errorLog("UNHANDLED_SERVER_ERROR", ("[calltemplates] Unable to load call type template at %s"):format(filePath))
-                return nil
-            end
-
-            local decoded = SafeJsonDecode(raw, ("call template %s"):format(filePath), nil)
-            if decoded == nil then
-                errorLog("UNHANDLED_SERVER_ERROR", ("[calltemplates] Failed to decode JSON for template %s"):format(filePath))
-                return nil
-            end
-
-            if type(decoded.callType) == "table" then
-                decoded = decoded.callType
-            elseif type(decoded) == "table" and #decoded > 0 and type(decoded[1]) == "table" then
-                decoded = decoded[1]
-            end
-
-            if not pluginConfig.reloadTemplatesOnEachUse then
-                templateCache[fileName] = decoded
-            end
-
-            return decoded
+            return template
         end
 
         local function buildDescription(cmdConfig, template, args)
@@ -96,7 +75,7 @@ CreateThread(function()
         end
 
         local function handleCommand(cmdConfig, source, args, rawCommand)
-            local template = loadTemplate(cmdConfig.callTypeFile)
+            local template = getTemplate(cmdConfig.callTypeFile)
             if template == nil then
                 sendClientError(source, "CALL_TEMPLATE_INVALID")
                 return

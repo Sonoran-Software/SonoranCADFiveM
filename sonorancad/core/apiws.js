@@ -17,7 +17,6 @@
     const SEND_ERROR_LOG_INTERVAL_MS = 60 * 1000;
     const MAX_SILENT_RECONNECT_FAILURES = 5;
     const MANUAL_RETRY_DELAYS_MS = [2000, 5000, 10000, 30000];
-    const PROTECTED_CONVAR_PLACEHOLDER = "protection_initialized";
     const SIGNALR_DEBUG_ONLY_PATTERNS = [
         "(WebSockets transport) There was an error with the transport.",
         "Failed to start the transport 'WebSockets'",
@@ -177,25 +176,6 @@
         );
     }
 
-    function parseBoolean(value, fallback) {
-        if (value === undefined || value === null) {
-            return fallback;
-        }
-        if (typeof value === "boolean") {
-            return value;
-        }
-        if (typeof value === "string") {
-            const normalized = value.toLowerCase();
-            if (normalized === "true") {
-                return true;
-            }
-            if (normalized === "false") {
-                return false;
-            }
-        }
-        return fallback;
-    }
-
     function normalizeServerId(value) {
         if (value === undefined || value === null) {
             return null;
@@ -243,48 +223,22 @@
         }
     }
 
-    function readConfigFile() {
-        try {
-            const raw = LoadResourceFile(GetCurrentResourceName(), "configuration/config.json");
-            if (raw && raw !== "") {
-                return JSON.parse(raw);
-            }
-        } catch (err) {
-            apiWsLog("warn", "ERR-WS-103 Failed to parse API WS configuration. More: https://sonorancad.com/error/err-ws-103");
-        }
-        return {};
-    }
-
-    function getConvar(name) {
-        const value = GetConvar(name, "NONE");
-        if (value === "NONE" || value === PROTECTED_CONVAR_PLACEHOLDER) {
-            return null;
-        }
-        return value;
-    }
-
     function buildConfig() {
-        const fileConfig = readConfigFile();
-        const communityID = getConvar("sonoran_communityID") || fileConfig.communityID;
-        const apiKey = getConvar("sonoran_apiKey") || fileConfig.apiKey;
-        const serverId = normalizeServerId(getConvar("sonoran_serverId") || fileConfig.serverId);
-        const mode = (getConvar("sonoran_mode") || fileConfig.mode || "production").toLowerCase();
-        const apiSendEnabled = parseBoolean(
-            getConvar("sonoran_apiSendEnabled"),
-            parseBoolean(fileConfig.apiSendEnabled, true)
-        );
-        const hubUrl = mode === "development" ? DEFAULT_HUBS.development : DEFAULT_HUBS.production;
-        apiWsLog("debug", "Config: mode=" + mode + ", hubUrl=" + hubUrl + ", apiSendEnabled=" + apiSendEnabled
-            + ", communityID=" + (communityID ? "set" : "missing") + ", apiKey=" + (apiKey ? "set" : "missing")
-            + ", serverId=" + (serverId !== null ? String(serverId) : "missing"));
-        return {
-            communityID,
-            apiKey,
-            serverId,
-            mode,
-            hubUrl,
-            apiSendEnabled
-        };
+        let resolved = {};
+        try {
+            resolved = JSON.parse(exports[GetCurrentResourceName()].GetResolvedConfig());
+        } catch (_) {
+            // Lua configuration resolution may still be starting.
+        }
+        const communityID = resolved.communityID;
+        const apiKey = resolved.ready === true ? GetConvar("sonoran_apiKey", "") : "";
+        const serverId = normalizeServerId(resolved.serverId);
+        const mode = resolved.mode || "production";
+        const apiSendEnabled = resolved.ready === true && resolved.apiSendEnabled === true;
+        const hubUrl = resolved.apiUrl
+            ? resolved.apiUrl.replace(/\/+$/, "") + "/apiWsHub"
+            : mode === "development" ? DEFAULT_HUBS.development : DEFAULT_HUBS.production;
+        return {ready: resolved.ready === true, communityID, apiKey, serverId, mode, hubUrl, apiSendEnabled};
     }
 
     function configsEqual(a, b) {
@@ -296,13 +250,24 @@
     }
 
     async function authenticate() {
+        if (!buildConfig().ready) {
+            await stopConnection();
+            return false;
+        }
+        if (!connection) return false;
         if (authenticating) {
             apiWsLog("debug", "Authenticate: already in progress.");
             return authenticating;
         }
         apiWsLog("debug", "Authenticate: invoking authenticatev2 for serverId=" + String(connectionConfig.serverId) + ".");
-        authenticating = connection.invoke("authenticatev2", connectionConfig.communityID, connectionConfig.apiKey, connectionConfig.serverId)
-            .then((auth) => {
+        const activeConnection = connection;
+        const attempt = activeConnection.invoke("authenticatev2", connectionConfig.communityID, connectionConfig.apiKey, connectionConfig.serverId)
+            .then(async (auth) => {
+                if (connection !== activeConnection) return false;
+                if (!buildConfig().ready) {
+                    await stopConnection();
+                    return false;
+                }
                 if (auth && auth.success) {
                     authenticated = true;
                     resetManualRetryState();
@@ -317,7 +282,12 @@
                 scheduleManualRetry("authentication_failed");
                 return false;
             })
-            .catch((err) => {
+            .catch(async (err) => {
+                if (connection !== activeConnection) return false;
+                if (!buildConfig().ready) {
+                    await stopConnection();
+                    return false;
+                }
                 authenticated = false;
                 apiWsLog("error", "ERR-WS-102 Authentication error. More: https://sonorancad.com/error/err-ws-102");
                 apiWsLog("debug", "Authenticate: exception.");
@@ -326,12 +296,17 @@
             })
             .finally(() => {
                 apiWsLog("debug", "Authenticate: completed.");
-                authenticating = null;
+                if (authenticating === attempt) authenticating = null;
             });
-        return authenticating;
+        authenticating = attempt;
+        return attempt;
     }
 
     async function ensureConnection(config) {
+        if (!config.ready) {
+            await stopConnection();
+            return false;
+        }
         if (!signalR) {
             apiWsLog("debug", "ensureConnection: signalR missing.");
             return false;
@@ -395,12 +370,15 @@
             apiWsLog("debug", "ensureConnection: registering pushEvent handler on hub connection.");
             connection.on("pushEvent", handleIncomingPushEvent);
 
+            const activeConnection = connection;
             connection.onreconnecting((err) => {
+                if (connection !== activeConnection) return;
                 authenticated = false;
                 const msg = err && err.message ? ": " + err.message : "";
                 apiWsLog("debug", "Reconnecting to API WS hub" + msg + ".");
             });
             connection.onreconnected(async () => {
+                if (connection !== activeConnection) return;
                 authenticated = false;
                 resetReconnectState();
                 resetManualRetryState();
@@ -409,6 +387,9 @@
                 await authenticate();
             });
             connection.onclose((err) => {
+                // stopConnection detaches the hub before stopping it. Its close
+                // callback must not restart retries after configuration failed.
+                if (connection !== activeConnection) return;
                 authenticated = false;
                 const msg = err && err.message ? ": " + err.message : "";
                 reportReconnectFailure(Math.max(reconnectFailureCount, manualRetryAttempt), err);
@@ -417,18 +398,21 @@
             });
         }
 
+        const activeConnection = connection;
         apiWsLog("debug", "ensureConnection: current state=" + String(connection.state) + ".");
         if (connection.state !== signalR.HubConnectionState.Connected) {
             if (!connecting) {
                 apiWsLog("debug", "ensureConnection: starting connection.");
-                connecting = connection.start()
+                const attempt = activeConnection.start()
                     .then(() => {
+                        if (connection !== activeConnection || !buildConfig().ready) return;
                         clearServerIssue("ws-send");
                         resetManualRetryState();
                         apiWsLog("info", "Connected to API WS hub (" + connectionConfig.hubUrl + ").");
                         apiWsLog("debug", "ensureConnection: connection start resolved.");
                     })
                     .catch((err) => {
+                        if (connection !== activeConnection || !buildConfig().ready) return;
                         const errMsg = getErrorMessage(err);
                         apiWsLog("debug", "Failed to connect to API WS hub: " + errMsg);
                         reconnectFailureCount = Math.max(reconnectFailureCount, manualRetryAttempt + 1);
@@ -441,8 +425,9 @@
                     })
                     .finally(() => {
                         apiWsLog("debug", "ensureConnection: start attempt finished.");
-                        connecting = null;
+                        if (connecting === attempt) connecting = null;
                     });
+                connecting = attempt;
             }
             try {
                 await connecting;
@@ -452,6 +437,13 @@
             }
         }
 
+        // A watchdog can revoke readiness while start() is pending. Never let
+        // the retired attempt authenticate a replacement or revive its retries.
+        if (connection !== activeConnection) return false;
+        if (!buildConfig().ready) {
+            await stopConnection();
+            return false;
+        }
         if (!authenticated) {
             apiWsLog("debug", "ensureConnection: authenticating.");
             const authOk = await authenticate();
@@ -463,6 +455,13 @@
     }
 
     async function runBackgroundEnsure() {
+        const config = buildConfig();
+        // Cancellation must bypass the serialization guard: the running ensure
+        // may be awaiting the very start/authentication that needs stopping.
+        if (!config.ready) {
+            await stopConnection();
+            return;
+        }
         if (backgroundEnsureInFlight) {
             apiWsLog("debug", "Background ensure skipped: already running.");
             return;
@@ -470,7 +469,7 @@
         backgroundEnsureInFlight = true;
         try {
             apiWsLog("debug", "Background ensure tick starting.");
-            await ensureConnection(buildConfig());
+            await ensureConnection(config);
         } catch (_) {
         } finally {
             apiWsLog("debug", "Background ensure tick finished.");
@@ -503,6 +502,11 @@
         } catch (_) {
         }
     }
+
+    on("SonoranCAD::core:configurationReady", () => {
+        // Let an initial ensure against the unavailable Lua export finish first.
+        setTimeout(runBackgroundEnsure, 0);
+    });
 
     startBackgroundEnsureLoop();
 
