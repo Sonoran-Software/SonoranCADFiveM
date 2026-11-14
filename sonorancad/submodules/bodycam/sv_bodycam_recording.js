@@ -9,6 +9,10 @@ const MAX_DURATION_MS = 120000;
 const FINALIZE_WAIT_TIMEOUT_MS = 5000;
 const FINALIZE_WAIT_POLL_MS = 100;
 const BODYCAM_UPLOAD_PATH = "/v2/general/bodycam-recordings";
+const BODYCAM_EXTERNAL_PATH = "/v2/general/bodycam-recordings/external";
+const COPIUM_RESOURCE = "copium";
+// Longer than the copium resource's own 120-second upload limit, so it always answers first.
+const COPIUM_UPLOAD_TIMEOUT_MS = 130000;
 const RECORDINGS_DIR = path.join(GetResourcePath(GetCurrentResourceName()), "submodules", "bodycam", "recordings");
 const PENDING_UPLOADS = new Map();
 
@@ -147,6 +151,141 @@ function wait(ms) {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Detect Copium on each upload, including for older configs without `recording.copium`.
+// An explicit enabled = false keeps uploads on the CAD even when Copium is running.
+function getCopiumSettings() {
+	if (GetResourceState(COPIUM_RESOURCE) !== "started") {
+		return null;
+	}
+	try {
+		const plugin = exports[GetCurrentResourceName()].GetPluginConfig("bodycam");
+		if (!plugin || plugin.enabled === false) {
+			return null;
+		}
+		const settings = (plugin.recording && plugin.recording.copium) || {};
+		return settings.enabled === false ? null : settings;
+	} catch (err) {
+		return null;
+	}
+}
+
+function optionalString(value) {
+	return value !== undefined && value !== null && value !== "" ? String(value) : undefined;
+}
+
+// A unit number as one folder name Copium accepts (letters, digits, spaces, . _ -); other characters become "-".
+function folderName(value) {
+	return String(value).replace(/[^\w.\- ]+/g, "-").replace(/^[.\s-]+|[.\s-]+$/g, "");
+}
+
+function optionalInteger(value) {
+	const number = Number(value);
+	return value !== undefined && value !== null && value !== "" && Number.isInteger(number) && number >= 0 ? number : undefined;
+}
+
+// Uploads the saved clip with the copium resource's UploadFile export. Resolves with the Copium link, or null.
+// The clip file is deleted once the upload function returns, so this must finish (or time out) first.
+function uploadClipToCopium(session, settings, details) {
+	return new Promise((resolve) => {
+		let settled = false;
+		let timer = null;
+		const finish = (url, result) => {
+			if (settled) {
+				return;
+			}
+			settled = true;
+			if (timer) {
+				clearTimeout(timer);
+			}
+			if (!url) {
+				log("warn", `Copium upload failed uploadId=${session.uploadId}: ${(result && result.error) || "no link returned"}`);
+			}
+			resolve(typeof url === "string" && url !== "" ? url : null);
+		};
+		timer = setTimeout(() => finish(null, { error: "timed out" }), COPIUM_UPLOAD_TIMEOUT_MS);
+		const basePath = optionalString(settings.path) || "bodycam";
+		const unitFolder = details.unitNumber ? folderName(details.unitNumber) : "";
+		try {
+			exports[COPIUM_RESOURCE].UploadFile(session.filePath, {
+				title: details.unitNumber ? `Bodycam - ${details.unitNumber}` : "Bodycam clip",
+				filename: session.fileName,
+				mimeType: "video/webm",
+				path: unitFolder ? `${basePath}/${unitFolder}` : basePath,
+				// CAD viewers have no Copium account, so the link must stay public.
+				public: true,
+				evidence: settings.evidence !== false,
+				metadata: {
+					source: "sonorancad-bodycam",
+					// The officer's CAD account, so the CAD can find the clips they recorded.
+					communityUserId: optionalString(details.communityUserId) || null,
+					unitNumber: details.unitNumber || null,
+					identId: details.identId === undefined ? null : details.identId,
+					durationMs: details.durationMs,
+					trigger: details.trigger || null,
+				},
+			}, (url, result) => finish(url, result));
+		} catch (err) {
+			finish(null, { error: err && err.message ? err.message : String(err) });
+		}
+	});
+}
+
+// Saves the clip to Copium and registers its link with the CAD, which keeps the link instead of storing the file, so the
+// clip doesn't expire after 24 hours. Returns false, having told the player nothing, when the caller should fall back
+// to the normal CAD upload.
+async function saveClipToCopium(src, session, settings, apiKey, details) {
+	if (GetResourceState(COPIUM_RESOURCE) !== "started") {
+		return false;
+	}
+	const fileUrl = await uploadClipToCopium(session, settings, details);
+	if (!fileUrl) {
+		return false;
+	}
+	const endpoint = `${getApiBaseUrl().replace(/\/$/, "")}${BODYCAM_EXTERNAL_PATH}`;
+	const body = {
+		fileUrl,
+		communityUserId: String(details.communityUserId),
+		durationMs: details.durationMs,
+		identId: optionalInteger(details.identId),
+		unitNumber: optionalString(details.unitNumber),
+		unitLocation: optionalString(details.unitLocation),
+		originalFileName: session.fileName,
+		mimeType: "video/webm",
+	};
+	try {
+		const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+		const timeout = controller ? setTimeout(() => controller.abort(), 30000) : null;
+		const response = await fetch(endpoint, {
+			method: "POST",
+			body: JSON.stringify(body),
+			headers: {
+				Authorization: `Bearer ${apiKey}`,
+				"Content-Type": "application/json",
+			},
+			signal: controller ? controller.signal : undefined,
+		});
+		if (timeout) {
+			clearTimeout(timeout);
+		}
+		const bodyText = await response.text();
+		if (!response.ok) {
+			log("error", `${supportHint("ERR-BC-119")} Copium clip registration failed src=${src} uploadId=${session.uploadId} status=${response.status}; uploading to the CAD instead.`);
+			return false;
+		}
+		log("debug", `Copium clip registered src=${src} uploadId=${session.uploadId} url=${fileUrl} status=${response.status}`);
+		emitNet("SonoranCAD::bodycam::UploadResult", src, {
+			ok: true,
+			status: response.status,
+			statusText: response.statusText || "",
+			apiResponse: String(bodyText),
+		});
+		return true;
+	} catch (err) {
+		log("error", `${supportHint("ERR-BC-119")} Copium clip registration exception src=${src} uploadId=${session.uploadId}: ${err && err.message ? err.message : String(err)}; uploading to the CAD instead.`);
+		return false;
+	}
+}
+
 exports("CreateTempBodycamRecordingFile", function (uploadId, fileName) {
 	const tempPath = buildTempFilePath(uploadId, fileName);
 	if (!tempPath) {
@@ -235,6 +374,21 @@ async function uploadSavedBodycamClip(src, session) {
 			reason: "invalid_file_header",
 		});
 		return;
+	}
+
+	const copium = getCopiumSettings();
+	if (copium) {
+		const saved = await saveClipToCopium(src, session, copium, apiKey, {
+			communityUserId,
+			durationMs,
+			identId,
+			unitNumber,
+			unitLocation,
+			trigger: payload.trigger,
+		});
+		if (saved) {
+			return;
+		}
 	}
 
 	const multipart = buildMultipartBody(

@@ -11,6 +11,50 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         NotifyPlayer(target, ApplyPluginNotificationOverrides(pluginConfig, payload))
     end
 
+    -- Expose the automatic default through GetPluginConfig too, so the companion Copium resource knows this
+    -- printer handles its own uploads and does not archive a second copy. Preserve an explicit opt-out.
+    if type(pluginConfig.copium) ~= 'table' then pluginConfig.copium = {} end
+    if pluginConfig.copium.enabled == nil then pluginConfig.copium.enabled = true end
+
+    -- Copium (copium.pics): upload the saved PDF and return its link, which keeps working after the CAD's print link
+    -- expires (24 hours). Returns nil - and the CAD link is printed - when Copium is off or the upload fails.
+    local COPIUM_UPLOAD_TIMEOUT_MS = 130000 -- longer than the copium resource's own 120-second upload limit
+    local function saveRecordToCopium(path, filename, identId, communityUserId)
+        local settings = pluginConfig.copium
+        if settings.enabled == false or GetResourceState('copium') ~= 'started' then return nil end
+        local p = promise.new()
+        local settled = false
+        local function finish(url, err)
+            if settled then return end
+            settled = true
+            p:resolve({ url = url, error = err })
+        end
+        SetTimeout(COPIUM_UPLOAD_TIMEOUT_MS, function() finish(nil, 'timed out') end)
+        local ok, err = pcall(function()
+            exports.copium:UploadFile(path, {
+                title = ('Printed record - %s'):format(filename),
+                filename = filename,
+                mimeType = 'application/pdf',
+                path = settings.path or 'records',
+                -- Players and CAD viewers have no Copium account, so the link must stay public.
+                public = true,
+                evidence = settings.evidence == true,
+                -- communityUserId: the CAD account that printed it, so the CAD can find it again.
+                metadata = { source = 'sonorancad-record-printer', identId = identId, communityUserId = communityUserId },
+            }, function(url, result)
+                finish(url, result and result.error)
+            end)
+        end)
+        if not ok then finish(nil, tostring(err)) end
+        local result = Citizen.Await(p)
+        if type(result.url) == 'string' and result.url ~= '' then
+            debugLog(('Record printer saved PDF to Copium: %s'):format(result.url))
+            return result.url
+        end
+        warnLog(('Record printer: saving the PDF to Copium failed (%s); printing the CAD link.'):format(tostring(result.error or 'no link returned')))
+        return nil
+    end
+
     TriggerEvent('SonoranCAD::RegisterPushEvent', 'EVENT_PRINT_RECORD', function(data)
         local printData = data.data
         local unitCache = GetUnitCache()
@@ -114,7 +158,11 @@ CreateThread(function() Config.LoadPlugin("recordPrinter", function(pluginConfig
         end
         debugLog(('Record printer saved PDF: identity=%s path=%s'):format(identId, savedPath))
 
-        TriggerClientEvent('SonoranCAD::recordPrinter:PrintQueue', unitSource, printData.url)
+        local okUser, communityUserId = pcall(function()
+            return GetPlayerCommunityUserId ~= nil and GetPlayerCommunityUserId(unitSource) or nil
+        end)
+        local copiumUrl = saveRecordToCopium(savedPath, filename, printData.identId, okUser and communityUserId or nil)
+        TriggerClientEvent('SonoranCAD::recordPrinter:PrintQueue', unitSource, copiumUrl or printData.url)
 
     end)
     local Docs = {}
