@@ -102,10 +102,17 @@ CadConfigurationApi = {
         local url = GetCadConfigurationBootstrapUrl():gsub('/$', '') .. '/v2/fivem/servers/' .. string.format('%.0f', serverId) .. '/configuration'
         local body
         if operation == 'get' then
-            url = url .. '?version=' .. GetResourceMetadata(GetCurrentResourceName(), 'version', 0)
+            local version = type(GetResourceMetadata) == 'function' and GetResourceMetadata(GetCurrentResourceName(), 'version', 0)
+            if type(version) ~= 'string' or version:match('^%s*$') then
+                callback(400, nil, 'The resource manifest must contain a nonempty version for the configuration request.'); return
+            end
+            local encodedVersion = version:gsub('[^%w%-._~]', function(character)
+                return string.format('%%%02X', string.byte(character))
+            end)
+            url = url .. '?version=' .. encodedVersion
             -- CAD owns defaults. Only an explicitly absent legacy folder opts
             -- into fresh setup; unreadable/invalid files still need attention.
-            -- CAD must preserve any configuration already saved for this server.
+            -- CAD returns saved settings or defaults without changing migration status.
             local inventoryOk, inventory = pcall(function()
                 return json.decode(exports[GetCurrentResourceName()]:ListLegacyCadConfiguration())
             end)
