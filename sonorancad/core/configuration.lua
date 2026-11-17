@@ -273,10 +273,15 @@ local function migrationWarning(localError)
         'Run: sonorancad migrate. https://sonoran.link/migrate')
 end
 
+local function freshInstallWarning()
+    warningNotice('CAD has not provided settings for this server. Complete FiveM setup in CAD, then restart sonorancad. ' ..
+        'This installation has no legacy settings to migrate.')
+end
+
 local collectLegacy
 local function loadLegacyConfiguration()
-    local document, err = collectLegacy(true)
-    if not document then return false, err end
+    local document, err, missing = collectLegacy(true)
+    if not document then return false, err, missing end
     local parsed, issues = validate(document, 'legacy')
     if not parsed then return false, issues end
     cacheable = false -- Legacy settings must never become a last-known-good CAD cache.
@@ -311,20 +316,21 @@ local function resolveConfiguration()
             -- Empty/older endpoint 404s can also mean migration is pending. Only
             -- explicit invalid-server responses should prevent local startup.
             Config.migrationRequired = true
-            local loaded, legacyError = loadLegacyConfiguration()
+            local loaded, legacyError, legacyMissing = loadLegacyConfiguration()
             if loaded then return end
+            Config.legacyConfigurationMissing = legacyMissing == true
             local cached, cachedPlugins = readCache()
             if cached then
                 cacheable = false -- Preserve the cache until CAD returns valid settings.
                 applyConfiguration(cached.configuration, cachedPlugins)
                 Config.cachedApiVersion = tonumber(cached.apiVersion)
                 Config.configurationSource = 'cache'
-                migrationWarning()
+                if Config.legacyConfigurationMissing then freshInstallWarning() else migrationWarning() end
             else
                 -- Keep migration commands available, but never start plugins with
                 -- missing settings or emit diagnostic stacks for a pending migration.
                 Config.critError = true
-                migrationWarning(tostring(legacyError))
+                if Config.legacyConfigurationMissing then freshInstallWarning() else migrationWarning(tostring(legacyError)) end
             end
             return
         elseif response.status > 0 and response.status < 500 then
@@ -590,7 +596,9 @@ end
 
 collectLegacy = function(startup)
     local inventory = decode(exports[resource]:ListLegacyCadConfiguration())
-    if not inventory or inventory.error then return nil, inventory and inventory.error or 'Unable to discover legacy configuration.' end
+    if not inventory or inventory.error then
+        return nil, inventory and inventory.error or 'Unable to discover legacy configuration.', inventory and inventory.missing == true
+    end
     local document = {core = decode(LoadResourceFile(resource, 'configuration/config.json')), plugins = {},
         updaterIgnore = {ignore = {}}, vehicleModels = {}, callTemplates = {}}
     if not document.core then return nil, 'Missing or invalid configuration/config.json.' end
@@ -783,6 +791,7 @@ function MigrateCadConfiguration()
             while not Config.configurationReady do Wait(25) end
             if Config.bootstrapError then fail(Config.bootstrapError); return end
             while Config.apiVersion == -1 and not Config.critError do Wait(25) end
+            if Config.legacyConfigurationMissing then freshInstallWarning(); return end
             if Config.critError then
                 fail('Cannot migrate because startup failed. Resolve the startup errors and restart sonorancad before retrying; legacy files and cache were preserved.')
                 return

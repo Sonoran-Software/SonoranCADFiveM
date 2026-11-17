@@ -52,6 +52,9 @@ exports = setmetatable({sonorancad = {
         writes = writes + 1; return true
     end,
     ListLegacyCadConfiguration = function(_, directory)
+        if not directory and files.legacyMissing then
+            return json.encode({missing=true, error='No legacy configuration folder is present.'})
+        end
         return json.encode({files = directory and files.templateInventory or files.inventory, plugins = {'kick', 'custom'}})
     end,
     ArchiveLegacyCadConfiguration = function()
@@ -121,6 +124,7 @@ local function setup(status, data, cached, rootConfig, legacyServerId, legacyMod
     files.inventory={'config.json', 'kick_config.dist.lua', 'kick_config.lua'}
     files['configuration/kick_config.dist.lua']='invalid default must not replace active file'
     if withoutLegacy then
+        files.legacyMissing=withoutLegacy=='missing'
         files['configuration/config.json']=nil
         files['configuration/kick_config.lua']=nil
         files.inventory={}
@@ -263,6 +267,22 @@ dofile('sonorancad/core/plugin_loader.lua')
 runUntil(function() return #threads==0 end)
 assert(#logs==priorLogs, 'Pending migration generated a redundant ERROR_ABORT trace')
 local cadOnly=document();cadOnly.plugins.kick.enabled=false
+for _, cached in ipairs({false, document()}) do
+    setup(404,nil,cached or nil,{apiKey='secret',serverId=1},nil,nil,'missing',true)
+    assert(Config.legacyConfigurationMissing and (Config.critError==true)==(not cached))
+    assert(#notices==1 and notices[1]:find('no legacy settings to migrate',1,true)
+        and not notices[1]:find('Run: sonorancad migrate',1,true), 'Fresh install was told to migrate nonexistent files')
+    local sent=0
+    CadConfigurationApi.request=function() sent=sent+1;error('Unexpected request') end
+    MigrateCadConfiguration()
+    runUntil(function() return #threads==0 end)
+    assert(sent==0 and writes==0 and archiveCalls==0, 'Fresh-install notice changed settings')
+    assert(notices[#notices]:find('no legacy settings to migrate',1,true))
+end
+setup(200,document(),nil,{apiKey='secret',serverId=1},nil,nil,'missing')
+assert(Config.configurationSource=='cad' and not Config.critError and not Config.migrationRequired,
+    'Fresh install required local defaults despite valid CAD settings')
+assert(#notices==0 and files['configuration/config.json']==nil and archiveCalls==0)
 setup(200,cadOnly,document())
 assert(Config.configurationSource=='cad' and not Config.GetPluginConfig('kick').enabled and not Config.migrationRequired,
     'Successful CAD startup did not replace legacy/cache settings')
@@ -741,6 +761,26 @@ assert(request.headers.Authorization=='Bearer secret')
 coreVersion = '4.0.127'
 assert(http('get',200,flat).status==200 and request.url=='https://api.sonorancad.com/v2/fivem/servers/1/configuration?version=4.0.127',
     'Configuration GET did not use the installed core version')
+local legacyInventory=exports.sonorancad.ListLegacyCadConfiguration
+for _, state in ipairs({'missing','present','empty','unreadable','invalid-json','exception'}) do
+    exports.sonorancad.ListLegacyCadConfiguration=function()
+        if state=='exception' then error('Export unavailable') end
+        if state=='invalid-json' then return 'invalid' end
+        if state=='missing' then return json.encode({missing=true,error='No legacy configuration folder is present.'}) end
+        if state=='unreadable' then return json.encode({error='Cannot read legacy directory'}) end
+        return json.encode({files=state=='empty' and {} or {'config.json'},plugins={}})
+    end
+    assert(http('get',200,flat).status==200)
+    assert(request.url=='https://api.sonorancad.com/v2/fivem/servers/1/configuration?version=4.0.127' ..
+        (state=='missing' and '&freshInstall=true' or ''), 'Incorrect fresh-install signal for '..state)
+    assert(request.method=='GET' and request.body=='' and request.headers.Authorization=='Bearer secret')
+    assert(http('get',404,{title='Migration pending'}).migrationPending==true)
+    assert(http('get',404,{title='Server not found'}).migrationPending==false)
+    assert(http('get',401,{title='Unauthorized'}).status==401)
+    assert(http('migrate',200,{serverId=1,status='saved'}).data.status=='saved')
+    assert(not request.url:find('freshInstall',1,true), 'Legacy upload incorrectly requested default settings')
+end
+exports.sonorancad.ListLegacyCadConfiguration=legacyInventory
 assert(http('migrate',200,{serverId=1,status='saved'}).data.status=='saved')
 local payload=json.decode(request.body)
 assert(request.method=='POST' and request.url:match('/configuration/migrate$'))

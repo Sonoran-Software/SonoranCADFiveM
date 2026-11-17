@@ -8,6 +8,8 @@ Please view the [installation guide](https://info.sonorancad.com/integration-plu
 
 For a new installation, copy `sonorancad/config.example.json` to `sonorancad/config.json` and enter your API key and numeric server ID. When updating, keep your existing `config.json`; the archive includes only the example file. Existing legacy installations migrate their credentials automatically.
 
+Fresh installations load their settings from CAD automatically; a local `configuration` folder is not required. Keep that folder when updating an older installation so its existing settings can be migrated.
+
 ## Updating from v3.x.x?
 
 See our documentation [here](https://sonoran.link/cadupdate).

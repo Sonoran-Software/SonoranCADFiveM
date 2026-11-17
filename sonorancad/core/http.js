@@ -60,6 +60,17 @@
             const directory = path.resolve(resourcePath, relativeDirectory || "configuration");
             const relative = path.relative(resourcePath, directory);
             if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Outside resource");
+            // A fresh archive intentionally has no legacy configuration folder.
+            // Check this path separately: a failure reading submodules (or a
+            // permission error) must never be mistaken for a fresh install.
+            try {
+                fs.lstatSync(directory);
+            } catch (error) {
+                if (!relativeDirectory && error.code === "ENOENT") {
+                    return JSON.stringify({ missing: true, error: "No legacy configuration folder is present." });
+                }
+                throw error;
+            }
             return JSON.stringify({ files: fs.readdirSync(directory, { withFileTypes: true })
                 .filter((entry) => entry.isFile()).map((entry) => entry.name),
                 plugins: fs.readdirSync(path.join(resourcePath, "submodules"), { withFileTypes: true })

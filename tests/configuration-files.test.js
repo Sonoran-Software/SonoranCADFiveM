@@ -26,8 +26,16 @@ function setup(t) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'cad-configuration-test-'));
     t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
     const api = {};
-    const state = { failRename: false, failWrite: false };
+    const state = { failRename: false, failWrite: false, failStat: false, failRead: false };
     const io = Object.create(fs);
+    io.lstatSync = (...args) => {
+        if (state.failStat) throw Object.assign(new Error('Permission denied'), { code: 'EACCES' });
+        return fs.lstatSync(...args);
+    };
+    io.readdirSync = (...args) => {
+        if (state.failRead) throw Object.assign(new Error('Permission denied'), { code: 'EACCES' });
+        return fs.readdirSync(...args);
+    };
     io.renameSync = (...args) => {
         if (state.failRename) throw new Error('Permission denied');
         return fs.renameSync(...args);
@@ -62,6 +70,28 @@ test('cache replacement preserves complete JSON and previous bytes on write/rena
     assert.deepEqual(JSON.parse(fs.readFileSync(cache, 'utf8')), { replacement: true });
 });
 
+test('legacy inventory distinguishes a missing folder from unreadable or incomplete installations', t => {
+    const { directory, api, state } = setup(t);
+    const inventory = (relative) => JSON.parse(api.ListLegacyCadConfiguration(relative));
+    assert.equal(inventory().missing, true);
+    assert.equal(inventory('submodules/calltemplates/calltypes').missing, undefined);
+    assert.equal(inventory('..').missing, undefined);
+    state.failStat = true;
+    assert.equal(inventory().missing, undefined, 'Permission failures must not select fresh-install setup');
+    state.failStat = false;
+    const legacy = path.join(directory, 'configuration');
+    fs.writeFileSync(legacy, 'not a directory');
+    assert.equal(inventory().missing, undefined);
+    fs.unlinkSync(legacy);
+    fs.mkdirSync(legacy);
+    assert.equal(inventory().missing, undefined, 'Missing submodules must not select fresh-install setup');
+    fs.mkdirSync(path.join(directory, 'submodules'));
+    state.failRead = true;
+    assert.equal(inventory().missing, undefined);
+    state.failRead = false;
+    assert.deepEqual(inventory(), { files: [], plugins: [] }, 'An existing empty folder is not an absent folder');
+});
+
 test('legacy inventory and archive preserve custom/disabled configs and existing backups', t => {
     const { directory, api, state } = setup(t);
     const legacy = path.join(directory, 'configuration');
@@ -86,7 +116,7 @@ test('legacy inventory and archive preserve custom/disabled configs and existing
     assert.equal(api.ArchiveLegacyCadConfiguration(), true);
     assert.equal(fs.existsSync(legacy), false);
     assert.equal(fs.readFileSync(path.join(archived, 'custom_config.lua'), 'utf8'), 'disabled custom settings');
-    assert.match(JSON.parse(api.ListLegacyCadConfiguration()).error, /Cannot read/);
+    assert.equal(JSON.parse(api.ListLegacyCadConfiguration()).missing, true);
 });
 
 test('root config contains only credentials and is created atomically without replacing configured values', t => {
