@@ -1389,9 +1389,11 @@ CreateThread(function()
                         local ped = PlayerPedId()
                         local vehicle = GetVehiclePedIsIn(ped, false)
                         if vehicle ~= 0 then
-                            local record = findVehicleRecord(vehicle)
-                            if record then
-                                object, key = record.prop, tostring(record.vehNet)
+                            if GetCamViewModeForContext(GetCamActiveViewModeContext()) == 4 then
+                                local record = findVehicleRecord(vehicle)
+                                if record then
+                                    object, key = record.prop, tostring(record.vehNet)
+                                end
                             end
                         elseif isWorldDisplayEnabled() then
                             local id
