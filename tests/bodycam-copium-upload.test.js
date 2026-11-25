@@ -11,7 +11,7 @@ const source = fs.readFileSync(path.join(root, 'sonorancad/submodules/bodycam/sv
 const WEBM = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 1, 2, 3, 4]);
 
 // Loads the server script with FiveM's natives stubbed, and returns what it did.
-function load({ copium = null, copiumState = 'started', copiumUpload, registerStatus = 201, unitNum = '1A-12' } = {}) {
+function load({ copium = {}, masterEnabled = true, copiumState = 'started', copiumUpload, registerStatus = 201, unitNum = '1A-12' } = {}) {
 	const resourceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bodycam-copium-'));
 	const handlers = {};
 	const calls = { uploads: [], fetches: [], results: [], logs: [] };
@@ -20,7 +20,11 @@ function load({ copium = null, copiumState = 'started', copiumUpload, registerSt
 		GetResolvedConfig: () => JSON.stringify({ ready: true, apiUrl: 'https://api.sonorancad.com' }),
 		getPlayerCommunityUserId: () => 'cu-42',
 		GetUnitByPlayerId: () => ({ id: 7, location: 'Legion Square', data: { unitNum } }),
-		GetPluginConfig: (name) => (name === 'bodycam' ? { recording: copium === null ? {} : { copium } } : null),
+		GetPluginConfig: (name) => {
+			if (name === 'bodycam') return { enabled: true, recording: { copium: { enabled: true } } };
+			if (name === 'copium' && masterEnabled !== null) return { enabled: masterEnabled, bodycam: { enabled: true, ...copium } };
+			return null;
+		},
 	};
 	exportsFn.copium = {
 		UploadFile: (filePath, opts, cb) => {
@@ -66,7 +70,7 @@ function load({ copium = null, copiumState = 'started', copiumUpload, registerSt
 const cadUploads = (calls) => calls.fetches.filter((f) => f.url.endsWith('/v2/general/bodycam-recordings'));
 const registrations = (calls) => calls.fetches.filter((f) => f.url.endsWith('/v2/general/bodycam-recordings/external'));
 
-test('an older config automatically saves clips to running Copium and registers their links with the CAD', async () => {
+test('an explicitly enabled Copium plugin saves clips and registers their links with the CAD', async () => {
 	const { calls, send, clip } = load();
 	await send();
 	assert.equal(calls.uploads.length, 1);
@@ -129,6 +133,9 @@ test('a failed CAD registration falls back to the normal CAD upload', async () =
 
 test('Copium turned off, or its resource not running: the CAD upload is unchanged', async () => {
 	for (const options of [
+		{ masterEnabled: null },
+		{ masterEnabled: false },
+		{ masterEnabled: 'true' },
 		{ copium: { enabled: false } },
 		{ copiumState: 'stopped' },
 		{ copiumState: 'missing' },
@@ -144,7 +151,7 @@ test('Copium turned off, or its resource not running: the CAD upload is unchange
 	}
 });
 
-test('default and explicitly enabled settings both auto-detect Copium', async () => {
+test('enabled plugin resolves default and explicit workflow settings', async () => {
 	for (const copium of [{}, { enabled: true }]) {
 		const { calls, send } = load({ copium });
 		await send();
