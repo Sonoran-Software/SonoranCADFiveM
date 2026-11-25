@@ -26,22 +26,21 @@ The FiveM resource now uses the CAD link flow on API v2.
 
 ## Copium storage
 
-Bodycam clips and printed record PDFs automatically use a running `copium`
-resource. Install Copium 1.3.2 or newer from copium.pics → Apps → FiveM, configure its
-`Config.Token` with a Copium team key, and start it. The CAD checks for Copium
-on each upload and uses its normal storage or print link when Copium is stopped
-or saving fails.
+Copium is off by default. In CAD Admin, open the FiveM Server Configuration
+for your server, select **Copium**, and enable the plugin. The Bodycam
+recordings and Printed records sections let you independently turn each
+workflow off, choose its folder, or change its evidence locking.
 
-Optional settings are read from the CAD-managed plugin configuration:
-`bodycam.recording.copium` and `recordPrinter.copium`.
-These control the storage folder (`path`) and evidence locking (`evidence`).
-Bodycam clips default to the `bodycam` folder with evidence locking enabled;
-printed records default to `records` with evidence locking disabled. Set the relevant
-`copium.enabled = false` to opt out. Older configs without these sections
-auto-detect Copium; an existing explicit `false` must be changed to `true` to
-enable it. See the [bodycam guide](sonorancad/submodules/bodycam/README.md#save-clips-to-copium)
-for clip limits and public-link behavior. Printed PDFs also use public links
-so players can open them without a Copium account.
+Install Copium 1.3.2 or newer from copium.pics → Apps → FiveM, configure its
+`Config.Token` with a Copium team key, and start it. Restart the CAD resource
+after changing its configuration. Missing or disabled Copium configuration,
+a stopped resource, or a save failure keeps the normal CAD upload or print link.
+
+**Public links:** Anyone with a saved link can open the clip or PDF without a
+Copium account. Evidence locking does not make the link private. Only enable
+this in communities where public links are acceptable. See the
+[bodycam guide](sonorancad/submodules/bodycam/README.md#save-clips-to-copium)
+for clip limits and folder behavior.
 
 ## Development Bounties
 Get PAID to contribute to the open source project!!!
