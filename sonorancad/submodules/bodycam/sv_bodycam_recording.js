@@ -158,12 +158,12 @@ function getCopiumSettings() {
 		return null;
 	}
 	try {
-		const plugin = exports[GetCurrentResourceName()].GetPluginConfig("bodycam");
-		if (!plugin || plugin.enabled === false) {
+		const cad = exports[GetCurrentResourceName()];
+		if (cad.GetPluginConfig("bodycam")?.enabled !== true) {
 			return null;
 		}
-		const settings = (plugin.recording && plugin.recording.copium) || {};
-		return settings.enabled === false ? null : settings;
+		const plugin = cad.GetPluginConfig("copium");
+		return plugin?.enabled === true && plugin.bodycam?.enabled === true ? plugin.bodycam : null;
 	} catch (err) {
 		return null;
 	}
