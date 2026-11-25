@@ -12,13 +12,16 @@ COPIUM_URL = 'https://v.copium.pics/record.pdf'
 
 
 class RecordPrinterCopiumTests(unittest.TestCase):
-    def runtime(self, copium=None, state='started', upload_mode='success'):
+    def runtime(self, copium=None, state='started', upload_mode='success', master_enabled=True):
         lua = LuaRuntime(unpack_returned_tuples=True)
         lua.execute('''
-            pluginConfig = {enabled = true}; uploads = {}; queued = {}; warnings = {}
+            pluginConfig = {enabled = true, copium = {enabled = true}}; uploads = {}; queued = {}; warnings = {}
             resourceState = 'started'; uploadMode = 'success'
             function CreateThread(fn) fn() end
-            Config = {LoadPlugin = function(_, callback) callback(pluginConfig) end}
+            Config = {
+                LoadPlugin = function(_, callback) callback(pluginConfig) end,
+                GetPluginConfig = function(name) if name == 'copium' then return copiumConfig end end,
+            }
             function TriggerEvent(name, event, callback) printRecord = callback end
             function TriggerClientEvent(name, player, url) table.insert(queued, url) end
             function GetResourceState(_) return resourceState end
@@ -54,8 +57,11 @@ class RecordPrinterCopiumTests(unittest.TestCase):
             }
         ''')
         g = lua.globals()
-        if copium is not None:
-            g.pluginConfig.copium = lua.table_from(copium)
+        if master_enabled is not None:
+            g.copiumConfig = lua.table_from({
+                'enabled': master_enabled,
+                'recordPrinter': {'enabled': True, **(copium or {})},
+            }, recursive=True)
         g.resourceState = state
         g.uploadMode = upload_mode
         lua.execute(PRINTER)
@@ -64,9 +70,8 @@ class RecordPrinterCopiumTests(unittest.TestCase):
     def print_record(self, lua, g):
         g.printRecord(lua.table_from({'data': {'identId': 7, 'url': CAD_URL}}, recursive=True))
 
-    def test_older_config_auto_detects_copium_and_exposes_default_to_companion(self):
+    def test_enabled_copium_uses_default_record_settings(self):
         lua, g = self.runtime()
-        self.assertTrue(g.pluginConfig.copium.enabled)
         self.print_record(lua, g)
         self.assertEqual(g.queued[1], COPIUM_URL)
         self.assertEqual(g.uploads[1].path, '/records/7/record.pdf')
@@ -88,16 +93,22 @@ class RecordPrinterCopiumTests(unittest.TestCase):
     def test_auto_detection_preserves_custom_options(self):
         lua, g = self.runtime({'path': 'case-files', 'evidence': True})
         self.print_record(lua, g)
-        self.assertTrue(g.pluginConfig.copium.enabled)
         self.assertEqual(g.uploads[1].options.path, 'case-files')
         self.assertTrue(g.uploads[1].options.evidence)
 
     def test_explicit_opt_out_keeps_cad_link(self):
         lua, g = self.runtime({'enabled': False})
         self.print_record(lua, g)
-        self.assertFalse(g.pluginConfig.copium.enabled)
         self.assertEqual(len(g.uploads), 0)
         self.assertEqual(g.queued[1], CAD_URL)
+
+    def test_master_disabled_or_missing_keeps_cad_link_even_with_legacy_opt_in(self):
+        for enabled in (False, None, 'true'):
+            with self.subTest(enabled=enabled):
+                lua, g = self.runtime(master_enabled=enabled)
+                self.print_record(lua, g)
+                self.assertEqual(len(g.uploads), 0)
+                self.assertEqual(g.queued[1], CAD_URL)
 
     def test_resource_must_be_started(self):
         for state in ('missing', 'starting', 'stopped'):
