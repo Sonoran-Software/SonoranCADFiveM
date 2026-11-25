@@ -52,23 +52,20 @@ records.
 1. Install and start the `copium` resource, version 1.3.2 or newer (copium.pics → Apps → FiveM).
 2. In Copium, make a team key (Teams → your server → Integrations) and paste it
    into the copium resource's `config.lua` as `Config.Token`.
+3. In CAD Admin → FiveM Server Configuration, select this server and turn on the **Copium** plugin. Confirm **Bodycam recordings** is enabled and restart the CAD resource.
 
 The bodycam detects Copium each time it saves a clip, including when Copium
-starts or stops after the CAD resource. No CAD configuration change is needed.
+starts or stops after the CAD resource. Missing or disabled Copium settings keep uploads on the CAD.
 
 By default each clip is also locked in the team's evidence locker (when the team
-has it turned on); set `recording.copium.evidence = false` in the CAD-managed
-bodycam plugin configuration to skip that. Clips
+has it turned on); turn off **Lock in evidence locker** under **Copium → Bodycam recordings** to skip that. Clips
 are filed under `bodycam/<unit number>` in the team's storage and tagged with
 the officer's CAD account (`communityUserId`). Their links stay public, because
 CAD viewers don't have Copium accounts.
 
 If the copium resource isn't running, the clip is uploaded to the CAD as usual.
 Saving or registration failures also fall back to the CAD and log the reason.
-The clip limits (120 seconds, 6 MB) are the same either way. Configurations
-without a `recording.copium` section use the same auto-detection.
-Set `recording.copium.enabled = false` to always use CAD storage. An existing
-explicit `false` is preserved; change it to `true` to use auto-detection.
+The clip limits (120 seconds, 6 MB) are the same either way. Turn off **Save to Copium** under **Bodycam recordings** to always use the CAD for clips.
 
 ## Artwork sources
 
